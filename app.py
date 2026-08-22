@@ -9,6 +9,7 @@ import urllib.parse
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from fpdf import FPDF
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA
@@ -29,11 +30,97 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. DEFINICIÓN DE COLORES & CSS CORREGIDO
+# 2. GENERADOR DE PDF (SHIPPING LABEL & INSTRUCCIONES)
+# ---------------------------------------------------------
+def generar_pdf_etiqueta(casillero, nombre, telefono, ciudad):
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Encabezado Principal
+    pdf.set_fill_color(15, 23, 42)
+    pdf.rect(10, 10, 190, 24, 'F')
+    pdf.set_font('Arial', 'B', 16)
+    pdf.set_text_color(56, 189, 248)
+    pdf.set_xy(10, 14)
+    pdf.cell(190, 8, 'CENTRO DE CERAMICAS Y MAS', 0, 1, 'C')
+    pdf.set_font('Arial', 'B', 10)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(190, 6, 'MARITIME CONSOLIDATION CARGO (CHINA -> HONDURAS)', 0, 1, 'C')
+    
+    pdf.ln(8)
+    
+    # Recuadro de la Etiqueta Oficial
+    pdf.set_draw_color(0, 82, 204)
+    pdf.set_line_width(0.8)
+    pdf.rect(10, 42, 190, 95)
+    
+    # Franja Código de Casillero
+    pdf.set_fill_color(0, 82, 204)
+    pdf.rect(12, 44, 186, 14, 'F')
+    pdf.set_font('Arial', 'B', 14)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_xy(12, 47)
+    pdf.cell(186, 8, f'CLIENT CODE / LOCKER: {casillero}', 0, 1, 'C')
+    
+    # Datos del Cliente y Destino
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.set_xy(15, 62)
+    pdf.cell(90, 6, f'CLIENT NAME: {nombre.upper()}', 0, 1)
+    pdf.set_xy(15, 68)
+    pdf.cell(90, 6, f'CONTACT PHONE: {telefono}', 0, 1)
+    pdf.set_xy(15, 74)
+    pdf.cell(90, 6, f'FINAL DESTINATION: {ciudad.upper()}, HONDURAS', 0, 1)
+    
+    # Datos de Almacén en China
+    pdf.set_xy(105, 62)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(90, 6, 'SHIP TO / WAREHOUSE IN CHINA:', 0, 1)
+    pdf.set_font('Arial', '', 9)
+    pdf.set_xy(105, 68)
+    pdf.multi_cell(90, 5, f'ATTN: CHILAT / {casillero}\nAddress: CHILAT Logistics Warehouse, District B, Port Area, Guangzhou, China.\nWarehouse Tel: +86 138 0000 0000')
+    
+    # Indicadores de Embalaje
+    pdf.set_draw_color(148, 163, 184)
+    pdf.line(15, 96, 195, 96)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.set_xy(15, 100)
+    pdf.cell(60, 6, 'PACKAGE INFO: BOX [   ] OF [   ]', 0, 0)
+    pdf.cell(60, 6, 'GROSS WEIGHT: _______ KG', 0, 0)
+    pdf.cell(60, 6, 'VOLUME: _______ CBM', 0, 1)
+    
+    # Advertencia en el Recuadro
+    pdf.set_fill_color(254, 242, 242)
+    pdf.rect(12, 114, 186, 20, 'F')
+    pdf.set_font('Arial', 'B', 9)
+    pdf.set_text_color(185, 28, 28)
+    pdf.set_xy(15, 116)
+    pdf.multi_cell(180, 5, 'MANDATORY: Supplier must paste this sticker on AT LEAST 2 SIDES of every box.\nPackages received without the Client Code clearly visible will NOT be processed.')
+
+    pdf.ln(18)
+    
+    # Sección 2: Instrucciones para el Proveedor
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(190, 6, 'INSTRUCTIONS FOR YOUR CHINESE SUPPLIER (Alibaba / Made-in-China / 1688)', 0, 1, 'L')
+    pdf.set_font('Arial', '', 9)
+    pdf.set_text_color(51, 65, 85)
+    pdf.multi_cell(190, 5, 'Please send this PDF document directly to your supplier and ensure they read the following instructions:\n\n'
+                          '1. Paste this shipping label securely on each carton.\n'
+                          '2. Clearly mark the Client Code on all shipping documents and commercial invoices.\n'
+                          '3. Share domestic tracking number with the buyer immediately upon dispatch.\n\n'
+                          'Note: Any parcel missing proper marking may experience significant consolidation delays.')
+    
+    # Retorno en Bytes
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+    return pdf_bytes
+
+# ---------------------------------------------------------
+# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
-# Variables de Tema
 bg_body = "#05070c" if is_dark else "#f1f5f9"
 text_main = "#ffffff" if is_dark else "#0f172a"
 text_muted = "#94a3b8" if is_dark else "#64748b"
@@ -41,7 +128,6 @@ input_bg = "#111827" if is_dark else "#ffffff"
 input_border = "#1f2937" if is_dark else "#cbd5e1"
 input_color = "#ffffff" if is_dark else "#0f172a"
 
-# Botón Secundario (Restablecer / Aperturar)
 btn_sec_bg = "#161e2e" if is_dark else "#e2e8f0"
 btn_sec_text = "#e2e8f0" if is_dark else "#1e293b"
 btn_sec_border = "#27354a" if is_dark else "#cbd5e1"
@@ -50,7 +136,6 @@ st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@700&display=swap');
 
-    /* Fondo principal y textos */
     .stApp {{
         background-color: {bg_body} !important;
         color: {text_main} !important;
@@ -59,7 +144,6 @@ st.markdown(f"""
     
     #MainMenu, header, footer {{visibility: hidden;}}
 
-    /* Inputs estilizados */
     div[data-baseweb="input"] {{
         background-color: {input_bg} !important;
         border: 1px solid {input_border} !important;
@@ -77,7 +161,6 @@ st.markdown(f"""
         opacity: 0.7 !important;
     }}
 
-    /* Etiquetas de los inputs */
     .stTextInput label, .stSelectbox label, .stTextArea label, .stRadio label {{
         color: {text_main} !important;
         font-weight: 600 !important;
@@ -85,8 +168,7 @@ st.markdown(f"""
         margin-bottom: 2px !important;
     }}
 
-    /* Forzar botones full width estilizados */
-    div.stButton > button {{
+    div.stButton > button, div.stDownloadButton > button {{
         width: 100% !important;
         border-radius: 12px !important;
         padding: 12px 18px !important;
@@ -97,36 +179,29 @@ st.markdown(f"""
         margin-bottom: 4px !important;
     }}
 
-    /* Botón Primario Azul (Iniciar Sesión / Confirmar) */
-    div.stButton > button[kind="primary"], .btn-login-blue div.stButton > button {{
+    div.stButton > button[kind="primary"], .btn-login-blue div.stButton > button, div.stDownloadButton > button {{
         background-color: #0052cc !important;
         color: #ffffff !important;
         border: none !important;
         box-shadow: 0 4px 14px rgba(0, 82, 204, 0.4) !important;
     }}
-    div.stButton > button[kind="primary"]:hover, .btn-login-blue div.stButton > button:hover {{
+    div.stButton > button[kind="primary"]:hover, .btn-login-blue div.stButton > button:hover, div.stDownloadButton > button:hover {{
         background-color: #0040a8 !important;
         transform: translateY(-1px);
     }}
 
-    /* Botones Secundarios Oscuros/Claros */
     div.stButton > button[kind="secondary"], .btn-action-sec div.stButton > button {{
         background-color: {btn_sec_bg} !important;
         color: {btn_sec_text} !important;
         border: 1px solid {btn_sec_border} !important;
     }}
-    div.stButton > button[kind="secondary"]:hover, .btn-action-sec div.stButton > button:hover {{
-        background-color: {'#1f2d42' if is_dark else '#cbd5e1'} !important;
-    }}
 
-    /* Selector de Tema Superior */
     .theme-dropdown div[data-baseweb="select"] {{
         background-color: {input_bg} !important;
         border: 1px solid {input_border} !important;
         border-radius: 10px !important;
     }}
 
-    /* Logo Central */
     .logo-container {{
         text-align: center;
         margin-top: 1.5rem;
@@ -140,7 +215,6 @@ st.markdown(f"""
         margin-top: 10px;
     }}
 
-    /* Tarjetas del Portal Interno */
     .card-box {{
         background-color: {input_bg};
         border: 1px solid {input_border};
@@ -157,30 +231,11 @@ st.markdown(f"""
         font-size: 0.88rem;
         color: {text_main};
     }}
-    .stat-card {{
-        background-color: {input_bg};
-        border-radius: 12px;
-        padding: 1.2rem;
-        border: 1px solid {input_border};
-        border-left: 4px solid #0052cc;
-    }}
-    .stat-title {{
-        font-size: 0.78rem;
-        font-weight: 700;
-        color: {text_muted};
-        text-transform: uppercase;
-    }}
-    .stat-value {{
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: {text_main};
-        margin-top: 4px;
-    }}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. BASE DE DATOS SQLITE & UTILIDADES
+# 4. BASE DE DATOS SQLITE & UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -232,7 +287,6 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
         
-        # Superadministrador por defecto
         admin_pass = hash_pwd("admin123")
         c.execute("""
             INSERT OR IGNORE INTO usuarios (
@@ -273,7 +327,7 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. GESTIÓN DE SESIÓN
+# 5. GESTIÓN DE SESIÓN
 # ---------------------------------------------------------
 if "autenticado" not in st.session_state:
     st.session_state.update({
@@ -282,19 +336,21 @@ if "autenticado" not in st.session_state:
         "rol": None,
         "casillero": None,
         "nombre": None,
+        "telefono": None,
+        "ciudad": None,
         "reg_paso": 1,
         "reg_datos": {}
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad"]:
         st.session_state[k] = None
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.rerun()
 
 # ---------------------------------------------------------
-# 5. HEADER SUPERIOR CON SELECTOR DE TEMA
+# 6. HEADER SUPERIOR CON SELECTOR DE TEMA
 # ---------------------------------------------------------
 col_vacia, col_theme = st.columns([4, 1.3])
 with col_theme:
@@ -311,11 +367,11 @@ with col_theme:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 6. PANTALLAS DE ACCESO (ESTILO SERCARGO)
+# 7. PANTALLAS DE ACCESO (ESTILO SERCARGO)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
 
-    # 6.1 VISTA DE LOGIN
+    # 7.1 VISTA LOGIN
     if st.session_state["vista_actual"] == "login":
         _, col_center, _ = st.columns([1, 1.25, 1])
         with col_center:
@@ -344,7 +400,7 @@ if not st.session_state["autenticado"]:
                     with get_db() as conn:
                         c = conn.cursor()
                         c.execute("""
-                            SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo 
+                            SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad 
                             FROM usuarios 
                             WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?
                         """, (u_ident, u_ident, p_hash))
@@ -359,6 +415,8 @@ if not st.session_state["autenticado"]:
                             st.session_state["nombre"] = user[2]
                             st.session_state["usuario"] = user[3]
                             st.session_state["rol"] = user[4]
+                            st.session_state["telefono"] = user[6]
+                            st.session_state["ciudad"] = user[7]
                             st.rerun()
                     else:
                         st.error("❌ Credenciales inválidas.")
@@ -376,7 +434,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 6.2 VISTA DE REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y BOTÓN DE WHATSAPP)
+    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -456,7 +514,6 @@ if not st.session_state["autenticado"]:
                             with get_db() as conn:
                                 cur = conn.cursor()
                                 
-                                # Verificación previa de duplicados por correo o DNI
                                 cur.execute("""
                                     SELECT codigo_casillero, correo_principal, dni 
                                     FROM usuarios 
@@ -517,7 +574,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 6.3 VISTA DE RECUPERACIÓN
+    # 7.3 VISTA RECUPERAR
     elif st.session_state["vista_actual"] == "recuperar":
         _, col_rec, _ = st.columns([1, 1.25, 1])
         with col_rec:
@@ -544,11 +601,13 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 7. PORTAL DEL CLIENTE (AUTENTICADO)
+# 8. PORTAL DEL CLIENTE (DESCARGA DE PDF STICKER)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
     nombre_cli = st.session_state["nombre"]
+    tel_cli = st.session_state.get("telefono", "+504 0000-0000")
+    ciu_cli = st.session_state.get("ciudad", "Honduras")
 
     st.markdown(f"""
     <div style="background:{input_bg}; padding:1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
@@ -560,7 +619,7 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    tab_cargas, tab_cotizador, tab_direccion = st.tabs(["📦 Mis Envíos", "📐 Cotizador Marítimo", "📍 Mi Dirección en China"])
+    tab_cargas, tab_cotizador, tab_direccion = st.tabs(["📦 Mis Envíos", "📐 Cotizador Marítimo", "📍 Etiqueta & Ficha de Envío (PDF)"])
 
     with tab_cargas:
         with get_db() as conn:
@@ -604,6 +663,21 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_direccion:
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
+        st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
+
+        # Generar el PDF con los datos del usuario
+        pdf_bytes = generar_pdf_etiqueta(casillero, nombre_cli, tel_cli, ciu_cli)
+
+        st.download_button(
+            label="📄 Descargar Etiqueta de Envío en PDF (Para Proveedor)",
+            data=pdf_bytes,
+            file_name=f"Shipping_Label_{casillero}.pdf",
+            mime="application/pdf"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
         st.markdown(f"""
         <div class="china-address-box">
 ============================================================<br>
@@ -631,7 +705,7 @@ NOT accept packages without the Client Code: {casillero} clearly visible."<br>
             logout()
 
 # ---------------------------------------------------------
-# 8. PANEL ADMINISTRATIVO
+# 9. PANEL ADMINISTRATIVO
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "admin":
     st.markdown("## 🛠️ Panel Maestro — Administrador")
