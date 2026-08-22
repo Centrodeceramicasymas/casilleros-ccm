@@ -33,7 +33,7 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS
+# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     """Compilador de PDF 1.4 binario estándar sin dependencias externas."""
@@ -198,7 +198,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. ESTILOS CSS RESPONSIVOS
+# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -451,7 +451,7 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero_dni(dni_raw):
-    """Toma los primeros 8 dígitos del DNI ingresado."""
+    """Toma los primeros 8 dígitos del número de DNI ingresado."""
     solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
@@ -747,7 +747,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (COTIZADOR CON DOCUMENTOS DIVIDIDOS)
+# 8. PORTAL DEL CLIENTE (COTIZADOR CON DIMENSIONES EN AMBAS OPCIONES)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -785,7 +785,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON CONFIRMACIÓN & DISTRIBUCIÓN DE DOCUMENTOS ----------------
+    # ---------------- COTIZADOR CON DIMENSIONES Y CONFIRMACIÓN ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -802,40 +802,56 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
+        # OPCIÓN 1: PAQUETERÍA MENOR (CON ENTRADA DE DIMENSIONES)
         if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
-            c1, c2 = st.columns(2)
-            with c1:
-                pe_lb = st.number_input("Peso Real del Paquete (Libras / lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5)
+            st.caption("Ingrese las dimensiones y peso del paquete menor (1 a 99 lbs):")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="al_menor")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="an_menor")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0, key="la_menor")
+            with c4: 
+                pe_lb = st.number_input("Peso Real (Libras / lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5, key="pe_menor")
                 pe_kg = pe_lb / 2.20462
                 st.caption(f"Equivalente a: **{pe_kg:.2f} kg**")
-            with c2:
-                if pe_lb <= 3.0:
-                    tot = min_usd
-                    desc = f"Tarifa Mínima Base (1 a 3 lbs): ${min_usd:.2f} USD"
-                else:
-                    tot = pe_lb * t_lb
-                    desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
+
+            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+            vol_ft3_val = vol_m3_val * 35.3147
+
+            if pe_lb <= 3.0:
+                tot = min_usd
+                desc = f"Tarifa Mínima Base (1 a 3 lbs): ${min_usd:.2f} USD"
+            else:
+                tot = pe_lb * t_lb
+                desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
+
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Volumen Calculado (m³)", f"{vol_m3_val:.4f} m³", help="(Alto x Ancho x Largo en cm) / 1,000,000")
+            with m2:
+                st.metric("Equivalencia en Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
+            with m3:
                 st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Flete marítimo e internación aduanal incluida.")
 
             st.info(f"📌 **Detalle:** {desc} (Aplica para paquetes de 1 a 99 lbs).")
             
-            al_val, an_val, la_val = 0.0, 0.0, 0.0
-            vol_m3_val, vol_ft3_val = 0.0, 0.0
             detalle_pdf = desc
             modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
 
+        # OPCIÓN 2: CARGA COMERCIAL
         else:
             st.caption("Carga comercial: 1 Metro Cúbico (CBM) cubre hasta 390 kg (859.8 lbs). Cada fracción adicional de 390 kg liquida como CBM adicional.")
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0)
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0, key="al_com")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="an_com")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="la_com")
             with c4: 
                 pe_lb = st.number_input(
                     "Peso Total (Libras / lb)", 
                     min_value=100.0, 
                     value=500.0, 
                     step=10.0,
+                    key="pe_com",
                     help="Conversión: 390 kg = 859.8 lbs. Superar este umbral computa un segundo CBM o fracción correspondiente."
                 )
                 pe_kg = pe_lb / 2.20462
