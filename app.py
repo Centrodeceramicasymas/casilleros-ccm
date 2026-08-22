@@ -36,7 +36,7 @@ if "vista_actual" not in st.session_state:
 # 2. GENERADORES DE PDF NATIVOS (SIN LIBRERÍAS EXTERNAS)
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    """Compilador genérico de PDF 1.4 a partir de stream de texto."""
+    """Compilador de PDF 1.4 binario estándar."""
     stream_bytes = stream_content.encode('latin-1', 'replace')
     stream_len = len(stream_bytes)
     
@@ -448,13 +448,12 @@ def set_tarifa(clave, valor):
         c = conn.cursor()
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
-def generar_codigo_casillero():
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id FROM usuarios WHERE rol = 'cliente' ORDER BY id DESC LIMIT 1")
-        last = c.fetchone()
-        next_id = 1 if not last else last[0] + 1
-        return f"CCM-HN-{next_id:04d}"
+def generar_codigo_casillero_dni(dni_raw):
+    """Toma los primeros 8 dígitos del número de DNI ingresado."""
+    solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
+    if len(solo_digitos) >= 8:
+        return solo_digitos[:8]
+    return solo_digitos.zfill(8)
 
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
@@ -529,7 +528,7 @@ if not st.session_state["autenticado"]:
         with col_center:
             render_logo_header()
 
-            u_ident = st.text_input("Casillero o Correo", placeholder="CCM-HN-0001 o correo@gmail.com", key="log_cas")
+            u_ident = st.text_input("Casillero (8 dígitos) o Correo", placeholder="Ej: 13011998 o correo@gmail.com", key="log_cas")
             u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña de acceso", key="log_pwd")
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -575,7 +574,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO
+    # 7.2 VISTA REGISTRO (CASILLERO CON 8 DÍGITOS DEL DNI)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -588,14 +587,18 @@ if not st.session_state["autenticado"]:
             if paso == 1:
                 st.markdown("#### 1. Datos Personales")
                 nom = st.text_input("Nombre Completo *", value=st.session_state["reg_datos"].get("nom", ""))
-                dni = st.text_input("Número de Identidad (DNI) *", value=st.session_state["reg_datos"].get("dni", ""))
+                dni = st.text_input("Número de Identidad (DNI - 13 dígitos) *", value=st.session_state["reg_datos"].get("dni", ""), placeholder="Ej: 1301199800990")
+                if dni:
+                    cas_prev = generar_codigo_casillero_dni(dni)
+                    st.caption(f"ℹ️ Su número de casillero asignado será: **{cas_prev}** (Primeros 8 dígitos de su ID)")
+                    
                 if st.button("Siguiente ➔", type="primary"):
-                    if nom and dni:
+                    if nom and dni and len(''.join(filter(str.isdigit, dni))) >= 8:
                         st.session_state["reg_datos"].update({"nom": nom, "dni": dni})
                         st.session_state["reg_paso"] = 2
                         st.rerun()
                     else:
-                        st.error("Complete los campos obligatorios (*).")
+                        st.error("Por favor ingrese un número de DNI válido de al menos 8 dígitos.")
 
             elif paso == 2:
                 st.markdown("#### 2. Contacto")
@@ -647,7 +650,7 @@ if not st.session_state["autenticado"]:
                 with c2:
                     if st.button("🚀 Confirmar y Crear", type="primary"):
                         d = st.session_state["reg_datos"]
-                        n_cod = generar_codigo_casillero()
+                        n_cod = generar_codigo_casillero_dni(d["dni"])
                         n_pwd = generar_clave_provisional()
                         f_crea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -658,8 +661,8 @@ if not st.session_state["autenticado"]:
                                 cur.execute("""
                                     SELECT codigo_casillero, correo_principal, dni 
                                     FROM usuarios 
-                                    WHERE correo_principal = ? OR dni = ?
-                                """, (d["cor"], d["dni"]))
+                                    WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?
+                                """, (d["cor"], d["dni"], n_cod))
                                 usuario_existente = cur.fetchone()
 
                                 if usuario_existente:
@@ -696,7 +699,7 @@ if not st.session_state["autenticado"]:
 
                                     st.balloons()
                                     st.success("🎉 ¡Casillero Creado Exitosamente!")
-                                    st.info(f"🔑 **Casillero Asignado:** `{n_cod}`\n\n🔒 **Contraseña Temporal:** `{n_pwd}`\n\n*Guarde estos datos para iniciar sesión.*")
+                                    st.info(f"🔑 **Casillero Asignado (8 dígitos de ID):** `{n_cod}`\n\n🔒 **Contraseña Temporal:** `{n_pwd}`\n\n*Guarde estos datos para iniciar sesión.*")
                                     
                                     st.session_state["reg_paso"] = 1
                                     st.session_state["reg_datos"] = {}
@@ -742,7 +745,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (COTIZADOR CON BOTÓN DE CONFIRMACIÓN Y PDF)
+# 8. PORTAL DEL CLIENTE (COTIZADOR CON CONFIRMACIÓN & PDF)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -753,7 +756,7 @@ elif st.session_state["rol"] == "cliente":
     st.markdown(f"""
     <div style="background:{input_bg}; padding:1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
         <div>
-            <h3 style="margin:0; color:#0052cc;">🏠 CENTRO DE CERÁMICAS Y MÁS &bull; {casillero}</h3>
+            <h3 style="margin:0; color:#0052cc;">🏠 CENTRO DE CERÁMICAS Y MÁS &bull; Casillero {casillero}</h3>
             <div style="font-size:0.85rem; color:{text_muted};">Titular: {nombre_cli}</div>
         </div>
         <div style="background:#0052cc; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:0.8rem;">🟢 Casillero Activo</div>
@@ -814,7 +817,6 @@ elif st.session_state["rol"] == "cliente":
 
             st.info(f"📌 **Detalle:** {desc} (Aplica para paquetes de 1 a 99 lbs).")
             
-            # Variables normalizadas para el PDF
             al_val, an_val, la_val = 0.0, 0.0, 0.0
             vol_m3_val, vol_ft3_val = 0.0, 0.0
             detalle_pdf = desc
@@ -888,7 +890,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # Botón de descarga si ya confirmó
+        # Botón de descarga del comprobante PDF
         if "datos_pdf_confirmado" in st.session_state:
             d_pdf = st.session_state["datos_pdf_confirmado"]
             pdf_confirmacion_bytes = generar_pdf_confirmacion_cotizacion(
@@ -973,7 +975,7 @@ elif st.session_state["rol"] == "admin":
     with tab_p:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         t_in = st.text_input("Tracking de China")
-        c_in = st.text_input("Casillero Asignado (CCM-HN-XXXX)")
+        c_in = st.text_input("Casillero Asignado (8 dígitos)")
         e_in = st.selectbox("Estado", ["En Bodega China", "En Travesía Marítima", "En Desaduanaje", "Disponible en Bodega Central", "Entregado"])
         if st.button("Actualizar Paquete", type="primary"):
             if t_in and c_in:
