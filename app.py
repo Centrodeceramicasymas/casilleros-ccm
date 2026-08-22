@@ -33,10 +33,10 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS (SIN LIBRERÍAS EXTERNAS)
+# 2. GENERADORES DE PDF NATIVOS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    """Compilador de PDF 1.4 binario estándar."""
+    """Compilador de PDF 1.4 binario estándar sin dependencias externas."""
     stream_bytes = stream_content.encode('latin-1', 'replace')
     stream_len = len(stream_bytes)
     
@@ -70,6 +70,7 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
+    """Documento 1: Para el Fabricante/Proveedor (Sin precios ni costos)."""
     stream = f"""BT
 /F1 16 Tf
 40 790 Td
@@ -110,7 +111,7 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
 (----------------------------------------------------------------) Tj
 /F1 9 Tf
 0 -15 Td
-(INSTRUCTIONS FOR SUPPLIER [ALIBABA / MADE-IN-CHINA / 1688]:) Tj
+(INSTRUCTIONS FOR SUPPLIER / FABRICANTE [ALIBABA / MADE-IN-CHINA / 1688]:) Tj
 0 -13 Td
 (1. Paste this shipping label firmly on at least 2 sides of every box.) Tj
 0 -12 Td
@@ -121,6 +122,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
+    """Documento 2: Comprobante Oficial con Precios (Para el Cliente y Administración CCM)."""
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     stream = f"""BT
 /F1 15 Tf
@@ -128,12 +130,12 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
 /F1 10 Tf
 0 -16 Td
-(COMPROBANTE DE ACEPTACION DE TARIFA Y COTIZACION MARITIMA) Tj
+(COMPROBANTE OFICIAL DE COTIZACION Y ACEPTACION DE TARIFA) Tj
 0 -20 Td
 (================================================================) Tj
 /F1 11 Tf
 0 -20 Td
-(NO. COTIZACION / CONTROL : CCM-COT-{id_cot:05d}) Tj
+(NO. CONTROL / COTIZACION : CCM-COT-{id_cot:05d}) Tj
 /F1 9 Tf
 0 -14 Td
 (FECHA Y HORA DE EMISION : {fecha_hoy}) Tj
@@ -175,7 +177,7 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (================================================================) Tj
 /F1 10 Tf
 0 -16 Td
-(DIRECCION OFICIAL DE BODEGA EN GUANGZHOU, CHINA:) Tj
+(DIRECCION DE BODEGA EN GUANGZHOU, CHINA:) Tj
 /F1 8 Tf
 0 -13 Td
 (ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
@@ -189,14 +191,14 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 0 -14 Td
 (DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
 0 -11 Td
-(El cliente declara estar conforme con la tarifa cotizada y las politicas) Tj
+(El cliente declara estar conforme con la tarifa cotizada y autoriza el) Tj
 0 -10 Td
-(de consolidacion maritima, desaduanaje y entrega en Honduras.) Tj
+(procesamiento de su carga con Centro de Ceramicas y Mas.) Tj
 ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
+# 3. ESTILOS CSS RESPONSIVOS
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -428,7 +430,7 @@ def init_db():
                 telefono_principal, departamento, ciudad, direccion_exacta, 
                 password_hash, rol, activo, fecha_creacion
             ) VALUES (
-                'CCM-ADMIN', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
+                '08011990', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
                 '+504 9999-0000', 'Intibucá', 'San Juan', 'Oficina Central CCM',
                 ?, 'admin', 1, '2026-08-22 00:00:00'
             )
@@ -449,7 +451,7 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero_dni(dni_raw):
-    """Toma los primeros 8 dígitos del número de DNI ingresado."""
+    """Toma los primeros 8 dígitos del DNI ingresado."""
     solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
@@ -574,7 +576,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO (CASILLERO CON 8 DÍGITOS DEL DNI)
+    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -745,7 +747,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (COTIZADOR CON CONFIRMACIÓN & PDF)
+# 8. PORTAL DEL CLIENTE (COTIZADOR CON DOCUMENTOS DIVIDIDOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -783,7 +785,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON CONFIRMACIÓN DE TARIFA ----------------
+    # ---------------- COTIZADOR CON CONFIRMACIÓN & DISTRIBUCIÓN DE DOCUMENTOS ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -864,8 +866,8 @@ elif st.session_state["rol"] == "cliente":
             modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
 
         st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #374151;'>", unsafe_allow_html=True)
-        st.markdown("#### ✅ Confirmación de Tarifa & Emisión de Comprobante")
-        st.caption("Al confirmar, la cotización quedará registrada en el sistema y podrá descargar su comprobante oficial en PDF con su número de casillero.")
+        st.markdown("#### ✅ Confirmación de Tarifa & Generación de Documentos")
+        st.caption("Al confirmar, el sistema emitirá el juego de documentos correspondientes para su compra:")
 
         if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary", key="btn_confirmar_tarifa"):
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -890,31 +892,83 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # Botón de descarga del comprobante PDF
+        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS DESPUÉS DE CONFIRMAR ----------------
         if "datos_pdf_confirmado" in st.session_state:
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            pdf_confirmacion_bytes = generar_pdf_confirmacion_cotizacion(
-                casillero=casillero,
-                nombre=nombre_cli,
-                telefono=tel_cli,
-                ciudad=ciu_cli,
-                tipo_carga=d_pdf["tipo_carga"],
-                peso_lb=d_pdf["peso_lb"],
-                peso_kg=d_pdf["peso_kg"],
-                vol_m3=d_pdf["vol_m3"],
-                vol_ft3=d_pdf["vol_ft3"],
-                total_usd=d_pdf["total_usd"],
-                detalle_tarifa=d_pdf["detalle_tarifa"],
-                id_cot=d_pdf["id_cot"]
-            )
+            id_c = d_pdf["id_cot"]
 
-            st.download_button(
-                label=f"📄 Descargar Comprobante Oficial de Cotización en PDF (CCM-COT-{d_pdf['id_cot']:05d})",
-                data=pdf_confirmacion_bytes,
-                file_name=f"Comprobante_Cotizacion_{casillero}_COT{d_pdf['id_cot']:05d}.pdf",
-                mime="application/pdf",
-                key="btn_dl_confirmacion"
-            )
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            
+            col_doc1, col_doc2 = st.columns(2, gap="large")
+
+            # DOCUMENTO 1: PARA EL FABRICANTE EN CHINA (SIN PRECIOS)
+            with col_doc1:
+                st.markdown(f"""
+                <div style="background: {'#161e2e' if is_dark else '#ffffff'}; border: 2px solid #0052cc; border-radius: 12px; padding: 18px; text-align: center;">
+                    <div style="font-size: 2rem;">📦🏭</div>
+                    <h4 style="margin: 6px 0; color: #38bdf8;">DOCUMENTO 1: PARA EL FABRICANTE</h4>
+                    <p style="font-size: 0.85rem; color: {text_muted};">
+                        <b>Envíe este PDF a su proveedor en China.</b><br>
+                        (Incluye casillero <b>{casillero}</b>, datos de envío e instrucciones en inglés/chino. <u>No muestra costos ni tarifas</u>).
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                pdf_fabricante_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
+                st.download_button(
+                    label="📥 Descargar Etiqueta para Fabricante (PDF)",
+                    data=pdf_fabricante_bytes,
+                    file_name=f"Shipping_Label_Fabricante_{casillero}.pdf",
+                    mime="application/pdf",
+                    key="btn_dl_fab"
+                )
+
+            # DOCUMENTO 2: PARA WHATSAPP CENTRO DE CERÁMICAS Y MÁS (CON PRECIOS Y LIQUIDACIÓN)
+            with col_doc2:
+                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Adjunto mi comprobante oficial por ${d_pdf['total_usd']:.2f} USD."
+                url_wa_cot = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa_cot)}"
+
+                st.markdown(f"""
+                <div style="background: {'#161e2e' if is_dark else '#ffffff'}; border: 2px solid #22c55e; border-radius: 12px; padding: 18px; text-align: center;">
+                    <div style="font-size: 2rem;">📲📑</div>
+                    <h4 style="margin: 6px 0; color: #22c55e;">DOCUMENTO 2: PARA NUESTRO WHATSAPP</h4>
+                    <p style="font-size: 0.85rem; color: {text_muted};">
+                        <b>Descargue este comprobante y envíelo a nuestro WhatsApp.</b><br>
+                        (Contiene el control <b>CCM-COT-{id_c:05d}</b>, peso, volumen y total de flete: <b>${d_pdf['total_usd']:.2f} USD</b>).
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                pdf_confirmacion_bytes = generar_pdf_confirmacion_cotizacion(
+                    casillero=casillero,
+                    nombre=nombre_cli,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    tipo_carga=d_pdf["tipo_carga"],
+                    peso_lb=d_pdf["peso_lb"],
+                    peso_kg=d_pdf["peso_kg"],
+                    vol_m3=d_pdf["vol_m3"],
+                    vol_ft3=d_pdf["vol_ft3"],
+                    total_usd=d_pdf["total_usd"],
+                    detalle_tarifa=d_pdf["detalle_tarifa"],
+                    id_cot=id_c
+                )
+
+                st.download_button(
+                    label=f"📥 Descargar Comprobante con Tarifa (CCM-COT-{id_c:05d})",
+                    data=pdf_confirmacion_bytes,
+                    file_name=f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
+                    mime="application/pdf",
+                    key="btn_dl_confirmacion"
+                )
+
+                st.markdown(f"""
+                <a href="{url_wa_cot}" target="_blank" style="text-decoration:none;">
+                    <div style="background-color: #22c55e; color: white; padding: 12px 16px; border-radius: 10px; font-weight: bold; text-align: center; margin-top: 6px; font-size: 0.92rem;">
+                        📲 Enviar Comprobante al WhatsApp (+504 9577-1099)
+                    </div>
+                </a>
+                """, unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
