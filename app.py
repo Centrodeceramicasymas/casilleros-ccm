@@ -33,10 +33,44 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADOR DE PDF NATIVO
+# 2. GENERADORES DE PDF NATIVOS (SIN LIBRERÍAS EXTERNAS)
 # ---------------------------------------------------------
-def generar_pdf_nativo(casillero, nombre, telefono, ciudad):
-    stream_content = f"""BT
+def compilar_pdf_simple(stream_content):
+    """Compilador genérico de PDF 1.4 a partir de stream de texto."""
+    stream_bytes = stream_content.encode('latin-1', 'replace')
+    stream_len = len(stream_bytes)
+    
+    pdf_buffer = io.BytesIO()
+    pdf_buffer.write(b"%PDF-1.4\n")
+    offsets = []
+    
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+    
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+    
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
+    
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode('latin-1'))
+    pdf_buffer.write(stream_bytes)
+    pdf_buffer.write(b"\nendstream\nendobj\n")
+    
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
+    
+    xref_offset = pdf_buffer.tell()
+    pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
+    for off in offsets:
+        pdf_buffer.write(f"{off:010d} 00000 n \n".encode('latin-1'))
+        
+    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
+    return pdf_buffer.getvalue()
+
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
+    stream = f"""BT
 /F1 16 Tf
 40 790 Td
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
@@ -84,40 +118,82 @@ def generar_pdf_nativo(casillero, nombre, telefono, ciudad):
 0 -12 Td
 (3. Send domestic tracking number to the buyer immediately upon dispatch.) Tj
 ET"""
-    
-    stream_bytes = stream_content.encode('latin-1', 'replace')
-    stream_len = len(stream_bytes)
-    
-    pdf_buffer = io.BytesIO()
-    pdf_buffer.write(b"%PDF-1.4\n")
-    
-    offsets = []
-    
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-    
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-    
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
-    
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode('latin-1'))
-    pdf_buffer.write(stream_bytes)
-    pdf_buffer.write(b"\nendstream\nendobj\n")
-    
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
-    
-    xref_offset = pdf_buffer.tell()
-    pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
-    for off in offsets:
-        pdf_buffer.write(f"{off:010d} 00000 n \n".encode('latin-1'))
-        
-    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
-    
-    return pdf_buffer.getvalue()
+    return compilar_pdf_simple(stream)
+
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
+    fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    stream = f"""BT
+/F1 15 Tf
+40 790 Td
+(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 10 Tf
+0 -16 Td
+(COMPROBANTE DE ACEPTACION DE TARIFA Y COTIZACION MARITIMA) Tj
+0 -20 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -20 Td
+(NO. COTIZACION / CONTROL : CCM-COT-{id_cot:05d}) Tj
+/F1 9 Tf
+0 -14 Td
+(FECHA Y HORA DE EMISION : {fecha_hoy}) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -16 Td
+(DATOS DEL CLIENTE Y CASILLERO ASIGNADO:) Tj
+/F1 9 Tf
+0 -14 Td
+(CASILLERO INTERNACIONAL : {casillero}) Tj
+0 -12 Td
+(TITULAR DE LA CUENTA    : {nombre}) Tj
+0 -12 Td
+(TELEFONO / WHATSAPP    : {telefono}) Tj
+0 -12 Td
+(DESTINO FINAL          : {ciudad.upper()}, HONDURAS) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -16 Td
+(DESGLOSE DE LA CARGA COTIZADA:) Tj
+/F1 9 Tf
+0 -14 Td
+(MODALIDAD DE CARGA      : {tipo_carga.upper()}) Tj
+0 -12 Td
+(PESO CALCULADO         : {peso_lb:.2f} LBS  ({peso_kg:.2f} KG)) Tj
+0 -12 Td
+(VOLUMEN ESTIMADO        : {vol_m3:.4f} M3  ({vol_ft3:.2f} FT3)) Tj
+0 -12 Td
+(DESGLOSE DE TARIFA      : {detalle_tarifa}) Tj
+0 -18 Td
+(----------------------------------------------------------------) Tj
+/F1 13 Tf
+0 -16 Td
+(TOTAL FLETE MARITIMO ESTIMADO: ${total_usd:.2f} USD) Tj
+/F1 9 Tf
+0 -18 Td
+(================================================================) Tj
+/F1 10 Tf
+0 -16 Td
+(DIRECCION OFICIAL DE BODEGA EN GUANGZHOU, CHINA:) Tj
+/F1 8 Tf
+0 -13 Td
+(ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
+0 -11 Td
+(DIRECCION EN GUANGZHOU: CHILAT Logistics Warehouse, District B, Port Area) Tj
+0 -11 Td
+(TELEFONO EN CHINA    : +86 138 0000 0000) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 8 Tf
+0 -14 Td
+(DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
+0 -11 Td
+(El cliente declara estar conforme con la tarifa cotizada y las politicas) Tj
+0 -10 Td
+(de consolidacion maritima, desaduanaje y entrega en Honduras.) Tj
+ET"""
+    return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
 # 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
@@ -317,6 +393,20 @@ def init_db():
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS cotizaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_casillero TEXT NOT NULL,
+                alto_cm REAL,
+                ancho_cm REAL,
+                largo_cm REAL,
+                peso_lb REAL,
+                volumen_m3 REAL,
+                volumen_ft3 REAL,
+                total_usd REAL,
+                fecha TEXT NOT NULL
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS paquetes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tracking TEXT UNIQUE NOT NULL,
@@ -485,7 +575,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
+    # 7.2 VISTA REGISTRO
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -652,7 +742,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE
+# 8. PORTAL DEL CLIENTE (COTIZADOR CON BOTÓN DE CONFIRMACIÓN Y PDF)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -690,7 +780,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON REGLA ESTRICTA 390 KG (859.8 LB / CBM) ----------------
+    # ---------------- COTIZADOR CON CONFIRMACIÓN DE TARIFA ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -716,55 +806,113 @@ elif st.session_state["rol"] == "cliente":
             with c2:
                 if pe_lb <= 3.0:
                     tot = min_usd
-                    desc = f"Tarifa Mínima Base (1 a 3 lbs): **${min_usd:.2f} USD**"
+                    desc = f"Tarifa Mínima Base (1 a 3 lbs): ${min_usd:.2f} USD"
                 else:
                     tot = pe_lb * t_lb
-                    desc = f"Tarifa por Libra: **{pe_lb:.1f} lbs x ${t_lb:.2f}/lb**"
+                    desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
                 st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Flete marítimo e internación aduanal incluida.")
 
             st.info(f"📌 **Detalle:** {desc} (Aplica para paquetes de 1 a 99 lbs).")
+            
+            # Variables normalizadas para el PDF
+            al_val, an_val, la_val = 0.0, 0.0, 0.0
+            vol_m3_val, vol_ft3_val = 0.0, 0.0
+            detalle_pdf = desc
+            modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
 
         else:
             st.caption("Carga comercial: 1 Metro Cúbico (CBM) cubre hasta 390 kg (859.8 lbs). Cada fracción adicional de 390 kg liquida como CBM adicional.")
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c2: an = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c3: la = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0)
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0)
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0)
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0)
             with c4: 
-                pe_lb_com = st.number_input(
+                pe_lb = st.number_input(
                     "Peso Total (Libras / lb)", 
                     min_value=100.0, 
                     value=500.0, 
                     step=10.0,
                     help="Conversión: 390 kg = 859.8 lbs. Superar este umbral computa un segundo CBM o fracción correspondiente."
                 )
-                pe_kg_com = pe_lb_com / 2.20462
-                st.caption(f"Equivalente a: **{pe_kg_com:.2f} kg**")
+                pe_kg = pe_lb / 2.20462
+                st.caption(f"Equivalente a: **{pe_kg:.2f} kg**")
 
-            # Cálculo de volumen físico
-            vol_m3_fisico = (al * an * la) / 1_000_000.0
-            vol_ft3 = vol_m3_fisico * 35.3147
+            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+            vol_ft3_val = vol_m3_val * 35.3147
 
-            # Cálculo de volumen tasable por peso (1 CBM = 390 kg = 859.8 lbs)
-            vol_m3_peso = pe_kg_com / 390.0
-            cbm_facturable = max(vol_m3_fisico, vol_m3_peso)
-            
+            vol_m3_peso = pe_kg / 390.0
+            cbm_facturable = max(vol_m3_val, vol_m3_peso)
             tot = cbm_facturable * t_m3
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             m1, m2, m3 = st.columns(3)
             with m1:
-                st.metric("Volumen Físico (m³)", f"{vol_m3_fisico:.4f} m³", help="(Alto x Ancho x Largo en cm) / 1,000,000")
+                st.metric("Volumen Físico (m³)", f"{vol_m3_val:.4f} m³", help="(Alto x Ancho x Largo en cm) / 1,000,000")
             with m2:
                 st.metric("CBM Tasable Facturado", f"{cbm_facturable:.4f} CBM", help="Mayor entre el volumen físico y la relación de peso (1 CBM = 390 kg / 859.8 lbs)")
             with m3:
                 st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Tarifa base de $680.00 por CBM con desaduanaje incluido.")
 
-            if pe_kg_com > 390.0:
-                cbm_peso_entero = math.ceil(pe_kg_com / 390.0)
-                st.warning(f"⚖️ **Aviso de Peso Excedente:** El peso de **{pe_kg_com:.2f} kg ({pe_lb_com:.1f} lbs)** supera el límite de 390 kg (859.8 lbs) por CBM estándar, liquidándose proporcionalmente a **{cbm_facturable:.4f} CBM**.")
+            if pe_kg > 390.0:
+                st.warning(f"⚖️ **Aviso de Peso Excedente:** El peso de **{pe_kg:.2f} kg ({pe_lb:.1f} lbs)** supera el límite de 390 kg (859.8 lbs) por CBM estándar, liquidándose proporcionalmente a **{cbm_facturable:.4f} CBM**.")
             else:
                 st.success(f"📌 **Cálculo aplicado:** Tarifa Comercial CBM (${t_m3:.2f}/m³). Peso dentro del límite de 390 kg por CBM.")
+
+            detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+            modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
+
+        st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #374151;'>", unsafe_allow_html=True)
+        st.markdown("#### ✅ Confirmación de Tarifa & Emisión de Comprobante")
+        st.caption("Al confirmar, la cotización quedará registrada en el sistema y podrá descargar su comprobante oficial en PDF con su número de casillero.")
+
+        if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary", key="btn_confirmar_tarifa"):
+            f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
+                id_generado = cur.lastrowid
+            
+            st.session_state["ultima_cot_id"] = id_generado
+            st.session_state["datos_pdf_confirmado"] = {
+                "tipo_carga": modalidad_pdf,
+                "peso_lb": pe_lb,
+                "peso_kg": pe_kg,
+                "vol_m3": vol_m3_val,
+                "vol_ft3": vol_ft3_val,
+                "total_usd": tot,
+                "detalle_tarifa": detalle_pdf,
+                "id_cot": id_generado
+            }
+            st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
+
+        # Botón de descarga si ya confirmó
+        if "datos_pdf_confirmado" in st.session_state:
+            d_pdf = st.session_state["datos_pdf_confirmado"]
+            pdf_confirmacion_bytes = generar_pdf_confirmacion_cotizacion(
+                casillero=casillero,
+                nombre=nombre_cli,
+                telefono=tel_cli,
+                ciudad=ciu_cli,
+                tipo_carga=d_pdf["tipo_carga"],
+                peso_lb=d_pdf["peso_lb"],
+                peso_kg=d_pdf["peso_kg"],
+                vol_m3=d_pdf["vol_m3"],
+                vol_ft3=d_pdf["vol_ft3"],
+                total_usd=d_pdf["total_usd"],
+                detalle_tarifa=d_pdf["detalle_tarifa"],
+                id_cot=d_pdf["id_cot"]
+            )
+
+            st.download_button(
+                label=f"📄 Descargar Comprobante Oficial de Cotización en PDF (CCM-COT-{d_pdf['id_cot']:05d})",
+                data=pdf_confirmacion_bytes,
+                file_name=f"Comprobante_Cotizacion_{casillero}_COT{d_pdf['id_cot']:05d}.pdf",
+                mime="application/pdf",
+                key="btn_dl_confirmacion"
+            )
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -773,7 +921,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
         st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
 
-        pdf_bytes = generar_pdf_nativo(casillero, nombre_cli, tel_cli, ciu_cli)
+        pdf_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
 
         st.download_button(
             label="📄 Descargar Etiqueta de Envío en PDF (Para Proveedor)",
