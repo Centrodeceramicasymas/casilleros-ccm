@@ -9,7 +9,6 @@ import urllib.parse
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fpdf import FPDF
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA
@@ -30,91 +29,98 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADOR DE PDF (SHIPPING LABEL & INSTRUCCIONES)
+# 2. GENERADOR DE PDF NATIVO (SIN DEPENDENCIAS EXTERNAS)
 # ---------------------------------------------------------
-def generar_pdf_etiqueta(casillero, nombre, telefono, ciudad):
-    pdf = FPDF(orientation='P', unit='mm', format='A4')
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+def generar_pdf_nativo(casillero, nombre, telefono, ciudad):
+    """Genera un archivo PDF 1.4 binario válido usando la biblioteca estándar."""
+    stream_content = f"""BT
+/F1 16 Tf
+40 790 Td
+(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 10 Tf
+0 -18 Td
+(MARITIME CONSOLIDATION CARGO [CHINA -> HONDURAS]) Tj
+0 -30 Td
+(================================================================) Tj
+/F1 13 Tf
+0 -22 Td
+(CLIENT CODE / CASILLERO : {casillero}) Tj
+/F1 10 Tf
+0 -18 Td
+(CLIENT NAME: {nombre}) Tj
+0 -14 Td
+(CONTACT PHONE: {telefono}) Tj
+0 -14 Td
+(FINAL DESTINATION: {ciudad.upper()}, HONDURAS) Tj
+0 -22 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -18 Td
+(SHIP TO / WAREHOUSE IN CHINA [CHILAT]:) Tj
+/F1 9 Tf
+0 -14 Td
+(ATTN / RECEIVER : CHILAT / {casillero}) Tj
+0 -12 Td
+(ADDRESS : CHILAT Logistics Warehouse, District B, Port Area, Guangzhou) Tj
+0 -12 Td
+(WAREHOUSE TEL : +86 138 0000 0000) Tj
+0 -22 Td
+(================================================================) Tj
+/F1 10 Tf
+0 -18 Td
+(PACKAGE DETAILS: BOX [   ] OF [   ] | WEIGHT: _______ KG | VOL: _______ CBM) Tj
+0 -22 Td
+(----------------------------------------------------------------) Tj
+/F1 9 Tf
+0 -15 Td
+(INSTRUCTIONS FOR SUPPLIER [ALIBABA / MADE-IN-CHINA / 1688]:) Tj
+0 -13 Td
+(1. Paste this shipping label firmly on at least 2 sides of every box.) Tj
+0 -12 Td
+(2. Packages received without the Client Code will NOT be processed.) Tj
+0 -12 Td
+(3. Send domestic tracking number to the buyer immediately upon dispatch.) Tj
+ET"""
     
-    # Encabezado Principal
-    pdf.set_fill_color(15, 23, 42)
-    pdf.rect(10, 10, 190, 24, 'F')
-    pdf.set_font('Arial', 'B', 16)
-    pdf.set_text_color(56, 189, 248)
-    pdf.set_xy(10, 14)
-    pdf.cell(190, 8, 'CENTRO DE CERAMICAS Y MAS', 0, 1, 'C')
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(190, 6, 'MARITIME CONSOLIDATION CARGO (CHINA -> HONDURAS)', 0, 1, 'C')
+    stream_bytes = stream_content.encode('latin-1', 'replace')
+    stream_len = len(stream_bytes)
     
-    pdf.ln(8)
+    pdf_buffer = io.BytesIO()
+    pdf_buffer.write(b"%PDF-1.4\n")
     
-    # Recuadro de la Etiqueta Oficial
-    pdf.set_draw_color(0, 82, 204)
-    pdf.set_line_width(0.8)
-    pdf.rect(10, 42, 190, 95)
+    offsets = []
     
-    # Franja Código de Casillero
-    pdf.set_fill_color(0, 82, 204)
-    pdf.rect(12, 44, 186, 14, 'F')
-    pdf.set_font('Arial', 'B', 14)
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_xy(12, 47)
-    pdf.cell(186, 8, f'CLIENT CODE / LOCKER: {casillero}', 0, 1, 'C')
+    # Obj 1: Catálogo
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
     
-    # Datos del Cliente y Destino
-    pdf.set_text_color(15, 23, 42)
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_xy(15, 62)
-    pdf.cell(90, 6, f'CLIENT NAME: {nombre.upper()}', 0, 1)
-    pdf.set_xy(15, 68)
-    pdf.cell(90, 6, f'CONTACT PHONE: {telefono}', 0, 1)
-    pdf.set_xy(15, 74)
-    pdf.cell(90, 6, f'FINAL DESTINATION: {ciudad.upper()}, HONDURAS', 0, 1)
+    # Obj 2: Páginas
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
     
-    # Datos de Almacén en China
-    pdf.set_xy(105, 62)
-    pdf.set_font('Arial', 'B', 10)
-    pdf.cell(90, 6, 'SHIP TO / WAREHOUSE IN CHINA:', 0, 1)
-    pdf.set_font('Arial', '', 9)
-    pdf.set_xy(105, 68)
-    pdf.multi_cell(90, 5, f'ATTN: CHILAT / {casillero}\nAddress: CHILAT Logistics Warehouse, District B, Port Area, Guangzhou, China.\nWarehouse Tel: +86 138 0000 0000')
+    # Obj 3: Página individual
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
     
-    # Indicadores de Embalaje
-    pdf.set_draw_color(148, 163, 184)
-    pdf.line(15, 96, 195, 96)
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_xy(15, 100)
-    pdf.cell(60, 6, 'PACKAGE INFO: BOX [   ] OF [   ]', 0, 0)
-    pdf.cell(60, 6, 'GROSS WEIGHT: _______ KG', 0, 0)
-    pdf.cell(60, 6, 'VOLUME: _______ CBM', 0, 1)
+    # Obj 4: Flujo de contenido
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode('latin-1'))
+    pdf_buffer.write(stream_bytes)
+    pdf_buffer.write(b"\nendstream\nendobj\n")
     
-    # Advertencia en el Recuadro
-    pdf.set_fill_color(254, 242, 242)
-    pdf.rect(12, 114, 186, 20, 'F')
-    pdf.set_font('Arial', 'B', 9)
-    pdf.set_text_color(185, 28, 28)
-    pdf.set_xy(15, 116)
-    pdf.multi_cell(180, 5, 'MANDATORY: Supplier must paste this sticker on AT LEAST 2 SIDES of every box.\nPackages received without the Client Code clearly visible will NOT be processed.')
-
-    pdf.ln(18)
+    # Obj 5: Fuente Helvetica
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
     
-    # Sección 2: Instrucciones para el Proveedor
-    pdf.set_text_color(15, 23, 42)
-    pdf.set_font('Arial', 'B', 11)
-    pdf.cell(190, 6, 'INSTRUCTIONS FOR YOUR CHINESE SUPPLIER (Alibaba / Made-in-China / 1688)', 0, 1, 'L')
-    pdf.set_font('Arial', '', 9)
-    pdf.set_text_color(51, 65, 85)
-    pdf.multi_cell(190, 5, 'Please send this PDF document directly to your supplier and ensure they read the following instructions:\n\n'
-                          '1. Paste this shipping label securely on each carton.\n'
-                          '2. Clearly mark the Client Code on all shipping documents and commercial invoices.\n'
-                          '3. Share domestic tracking number with the buyer immediately upon dispatch.\n\n'
-                          'Note: Any parcel missing proper marking may experience significant consolidation delays.')
+    # Tabla XREF
+    xref_offset = pdf_buffer.tell()
+    pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
+    for off in offsets:
+        pdf_buffer.write(f"{off:010d} 00000 n \n".encode('latin-1'))
+        
+    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
     
-    # Retorno en Bytes
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    return pdf_bytes
+    return pdf_buffer.getvalue()
 
 # ---------------------------------------------------------
 # 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
@@ -434,7 +440,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
+    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y BOTÓN DE WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -554,7 +560,7 @@ if not st.session_state["autenticado"]:
                                     conn.commit()
 
                                     st.balloons()
-                                    st.success(f"🎉 ¡Casillero Creado Exitosamente!")
+                                    st.success("🎉 ¡Casillero Creado Exitosamente!")
                                     st.info(f"🔑 **Casillero Asignado:** `{n_cod}`\n\n🔒 **Contraseña Temporal:** `{n_pwd}`\n\n*Guarde estos datos para iniciar sesión.*")
                                     
                                     st.session_state["reg_paso"] = 1
@@ -601,7 +607,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESCARGA DE PDF STICKER)
+# 8. PORTAL DEL CLIENTE (DESCARGA DE PDF STICKER NATIVO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -667,8 +673,8 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
         st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
 
-        # Generar el PDF con los datos del usuario
-        pdf_bytes = generar_pdf_etiqueta(casillero, nombre_cli, tel_cli, ciu_cli)
+        # Generar el PDF nativo
+        pdf_bytes = generar_pdf_nativo(casillero, nombre_cli, tel_cli, ciu_cli)
 
         st.download_button(
             label="📄 Descargar Etiqueta de Envío en PDF (Para Proveedor)",
