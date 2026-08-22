@@ -1,428 +1,513 @@
 import streamlit as st
 import sqlite3
+import hashlib
+import random
+import string
 import csv
-from datetime import datetime
 import io
-import urllib.parse
+from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# 1. Configuración General
+# ---------------------------------------------------------
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# ---------------------------------------------------------
 st.set_page_config(
-    page_title="CCM Logistics Hub | Casilleros",
+    page_title="Centro de Cerámicas y Más | Logística",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-DB_NAME = "casilleros_ccm_v2.db"
+DB_NAME = "casilleros_ccm_v3.db"
 
-# 2. Estilos Visuales
+# Inyección de estilos inspirados en interfaces ERP / PSKCloud
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
-
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        background-color: #F8FAFC;
+        font-family: 'Inter', sans-serif;
     }
     
-    #MainMenu, header, footer {visibility: hidden;}
-
-    .brand-hero {
-        background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #1E3A8A 100%);
-        border-radius: 20px;
-        padding: 2.2rem 2rem;
+    /* Barra lateral estilo ERP */
+    [data-testid="stSidebar"] {
+        background-color: #0b132b;
+        border-right: 1px solid #1c2541;
+    }
+    [data-testid="stSidebar"] * {
+        color: #e0e1dd !important;
+    }
+    
+    /* Tarjetas de Métricas */
+    .erp-card {
+        background-color: #ffffff;
+        border-radius: 10px;
+        padding: 1.2rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        margin-bottom: 1rem;
+    }
+    .erp-badge {
+        background-color: #2563eb;
         color: white;
-        box-shadow: 0 15px 30px -10px rgba(15, 23, 42, 0.3);
-        margin-bottom: 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-    .brand-title {
-        font-size: 2.2rem;
-        font-weight: 800;
-        letter-spacing: -0.5px;
-        color: #FFFFFF;
-        margin: 0;
-    }
-    .brand-subtitle {
-        font-size: 0.95rem;
-        color: #94A3B8;
-        margin-top: 4px;
-    }
-    .badge-route {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 8px 16px;
-        border-radius: 9999px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: #38BDF8;
-    }
-    .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 1.2rem;
-        margin-bottom: 2rem;
-    }
-    .metric-box {
-        background: white;
-        border-radius: 16px;
-        padding: 1.4rem;
-        border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
-    }
-    .metric-name {
-        font-size: 0.8rem;
-        color: #64748B;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-    .metric-number {
-        font-size: 1.9rem;
-        font-weight: 800;
-        color: #0F172A;
-        margin-top: 6px;
-    }
-    .airway-bill {
-        background: #FFFFFF;
-        border: 2px dashed #94A3B8;
-        border-radius: 16px;
-        padding: 2rem;
-        position: relative;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.04);
-        margin: 1.5rem 0;
-    }
-    .bill-header {
-        display: flex;
-        justify-content: space-between;
-        border-bottom: 2px solid #0F172A;
-        padding-bottom: 1rem;
-        margin-bottom: 1.2rem;
-    }
-    .bill-title {
-        font-size: 1.2rem;
-        font-weight: 800;
-        color: #0F172A;
-    }
-    .barcode {
-        font-family: 'Space Mono', monospace;
-        letter-spacing: 4px;
-        font-weight: 700;
-        background: #F1F5F9;
-        padding: 4px 10px;
+        padding: 4px 8px;
         border-radius: 4px;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
+        font-weight: bold;
     }
-    .bill-data {
-        font-family: 'Space Mono', monospace;
-        color: #1E293B;
-        font-size: 0.95rem;
-        line-height: 1.8;
-    }
-    .chinese-instructions {
-        background: #FFFBEB;
-        border-left: 4px solid #F59E0B;
-        padding: 12px 16px;
-        border-radius: 8px;
+    
+    /* Cotizador Box */
+    .quote-box {
+        background-color: #f8fafc;
+        border: 1.5px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 1.5rem;
         margin-top: 1rem;
-        color: #92400E;
-        font-size: 0.9rem;
     }
+    .quote-total {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #16a34a;
+    }
+    
+    /* Botones primarios */
     div.stButton > button:first-child {
-        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
-        color: white !important;
-        font-weight: 700 !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 0.75rem 1.8rem !important;
+        border-radius: 8px;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 3. Base de Datos
-def obtener_conexion():
+# ---------------------------------------------------------
+# 2. GESTIÓN DE BASE DE DATOS
+# ---------------------------------------------------------
+def get_db():
     return sqlite3.connect(DB_NAME)
 
-def inicializar_bd():
-    with obtener_conexion() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS clientes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                codigo_casillero TEXT UNIQUE NOT NULL,
-                nombre_completo TEXT NOT NULL,
-                rtn_dni TEXT NOT NULL,
-                telefono TEXT NOT NULL,
-                correo TEXT NOT NULL,
-                departamento TEXT NOT NULL,
-                municipio TEXT NOT NULL,
-                direccion_entrega TEXT NOT NULL,
-                fecha_registro TEXT NOT NULL
+def hash_pw(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def generar_pin():
+    return "".join(random.choices(string.digits, k=6))
+
+def init_db():
+    with get_db() as conn:
+        c = conn.cursor()
+        # Tabla de configuración de tarifas
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS configuracion (
+                clave TEXT PRIMARY KEY,
+                valor REAL
             )
         """)
+        # Insertar tarifa inicial por defecto ($3.40 / lb)
+        c.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('tarifa_libra', 3.40)")
+        c.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('factor_volumen', 166.0)")
+        
+        # Tabla de usuarios y accesos
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_casillero TEXT UNIQUE,
+                nombre TEXT NOT NULL,
+                correo TEXT UNIQUE NOT NULL,
+                telefono TEXT,
+                dni TEXT,
+                rol TEXT NOT NULL, /* 'admin' o 'cliente' */
+                password_hash TEXT NOT NULL,
+                fecha_creacion TEXT NOT NULL
+            )
+        """)
+        
+        # Tabla de cotizaciones
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS cotizaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER,
+                codigo_casillero TEXT,
+                alto REAL,
+                ancho REAL,
+                largo REAL,
+                peso_lb REAL,
+                volumen_m3 REAL,
+                costo_total REAL,
+                fecha TEXT NOT NULL,
+                FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
+            )
+        """)
+        
+        # Crear Superusuario por defecto si no existe
+        admin_correo = "heribertoardon1998@gmail.com"
+        c.execute("SELECT id FROM usuarios WHERE correo = ?", (admin_correo,))
+        if not c.fetchone():
+            c.execute("""
+                INSERT INTO usuarios (codigo_casillero, nombre, correo, telefono, dni, rol, password_hash, fecha_creacion)
+                VALUES ('CCM-ADMIN-01', 'Domingo Heriberto Ardon', ?, '+504 0000-0000', 'ADMIN-01', 'admin', ?, ?)
+            """, (admin_correo, hash_pw("Admin2026!"), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
-def generar_codigo_automatico():
-    with obtener_conexion() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM clientes ORDER BY id DESC LIMIT 1")
-        ultimo = cursor.fetchone()
-        siguiente_id = 1 if ultimo is None else ultimo[0] + 1
-        return f"CCM-HN-{siguiente_id:03d}"
+init_db()
 
-def obtener_todos_los_clientes():
-    with obtener_conexion() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, codigo_casillero, nombre_completo, rtn_dni, telefono, correo, departamento, municipio, direccion_entrega, fecha_registro FROM clientes ORDER BY id DESC")
-        return cursor.fetchall()
-
-def contar_clientes():
-    with obtener_conexion() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM clientes")
-        return cursor.fetchone()[0]
-
-# 4. Envío de Correo Electrónico
-def enviar_correo_bienvenida(destinatario, nombre_cliente, codigo_casillero, telefono, depto, municipio, direccion):
+# ---------------------------------------------------------
+# 3. SERVICIO SMTP DE CORREOS
+# ---------------------------------------------------------
+def enviar_correo_credenciales(destinatario, nombre, codigo, password_plana, rol):
     try:
         remitente = st.secrets["EMAIL_REMITENTE"]
-        password = st.secrets["EMAIL_PASSWORD"]
+        password_smtp = st.secrets["EMAIL_PASSWORD"]
     except Exception:
-        return False, "Credenciales no configuradas en Secrets de Streamlit."
+        return False, "Secrets no configurados en Streamlit."
 
-    asunto = f"📦 Apertura de Casillero Exitoso - {codigo_casillero} (Centro de Cerámicas y Más)"
-    cuerpo_html = f"""
+    asunto = f"🔐 Credenciales de Acceso - Centro de Cerámicas y Más [{codigo}]"
+    
+    html = f"""
     <!DOCTYPE html>
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #1e293b;">
-        <div style="background: #ffffff; max-width: 650px; margin: auto; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0;">
-            <div style="background: #0f172a; color: #ffffff; padding: 18px; border-radius: 8px; text-align: center;">
+        <div style="background: #ffffff; max-width: 600px; margin: auto; padding: 25px; border-radius: 10px; border: 1px solid #e2e8f0;">
+            <div style="background: #0b132b; color: white; padding: 15px; border-radius: 8px; text-align: center;">
                 <h2 style="margin:0; color:#38bdf8;">CENTRO DE CERÁMICAS Y MÁS</h2>
-                <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">Sistema de Casilleros e Importaciones Directas China ➔ Honduras</p>
+                <p style="margin:0; font-size: 12px; color: #94a3b8;">Sistema de Gestión Logística & Casilleros</p>
             </div>
             
-            <p>Estimado(a) <strong>{nombre_cliente}</strong>,</p>
-            <p>Su casillero internacional ha sido activado con éxito. A continuación encontrará sus datos registrados y la <strong>Ficha Oficial de Consignación</strong> para sus proveedores:</p>
+            <p>Estimado(a) <strong>{nombre}</strong>,</p>
+            <p>Se ha generado su cuenta en la plataforma con el rol de <strong>{rol.upper()}</strong>. A continuación se detallan sus credenciales de inicio de sesión:</p>
             
-            <div style="text-align: center; margin: 15px 0;">
-                <span style="font-size: 22px; font-weight: bold; color: #2563eb; background: #eff6ff; padding: 8px 18px; border-radius: 6px; border: 1px solid #bfdbfe;">
-                    CÓDIGO ASIGNADO: {codigo_casillero}
-                </span>
+            <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 15px; border-radius: 6px; margin: 15px 0;">
+                <p style="margin: 3px 0;">👤 <strong>Usuario / Correo:</strong> {destinatario}</p>
+                <p style="margin: 3px 0;">🔑 <strong>PIN / Contraseña Temporal:</strong> <code style="font-size:16px; color:#1e40af; font-weight:bold;">{password_plana}</code></p>
+                <p style="margin: 3px 0;">📦 <strong>Código de Casillero:</strong> {codigo}</p>
             </div>
 
-            <div style="background-color: #f1f5f9; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; font-size: 13px;">
-                <strong>📋 Datos de Entrega en Honduras:</strong><br>
-                • <strong>Teléfono / WhatsApp:</strong> {telefono}<br>
-                • <strong>Destino Final:</strong> {municipio}, {depto}<br>
-                • <strong>Dirección de Entrega:</strong> {direccion}
+            <div style="background-color: #fffbeb; border: 1.5px dashed #d97706; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px;">
+                <strong>DIRECCIÓN DE BODEGA EN CHINA (CONSIGNACIÓN):</strong><br>
+                ATTN / RECEIVER: CHILAT / {codigo}<br>
+                CLIENT NAME: {nombre}<br>
+                DESTINO: HONDURAS
             </div>
 
-            <div style="background-color: #fffbeb; border: 2px dashed #d97706; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 13px;">
-                <strong>📦 SHIP TO / DIRECCIÓN EN BODEGA CHINA (CHILAT):</strong><br>
-                ATTN / RECEIVER : CHILAT / {codigo_casillero}<br>
-                CLIENT NAME     : {nombre_cliente}<br>
-                COUNTRY         : HONDURAS<br>
-                TEL             : {telefono}<br>
-                <hr style="border-top: 1px dashed #d97706; margin: 10px 0;">
-                <strong>Instrucciones para el vendedor en China (Alibaba / Taobao):</strong><br>
-                "Dear supplier, please ensure you paste our shipping label firmly on each box before dispatching. Packages without Client Code: {codigo_casillero} will be rejected."<br><br>
-                <strong>中文说明:</strong><br>
-                亲爱的卖家，发货前请务必在每个外箱上牢固张贴我们的唛头。外箱必须清晰标注客户代码：{codigo_casillero}，否则仓库将拒收该包裹。
-            </div>
-
-            <p style="font-size:12px; color:#64748b; margin-top:20px; text-align: center;">
-                Centro de Cerámicas y Más • Servicios Logísticos Internacionales
+            <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
+                Por seguridad, puede actualizar su contraseña una vez dentro del portal.
             </p>
         </div>
     </body>
     </html>
     """
-
-    mensaje = MIMEMultipart("alternative")
-    mensaje["Subject"] = asunto
-    mensaje["From"] = f"Centro de Cerámicas y Más <{remitente}>"
-    mensaje["To"] = destinatario
-    mensaje.attach(MIMEText(cuerpo_html, "html"))
+    
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = asunto
+    msg["From"] = f"CCM Logística <{remitente}>"
+    msg["To"] = destinatario
+    msg.attach(MIMEText(html, "html"))
 
     try:
-        servidor = smtplib.SMTP("smtp.gmail.com", 587)
-        servidor.starttls()
-        servidor.login(remitente, password)
-        servidor.sendmail(remitente, destinatario, mensaje.as_string())
-        servidor.quit()
-        return True, "Correo enviado exitosamente"
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(remitente, password_smtp)
+        server.sendmail(remitente, destinatario, msg.as_string())
+        server.quit()
+        return True, "Enviado exitosamente."
     except Exception as e:
         return False, str(e)
 
-inicializar_bd()
+# ---------------------------------------------------------
+# 4. GESTIÓN DE SESIÓN Y AUTENTICACIÓN
+# ---------------------------------------------------------
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+    st.session_state.usuario = None
 
-# 5. Encabezado Principal
-st.markdown("""
-<div class="brand-hero">
-    <div>
-        <h1 class="brand-title">📦 CENTRO DE CERÁMICAS Y MÁS</h1>
-        <div class="brand-subtitle">Plataforma Logística de Casilleros & Importaciones Consolidadas</div>
-    </div>
-    <div class="badge-route">
-        🇨🇳 Yiwu / Guangzhou ➔ 🇭🇳 Honduras
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# 6. Navegación por Pestañas
-tab1, tab2, tab3 = st.tabs([
-    "✨  Apertura de Casillero", 
-    "📊  Directorio & Métricas", 
-    "🏷️  Generador de Guías"
-])
-
-# --- PESTAÑA 1: FORMULARIO DE REGISTRO ---
-with tab1:
-    codigo_siguiente = generar_codigo_automatico()
-    st.markdown(f"#### 📝 Registro de Cliente — Código Asignado: **`{codigo_siguiente}`**")
-    
-    with st.form("form_alta", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            nombre = st.text_input("Nombre Completo *", placeholder="Ej. Roberto Castillo")
-            dni = st.text_input("DNI o RTN *", placeholder="Ej. 0501199201234")
-            telefono = st.text_input("WhatsApp / Celular *", placeholder="Ej. +504 9988-7766")
-            correo = st.text_input("Correo Electrónico (Para recibir ficha) *", placeholder="cliente@gmail.com")
-        with col2:
-            depto = st.text_input("Departamento *", placeholder="Ej. Cortés")
-            ciudad = st.text_input("Municipio / Ciudad *", placeholder="Ej. San Pedro Sula")
-            direccion = st.text_area("Dirección Exacta de Destino Final *", placeholder="Col. Moderna, 3ra calle...")
-            
-        guardar = st.form_submit_button("🚀 Confirmar Registro y Enviar Ficha")
+def login_form():
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 1.5, 1])
+    with c2:
+        st.markdown("""
+        <div style="background:#0f172a; padding:20px; border-radius:12px; text-align:center; color:white; margin-bottom:1.5rem;">
+            <h2 style="margin:0; color:#38bdf8;">📦 CCM LOGISTICS</h2>
+            <p style="margin:0; font-size:0.85rem; color:#94a3b8;">Centro de Cerámicas y Más — Portal de Clientes y Administración</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-    if guardar:
-        if not (nombre and dni and telefono and correo and depto and ciudad and direccion):
-            st.error("⚠️ Complete todos los campos obligatorios (*).")
-        else:
-            fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            try:
-                with obtener_conexion() as conn:
+        with st.form("login_box"):
+            correo_input = st.text_input("Correo Electrónico")
+            pw_input = st.text_input("Contraseña o PIN", type="password")
+            btn_login = st.form_submit_button("Iniciar Sesión", use_container_width=True)
+            
+            if btn_login:
+                with get_db() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        INSERT INTO clientes (
-                            codigo_casillero, nombre_completo, rtn_dni, 
-                            telefono, correo, departamento, municipio, 
-                            direccion_entrega, fecha_registro
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (codigo_siguiente, nombre, dni, telefono, correo, depto, ciudad, direccion, fecha_hora))
-                
-                st.balloons()
-                st.success(f"✅ ¡Casillero aperturado con éxito para **{nombre}**!")
-                
-                # Envío de correo
-                enviado, detalle = enviar_correo_bienvenida(correo, nombre, codigo_siguiente, telefono, depto, ciudad, direccion)
-                if enviado:
-                    st.info(f"📧 Se envió la ficha completa al correo: **{correo}**")
-                else:
-                    st.warning(f"⚠️ Cliente guardado, pero no se pudo enviar correo: {detalle}")
-                
-                # Ficha en pantalla
-                st.markdown(f"""
-                <div class="airway-bill">
-                    <div class="bill-header">
-                        <div>
-                            <span class="bill-title">SHIPPING INSTRUCTIONS / FICHA OFICIAL</span><br>
-                            <span style="font-size:0.8rem; color:#64748B;">CCM WAREHOUSE CONSOLIDATION</span>
-                        </div>
-                        <div class="barcode">||| {codigo_siguiente} |||</div>
-                    </div>
-                    <div class="bill-data">
-                        <strong>ATTN / RECEIVER:</strong> CHILAT / {codigo_siguiente}<br>
-                        <strong>CLIENT NAME:</strong> {nombre}<br>
-                        <strong>DESTINATION:</strong> HONDURAS (CA)<br>
-                        <strong>CONTACT:</strong> {telefono}<br>
-                        <strong>EMAIL:</strong> {correo}
-                    </div>
-                    <div class="chinese-instructions">
-                        <strong>⚠️ 中文说明 (Para el proveedor chino):</strong><br>
-                        亲爱的卖家，发货前请务必在每个外箱上牢固张贴我们的唛头。外箱必须清晰标注客户代码：<strong>{codigo_siguiente}</strong>，否则仓库将拒收该包裹。
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # WhatsApp
-                msg_whatsapp = (
-                    f"📦 *CENTRO DE CERÁMICAS Y MÁS — FICHA DE CASILLERO*\n\n"
-                    f"Estimado(a) {nombre}, su casillero ha sido activado:\n\n"
-                    f"🔑 *CÓDIGO:* {codigo_siguiente}\n"
-                    f"📍 *ATTN:* CHILAT / {codigo_siguiente}\n"
-                    f"🏷️ *CLIENT:* {nombre}\n"
-                    f"🇭🇳 *DESTINO:* HONDURAS"
-                )
-                url_wa = f"https://wa.me/{telefono.replace('+', '').replace(' ', '').replace('-', '')}?text={urllib.parse.quote(msg_whatsapp)}"
-                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background-color:#22C55E; color:white; border:none; padding:10px 18px; border-radius:8px; font-weight:700; cursor:pointer;">📲 Enviar Ficha por WhatsApp</button></a>', unsafe_allow_html=True)
-                
-            except sqlite3.Error as e:
-                st.error(f"❌ Error en base de datos: {e}")
+                        SELECT id, codigo_casillero, nombre, correo, rol, password_hash 
+                        FROM usuarios WHERE correo = ?
+                    """, (correo_input.strip(),))
+                    user = cursor.fetchone()
+                    
+                    if user and user[5] == hash_pw(pw_input):
+                        st.session_state.autenticado = True
+                        st.session_state.usuario = {
+                            "id": user[0],
+                            "codigo": user[1],
+                            "nombre": user[2],
+                            "correo": user[3],
+                            "rol": user[4]
+                        }
+                        st.rerun()
+                    else:
+                        st.error("Credenciales incorrectas. Verifique su correo o PIN.")
 
-# --- PESTAÑA 2: DIRECTORIO ---
-with tab2:
-    total_registrados = contar_clientes()
+# Si no ha iniciado sesión, mostrar pantalla de Login
+if not st.session_state.autenticado:
+    login_form()
+    st.stop()
+
+# ---------------------------------------------------------
+# 5. PANEL PRINCIPAL (POST-LOGIN)
+# ---------------------------------------------------------
+usuario_actual = st.session_state.usuario
+
+# Barra Lateral con Estilo ERP
+with st.sidebar:
     st.markdown(f"""
-    <div class="metric-grid">
-        <div class="metric-box"><div class="metric-name">Total Clientes</div><div class="metric-number">{total_registrados}</div></div>
-        <div class="metric-box"><div class="metric-name">Bodega Origen</div><div class="metric-number" style="font-size:1.4rem;">🇨🇳 Chilat Warehouse</div></div>
-        <div class="metric-box"><div class="metric-name">Destino</div><div class="metric-number" style="font-size:1.4rem;">🇭🇳 Honduras</div></div>
+    <div style="padding:10px 0; border-bottom:1px solid #1c2541; margin-bottom:1rem;">
+        <span class="erp-badge">{usuario_actual['rol'].upper()}</span>
+        <h4 style="margin:6px 0 0 0; color:#ffffff;">{usuario_actual['nombre']}</h4>
+        <small style="color:#94a3b8;">{usuario_actual['codigo']}</small>
     </div>
     """, unsafe_allow_html=True)
     
-    clientes = obtener_todos_los_clientes()
-    if not clientes:
-        st.info("📦 Aún no hay registros en el sistema.")
+    if usuario_actual['rol'] == 'admin':
+        menu = st.radio(
+            "Módulos Administrativos",
+            ["📊 Dashboard & Métricas", "👥 Gestión de Usuarios", "⚙️ Parámetros & Tarifas", "🧮 Cotizador Pro"]
+        )
     else:
-        busqueda = st.text_input("Buscador rápido:", placeholder="Filtrar por nombre, código, teléfono o correo...")
-        filtrados = [
-            c for c in clientes
-            if busqueda.lower() in str(c[1]).lower() or 
-               busqueda.lower() in str(c[2]).lower() or 
-               busqueda.lower() in str(c[4]).lower() or
-               busqueda.lower() in str(c[5]).lower()
-        ]
+        menu = st.radio(
+            "Portal de Usuario",
+            ["🧮 Calculadora & Cotizaciones", "🏷️ Mi Ficha de Bodega (China)", "📜 Historial de Mis Cotizaciones"]
+        )
         
-        datos_tabla = [{
-            "Código": c[1], "Cliente": c[2], "RTN/DNI": c[3], "WhatsApp": c[4],
-            "Correo": c[5], "Ubicación": f"{c[7]}, {c[6]}", "Dirección": c[8], "Fecha": c[9]
-        } for c in filtrados]
-        
-        st.dataframe(datos_tabla, use_container_width=True)
-        
-        csv_buffer = io.StringIO()
-        writer = csv.writer(csv_buffer)
-        writer.writerow(["ID", "Código", "Nombre", "DNI", "Teléfono", "Correo", "Departamento", "Municipio", "Dirección", "Fecha"])
-        for c in clientes:
-            writer.writerow(c)
-            
-        st.download_button("📥 Descargar Base a Excel (CSV)", data=csv_buffer.getvalue(), file_name="casilleros_ccm.csv", mime="text/csv")
+    st.markdown("---")
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        st.session_state.autenticado = False
+        st.session_state.usuario = None
+        st.rerun()
 
-# --- PESTAÑA 3: ETIQUETAS ---
-with tab3:
-    st.markdown("#### 🏷️ Re-enviar o Consultar Ficha")
-    clientes = obtener_todos_los_clientes()
-    if clientes:
-        mapeo = {f"{c[1]} — {c[2]}": c for c in clientes}
-        sel = st.selectbox("Selecciona un cliente:", list(mapeo.keys()))
-        c = mapeo[sel]
+# ---------------------------------------------------------
+# 6. VISTAS DEL SUPERUSUARIO (ADMIN)
+# ---------------------------------------------------------
+if usuario_actual['rol'] == 'admin':
+    
+    if menu == "📊 Dashboard & Métricas":
+        st.title("📊 Panel de Control y Operaciones")
+        
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM usuarios WHERE rol = 'cliente'")
+            total_clientes = c.fetchone()[0]
+            c.execute("SELECT COUNT(*), IFNULL(SUM(costo_total), 0) FROM cotizaciones")
+            total_cotiz, suma_cotiz = c.fetchone()
+            
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Clientes Registrados", total_clientes)
+        c2.metric("Cotizaciones Generadas", total_cotiz)
+        c3.metric("Volumen Estimado Cotizado", f"${suma_cotiz:,.2f}")
+        
+        st.markdown("### 📋 Registro General de Operaciones")
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT c.id, c.codigo_casillero, u.nombre, c.peso_lb, c.volumen_m3, c.costo_total, c.fecha 
+                FROM cotizaciones c
+                LEFT JOIN usuarios u ON c.usuario_id = u.id
+                ORDER BY c.id DESC
+            """)
+            rows = c.fetchall()
+            
+        if rows:
+            data = [{
+                "ID": r[0], "Casillero": r[1], "Cliente": r[2], "Peso (lb)": f"{r[3]} lb",
+                "Volumen": f"{r[4]:.4f} m³", "Total ($)": f"${r[5]:.2f}", "Fecha": r[6]
+            } for r in rows]
+            st.dataframe(data, use_container_width=True)
+        else:
+            st.info("Aún no hay cotizaciones registradas en la base de datos.")
+
+    elif menu == "👥 Gestión de Usuarios":
+        st.title("👥 Gestión y Alta de Usuarios")
+        
+        tab_crear, tab_listar = st.tabs(["➕ Registrar Nuevo Usuario", "📋 Directorio de Usuarios"])
+        
+        with tab_crear:
+            with st.form("form_alta_usuario", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    nombre = st.text_input("Nombre Completo *")
+                    correo = st.text_input("Correo Electrónico *")
+                    telefono = st.text_input("Teléfono / WhatsApp *")
+                with c2:
+                    dni = st.text_input("DNI / RTN *")
+                    rol = st.selectbox("Rol Asignado", ["cliente", "admin"])
+                    
+                btn_crear = st.form_submit_button("Crear Usuario y Enviar Credenciales", use_container_width=True)
+                
+            if btn_crear:
+                if not (nombre and correo and telefono and dni):
+                    st.error("Todos los campos marcados con (*) son obligatorios.")
+                else:
+                    with get_db() as conn:
+                        c = conn.cursor()
+                        c.execute("SELECT COUNT(*) FROM usuarios")
+                        count = c.fetchone()[0] + 1
+                        nuevo_codigo = f"CCM-HN-{count:03d}" if rol == 'cliente' else f"CCM-ADM-{count:02d}"
+                        pin_generado = generar_pin()
+                        
+                        try:
+                            c.execute("""
+                                INSERT INTO usuarios (codigo_casillero, nombre, correo, telefono, dni, rol, password_hash, fecha_creacion)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (nuevo_codigo, nombre, correo.strip(), telefono, dni, rol, hash_pw(pin_generado), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                            
+                            enviado, log_correo = enviar_correo_credenciales(correo.strip(), nombre, nuevo_codigo, pin_generado, rol)
+                            
+                            st.success(f"✅ Usuario creado con éxito. Código asignado: **{nuevo_codigo}**")
+                            if enviado:
+                                st.info(f"📧 Credenciales enviadas automáticamente a **{correo}**.")
+                            else:
+                                st.warning(f"⚠️ El usuario se creó pero el correo falló: {log_correo}")
+                        except sqlite3.IntegrityError:
+                            st.error("Ya existe un usuario con ese correo electrónico.")
+
+        with tab_listar:
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute("SELECT id, codigo_casillero, nombre, correo, telefono, dni, rol, fecha_creacion FROM usuarios ORDER BY id DESC")
+                users = c.fetchall()
+            
+            data_u = [{
+                "ID": u[0], "Código": u[1], "Nombre": u[2], "Correo": u[3],
+                "Teléfono": u[4], "DNI": u[5], "Rol": u[6], "Fecha": u[7]
+            } for u in users]
+            st.dataframe(data_u, use_container_width=True)
+
+    elif menu == "⚙️ Parámetros & Tarifas":
+        st.title("⚙️ Gestión Dinámica de Tarifas")
+        st.caption("Modifique las listas de precios en tiempo real sin reiniciar el sistema.")
+        
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT valor FROM configuracion WHERE clave = 'tarifa_libra'")
+            t_libra = c.fetchone()[0]
+            
+        with st.form("form_tarifas"):
+            nueva_tarifa = st.number_input("Tarifa Base por Libra ($ USD)", min_value=0.50, max_value=50.00, value=float(t_libra), step=0.10)
+            btn_guardar_tarifa = st.form_submit_button("Actualizar Tarifas")
+            
+            if btn_guardar_tarifa:
+                with get_db() as conn:
+                    c = conn.cursor()
+                    c.execute("UPDATE configuracion SET valor = ? WHERE clave = 'tarifa_libra'", (nueva_tarifa,))
+                st.success(f"Tarifa actualizada correctamente a ${nueva_tarifa:.2f} / lb.")
+                st.rerun()
+
+# ---------------------------------------------------------
+# 7. VISTAS DEL CLIENTE Y COTIZADOR
+# ---------------------------------------------------------
+if usuario_actual['rol'] == 'cliente' or menu == "🧮 Cotizador Pro":
+    
+    if menu in ["🧮 Calculadora & Cotizaciones", "🧮 Cotizador Pro"]:
+        st.title("🧮 Cotizador de Flete Internacional")
+        st.caption("Calcule al instante el volumen y costo estimado de flete marítimo/aéreo desde China a Honduras.")
+        
+        # Obtener tarifa vigente
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT valor FROM configuracion WHERE clave = 'tarifa_libra'")
+            tarifa_actual = c.fetchone()[0]
+            
+        st.info(f"💡 Tarifa vigente aplicada: **${tarifa_actual:.2f} USD / libra**")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### 📏 Dimensiones del Bulto (cm)")
+            alto = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0)
+            ancho = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0)
+            largo = st.number_input("Largo (cm)", min_value=1.0, value=30.0, step=1.0)
+            
+        with c2:
+            st.markdown("##### ⚖️ Peso")
+            peso = st.number_input("Peso en Libras (lb)", min_value=0.5, value=5.0, step=0.5)
+            
+        # Cálculos en tiempo real
+        volumen_m3 = (alto * ancho * largo) / 1_000_000.0
+        costo_estimado = peso * tarifa_actual
         
         st.markdown(f"""
-        <div class="airway-bill">
-            <div class="bill-header">
-                <div><span class="bill-title">SHIPPING LABEL</span></div>
-                <div class="barcode">||| {c[1]} |||</div>
-            </div>
-            <div class="bill-data">
-                <strong>ATTN / RECEIVER:</strong> CHILAT / {c[1]}<br>
-                <strong>CLIENT NAME:</strong> {c[2]}<br>
-                <strong>PHONE:</strong> {c[4]}<br>
-                <strong>EMAIL:</strong> {c[5]}
+        <div class="quote-box">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="color:#64748b; font-size:0.9rem;">VOLUMEN CALCULADO:</span><br>
+                    <strong style="font-size:1.4rem; color:#0f172a;">{volumen_m3:.4f} m³</strong>
+                </div>
+                <div style="text-align:right;">
+                    <span style="color:#64748b; font-size:0.9rem;">TOTAL ESTIMADO DE FLETE:</span><br>
+                    <span class="quote-total">${costo_estimado:.2f} USD</span>
+                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("💾 Guardar y Registrar Cotización", use_container_width=True):
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute("""
+                    INSERT INTO cotizaciones (usuario_id, codigo_casillero, alto, ancho, largo, peso_lb, volumen_m3, costo_total, fecha)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    usuario_actual['id'], usuario_actual['codigo'],
+                    alto, ancho, largo, peso, volumen_m3, costo_estimado,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ))
+            st.success("✅ Cotización guardada en su historial operativo.")
+
+    elif menu == "🏷️ Mi Ficha de Bodega (China)":
+        st.title("🏷️ Instrucciones de Envío a Bodega en China")
+        
+        st.markdown(f"""
+        <div class="erp-card" style="border: 2px dashed #94a3b8; padding: 2rem;">
+            <h3 style="margin-top:0; color:#0f172a;">FICHA OFICIAL DE CONSIGNACIÓN</h3>
+            <p style="font-family: monospace; font-size: 1rem; line-height: 1.8;">
+                <strong>ATTN / RECEIVER:</strong> CHILAT / {usuario_actual['codigo']}<br>
+                <strong>CLIENT NAME:</strong> {usuario_actual['nombre']}<br>
+                <strong>COUNTRY / DESTINATION:</strong> HONDURAS (CA)<br>
+                <strong>CONTACT:</strong> {usuario_actual['correo']}
+            </p>
+            <div style="background-color:#fffbeb; border-left:4px solid #f59e0b; padding:12px; border-radius:6px; margin-top:1rem; color:#92400e;">
+                <strong>⚠️ Mensaje en Chino para el Proveedor de Alibaba / Taobao:</strong><br>
+                亲爱的卖家，发货前请务必在每个外箱上牢固张贴我们的唛头。外箱必须清晰标注客户代码：<strong>{usuario_actual['codigo']}</strong>，否则仓库将拒收该包裹。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    elif menu == "📜 Historial de Mis Cotizaciones":
+        st.title("📜 Historial de Cotizaciones")
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT id, alto, ancho, largo, peso_lb, volumen_m3, costo_total, fecha 
+                FROM cotizaciones 
+                WHERE usuario_id = ? 
+                ORDER BY id DESC
+            """, (usuario_actual['id'],))
+            mis_cots = c.fetchall()
+            
+        if mis_cots:
+            data_m = [{
+                "# Cotización": m[0], "Dimensiones (cm)": f"{m[1]}x{m[2]}x{m[3]}",
+                "Peso": f"{m[4]} lb", "Volumen": f"{m[5]:.4f} m³",
+                "Total Cotizado": f"${m[6]:.2f}", "Fecha": m[7]
+            } for m in mis_cots]
+            st.dataframe(data_m, use_container_width=True)
+        else:
+            st.info("Aún no tienes cotizaciones guardadas.")
