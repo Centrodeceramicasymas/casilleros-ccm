@@ -33,10 +33,10 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS CON MEDIDAS DINÁMICAS
+# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    """Compilador de PDF 1.4 binario estándar."""
+    """Compilador de PDF 1.4 binario estándar sin dependencias externas."""
     stream_bytes = stream_content.encode('latin-1', 'replace')
     stream_len = len(stream_bytes)
     
@@ -70,7 +70,7 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0):
-    """Documento 1: Para el Fabricante con medidas y peso exactos (sin tarifas)."""
+    """Documento 1: Para el Fabricante/Proveedor (Con medidas y peso, sin precios)."""
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
@@ -211,7 +211,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. ESTILOS CSS RESPONSIVOS
+# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -464,7 +464,7 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero_dni(dni_raw):
-    """Toma los primeros 8 dígitos del DNI ingresado."""
+    """Toma los primeros 8 dígitos del número de DNI ingresado."""
     solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
@@ -509,8 +509,8 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad"]:
-        st.session_state[k] = None
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id"]:
+        st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.rerun()
@@ -572,6 +572,7 @@ if not st.session_state["autenticado"]:
                             st.session_state["rol"] = user[4]
                             st.session_state["telefono"] = user[6]
                             st.session_state["ciudad"] = user[7]
+                            st.session_state.pop("datos_pdf_confirmado", None)
                             st.rerun()
                     else:
                         st.error("❌ Credenciales inválidas.")
@@ -760,7 +761,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (COTIZADOR CON DIMENSIONES EN AMBOS CASOS)
+# 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -798,7 +799,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON MEDIDAS EN PAQUETERÍA Y CARGA COMERCIAL ----------------
+    # ---------------- COTIZADOR CON DIMENSIONES Y CONFIRMACIÓN CORREGIDA ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -815,7 +816,7 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
-        # OPCIÓN 1: PAQUETERÍA MENOR (CON ENTRADA DE DIMENSIONES COMPLETA)
+        # OPCIÓN 1: PAQUETERÍA MENOR
         if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
             st.caption("Ingrese las dimensiones y peso real del paquete menor (1 a 99 lbs):")
             c1, c2, c3, c4 = st.columns(4)
@@ -924,10 +925,20 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS CON MEDIDAS ----------------
-        if "datos_pdf_confirmado" in st.session_state:
+        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS CON MEDIDAS (ACCESO SEGURO CON .GET) ----------------
+        if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            id_c = d_pdf["id_cot"]
+            id_c = d_pdf.get("id_cot", 1)
+            al_guardado = d_pdf.get("al", 0.0)
+            an_guardado = d_pdf.get("an", 0.0)
+            la_guardado = d_pdf.get("la", 0.0)
+            pe_lb_guardado = d_pdf.get("peso_lb", 0.0)
+            pe_kg_guardado = d_pdf.get("peso_kg", 0.0)
+            vol_m3_guardado = d_pdf.get("vol_m3", 0.0)
+            vol_ft3_guardado = d_pdf.get("vol_ft3", 0.0)
+            total_usd_guardado = d_pdf.get("total_usd", 0.0)
+            detalle_guardado = d_pdf.get("detalle_tarifa", "")
+            tipo_carga_guardada = d_pdf.get("tipo_carga", "Carga")
 
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             col_doc1, col_doc2 = st.columns(2, gap="large")
@@ -940,7 +951,7 @@ elif st.session_state["rol"] == "cliente":
                     <h4 style="margin: 6px 0; color: #38bdf8;">DOCUMENTO 1: PARA EL FABRICANTE</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
                         <b>Envíe este PDF a su proveedor en China.</b><br>
-                        (Incluye casillero <b>{casillero}</b>, dimensiones <b>{d_pdf['al']}x{d_pdf['an']}x{d_pdf['la']} cm</b>, peso e instrucciones. <u>Sin tarifas ni costos</u>).
+                        (Incluye casillero <b>{casillero}</b>, dimensiones <b>{al_guardado:.1f}x{an_guardado:.1f}x{la_guardado:.1f} cm</b>, peso e instrucciones. <u>Sin tarifas ni costos</u>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -950,12 +961,12 @@ elif st.session_state["rol"] == "cliente":
                     nombre=nombre_cli,
                     telefono=tel_cli,
                     ciudad=ciu_cli,
-                    al=d_pdf["al"],
-                    an=d_pdf["an"],
-                    la=d_pdf["la"],
-                    pe_lb=d_pdf["peso_lb"],
-                    pe_kg=d_pdf["peso_kg"],
-                    vol_m3=d_pdf["vol_m3"]
+                    al=al_guardado,
+                    an=an_guardado,
+                    la=la_guardado,
+                    pe_lb=pe_lb_guardado,
+                    pe_kg=pe_kg_guardado,
+                    vol_m3=vol_m3_guardado
                 )
                 st.download_button(
                     label="📥 Descargar Etiqueta para Fabricante (PDF)",
@@ -967,7 +978,7 @@ elif st.session_state["rol"] == "cliente":
 
             # DOCUMENTO 2: PARA WHATSAPP CCM (CON MEDIDAS Y PRECIOS)
             with col_doc2:
-                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Medidas: {d_pdf['al']}x{d_pdf['an']}x{d_pdf['la']} cm | Peso: {d_pdf['peso_lb']:.1f} lbs. Total: ${d_pdf['total_usd']:.2f} USD."
+                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Medidas: {al_guardado:.1f}x{an_guardado:.1f}x{la_guardado:.1f} cm | Peso: {pe_lb_guardado:.1f} lbs. Total: ${total_usd_guardado:.2f} USD."
                 url_wa_cot = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa_cot)}"
 
                 st.markdown(f"""
@@ -976,7 +987,7 @@ elif st.session_state["rol"] == "cliente":
                     <h4 style="margin: 6px 0; color: #22c55e;">DOCUMENTO 2: PARA NUESTRO WHATSAPP</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
                         <b>Descargue este comprobante y envíelo a nuestro WhatsApp.</b><br>
-                        (Contiene control <b>CCM-COT-{id_c:05d}</b>, medidas completas, CBM y flete liquidado: <b>${d_pdf['total_usd']:.2f} USD</b>).
+                        (Contiene control <b>CCM-COT-{id_c:05d}</b>, medidas completas, CBM y flete liquidado: <b>${total_usd_guardado:.2f} USD</b>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -986,16 +997,16 @@ elif st.session_state["rol"] == "cliente":
                     nombre=nombre_cli,
                     telefono=tel_cli,
                     ciudad=ciu_cli,
-                    tipo_carga=d_pdf["tipo_carga"],
-                    al=d_pdf["al"],
-                    an=d_pdf["an"],
-                    la=d_pdf["la"],
-                    peso_lb=d_pdf["peso_lb"],
-                    peso_kg=d_pdf["peso_kg"],
-                    vol_m3=d_pdf["vol_m3"],
-                    vol_ft3=d_pdf["vol_ft3"],
-                    total_usd=d_pdf["total_usd"],
-                    detalle_tarifa=d_pdf["detalle_tarifa"],
+                    tipo_carga=tipo_carga_guardada,
+                    al=al_guardado,
+                    an=an_guardado,
+                    la=la_guardado,
+                    peso_lb=pe_lb_guardado,
+                    peso_kg=pe_kg_guardado,
+                    vol_m3=vol_m3_guardado,
+                    vol_ft3=vol_ft3_guardado,
+                    total_usd=total_usd_guardado,
+                    detalle_tarifa=detalle_guardado,
                     id_cot=id_c
                 )
 
