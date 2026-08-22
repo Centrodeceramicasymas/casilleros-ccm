@@ -59,7 +59,7 @@ st.markdown(f"""
     
     #MainMenu, header, footer {{visibility: hidden;}}
 
-    /* Inputs estilizados idénticos a la maqueta */
+    /* Inputs estilizados */
     div[data-baseweb="input"] {{
         background-color: {input_bg} !important;
         border: 1px solid {input_border} !important;
@@ -78,7 +78,7 @@ st.markdown(f"""
     }}
 
     /* Etiquetas de los inputs */
-    .stTextInput label, .stSelectbox label {{
+    .stTextInput label, .stSelectbox label, .stTextArea label, .stRadio label {{
         color: {text_main} !important;
         font-weight: 600 !important;
         font-size: 0.9rem !important;
@@ -97,7 +97,7 @@ st.markdown(f"""
         margin-bottom: 4px !important;
     }}
 
-    /* Botón Primario Azul (Iniciar Sesión) */
+    /* Botón Primario Azul (Iniciar Sesión / Confirmar) */
     div.stButton > button[kind="primary"], .btn-login-blue div.stButton > button {{
         background-color: #0052cc !important;
         color: #ffffff !important;
@@ -157,11 +157,30 @@ st.markdown(f"""
         font-size: 0.88rem;
         color: {text_main};
     }}
+    .stat-card {{
+        background-color: {input_bg};
+        border-radius: 12px;
+        padding: 1.2rem;
+        border: 1px solid {input_border};
+        border-left: 4px solid #0052cc;
+    }}
+    .stat-title {{
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: {text_muted};
+        text-transform: uppercase;
+    }}
+    .stat-value {{
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: {text_main};
+        margin-top: 4px;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. BASE DE DATOS SQLITE
+# 3. BASE DE DATOS SQLITE & UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -184,8 +203,6 @@ def init_db():
                 departamento TEXT NOT NULL,
                 ciudad TEXT NOT NULL,
                 direccion_exacta TEXT NOT NULL,
-                razon_social TEXT,
-                rtn_facturacion TEXT,
                 rubro_carga TEXT,
                 modalidad_entrega TEXT,
                 password_hash TEXT NOT NULL,
@@ -215,7 +232,7 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
         
-        # Superadministrador
+        # Superadministrador por defecto
         admin_pass = hash_pwd("admin123")
         c.execute("""
             INSERT OR IGNORE INTO usuarios (
@@ -237,6 +254,11 @@ def get_tarifa(clave):
         c.execute("SELECT valor FROM config_maritima WHERE clave = ?", (clave,))
         res = c.fetchone()
         return res[0] if res else 0.0
+
+def set_tarifa(clave, valor):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero():
     with get_db() as conn:
@@ -297,7 +319,6 @@ if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         _, col_center, _ = st.columns([1, 1.25, 1])
         with col_center:
-            # Logo SVG estilizado
             logo_fill_1 = "#ffffff" if is_dark else "#0052cc"
             logo_fill_2 = "#0052cc" if is_dark else "#0f172a"
             
@@ -316,7 +337,6 @@ if not st.session_state["autenticado"]:
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             
-            # Botón Primario: Iniciar Sesión
             st.markdown('<div class="btn-login-blue">', unsafe_allow_html=True)
             if st.button("Iniciar sesión", type="primary", key="btn_login_submit"):
                 if u_ident and u_pass:
@@ -346,7 +366,6 @@ if not st.session_state["autenticado"]:
                     st.warning("Ingrese su casillero y contraseña.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Botones Secundarios
             st.markdown('<div class="btn-action-sec">', unsafe_allow_html=True)
             if st.button("Restablecer contraseña", type="secondary", key="btn_to_reset"):
                 st.session_state["vista_actual"] = "recuperar"
@@ -357,7 +376,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 6.2 VISTA DE REGISTRO
+    # 6.2 VISTA DE REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y BOTÓN DE WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -377,7 +396,7 @@ if not st.session_state["autenticado"]:
                         st.session_state["reg_paso"] = 2
                         st.rerun()
                     else:
-                        st.error("Complete los campos obligatorios.")
+                        st.error("Complete los campos obligatorios (*).")
 
             elif paso == 2:
                 st.markdown("#### 2. Contacto")
@@ -399,7 +418,7 @@ if not st.session_state["autenticado"]:
 
             elif paso == 3:
                 st.markdown("#### 3. Dirección en Honduras")
-                dep = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca"])
+                dep = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"])
                 ciu = st.text_input("Municipio / Ciudad *", value=st.session_state["reg_datos"].get("ciu", ""))
                 dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
                 c1, c2 = st.columns(2)
@@ -418,7 +437,7 @@ if not st.session_state["autenticado"]:
 
             elif paso == 4:
                 st.markdown("#### 4. Preferencias y Confirmación")
-                rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Electrónica", "Ropa", "Repuestos", "General"])
+                rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Electrónica", "Ropa & Calzado", "Repuestos Automotrices", "General"])
                 mod = st.radio("Modalidad de Entrega", ["Retiro en Bodega Central (San Juan)", "Envío con Forza a Domicilio"])
                 
                 c1, c2 = st.columns(2)
@@ -433,19 +452,64 @@ if not st.session_state["autenticado"]:
                         n_pwd = generar_clave_provisional()
                         f_crea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        with get_db() as conn:
-                            cur = conn.cursor()
-                            cur.execute("""
-                                INSERT INTO usuarios (
-                                    codigo_casillero, nombre_completo, dni, correo_principal,
-                                    telefono_principal, departamento, ciudad, direccion_exacta,
-                                    rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)
-                            """, (n_cod, d["nom"], d["dni"], d["cor"], d["tel"], d["dep"], d["ciu"], d["dir"], rub, mod, hash_pwd(n_pwd), f_crea))
-                        
-                        st.success(f"🎉 ¡Casillero Creado! Código: **{n_cod}** | Contraseña Temporal: **{n_pwd}**")
-                        st.session_state["reg_paso"] = 1
-                        st.session_state["reg_datos"] = {}
+                        try:
+                            with get_db() as conn:
+                                cur = conn.cursor()
+                                
+                                # Verificación previa de duplicados por correo o DNI
+                                cur.execute("""
+                                    SELECT codigo_casillero, correo_principal, dni 
+                                    FROM usuarios 
+                                    WHERE correo_principal = ? OR dni = ?
+                                """, (d["cor"], d["dni"]))
+                                usuario_existente = cur.fetchone()
+
+                                if usuario_existente:
+                                    msg_wa = f"Hola, intenté aperturar mi casillero pero me indica que mis datos (DNI: {d['dni']} / Correo: {d['cor']}) ya están registrados. Necesito ayuda con mi casillero."
+                                    url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa)}"
+                                    
+                                    st.warning("⚠️ **Estimado cliente:** Ya existe una cuenta de casillero registrada con este correo electrónico o número de identidad (DNI).")
+                                    
+                                    st.markdown(f"""
+                                    <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 10px; padding: 15px; text-align: center; margin-top: 10px; margin-bottom: 15px;">
+                                        <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: {'#ffffff' if is_dark else '#0f172a'};">
+                                            Para mayor información o consultar el acceso a su casillero, por favor contáctenos directamente:
+                                        </p>
+                                        <a href="{url_wa}" target="_blank" style="text-decoration: none;">
+                                            <div style="background-color: #22c55e; color: white; padding: 10px 18px; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 0.9rem;">
+                                                📲 Escribir por WhatsApp al +504 9577-1099
+                                            </div>
+                                        </a>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                else:
+                                    cur.execute("""
+                                        INSERT INTO usuarios (
+                                            codigo_casillero, nombre_completo, dni, correo_principal,
+                                            telefono_principal, departamento, ciudad, direccion_exacta,
+                                            rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
+                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)
+                                    """, (
+                                        n_cod, d["nom"], d["dni"], d["cor"], 
+                                        d["tel"], d["dep"], d["ciu"], d["dir"], 
+                                        rub, mod, hash_pwd(n_pwd), f_crea
+                                    ))
+                                    conn.commit()
+
+                                    st.balloons()
+                                    st.success(f"🎉 ¡Casillero Creado Exitosamente!")
+                                    st.info(f"🔑 **Casillero Asignado:** `{n_cod}`\n\n🔒 **Contraseña Temporal:** `{n_pwd}`\n\n*Guarde estos datos para iniciar sesión.*")
+                                    
+                                    st.session_state["reg_paso"] = 1
+                                    st.session_state["reg_datos"] = {}
+
+                        except sqlite3.IntegrityError:
+                            msg_wa = f"Hola, tuve un problema al crear mi casillero. Mi DNI es {d.get('dni', '')}."
+                            url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa)}"
+                            st.error("⚠️ El casillero o documento ya se encuentra registrado.")
+                            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+                        except Exception as e:
+                            st.error(f"❌ Ocurrió un error inesperado: {e}")
 
             st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
             if st.button("Volver al inicio de sesión", type="secondary"):
@@ -480,7 +544,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 7. PORTAL DEL CLIENTE (INTERNO)
+# 7. PORTAL DEL CLIENTE (AUTENTICADO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
