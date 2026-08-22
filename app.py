@@ -689,7 +689,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON SELECTOR 100+ LBS & TOPE 860 LBS (390 KG) ----------------
+    # ---------------- COTIZADOR CON ENTRADA DIRECTA EN KG (MÁX 390 KG) ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -699,53 +699,53 @@ elif st.session_state["rol"] == "cliente":
         min_usd = get_tarifa("minimo_cobro_usd") # $10.00
 
         tipo_carga = st.radio(
-            "¿El producto pesa 100 lbs o más (Carga Comercial)?",
-            ["No (Menos de 100 lbs - Paquetería)", "Sí (100 lbs o más - Carga Comercial / CBM)"],
+            "Tipo de Carga a Importar:",
+            ["Paquetería Menor (Hasta 45 kg / 99 lbs)", "Carga Comercial por Metro Cúbico (De 45 kg a 390 kg)"],
             horizontal=True
         )
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
-        if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
+        if tipo_carga == "Paquetería Menor (Hasta 45 kg / 99 lbs)":
             c1, c2 = st.columns(2)
             with c1:
-                pe = st.number_input("Peso Real del Paquete (Libras / lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5)
-                pe_kg_menor = pe / 2.20462
-                st.caption(f"Equivalente a: **{pe_kg_menor:.2f} kg**")
+                pe_kg = st.number_input("Peso Real del Paquete (Kilogramos / kg)", min_value=0.2, max_value=45.0, value=2.0, step=0.5)
+                pe_lb = pe_kg * 2.20462
+                st.caption(f"Equivalente a: **{pe_lb:.2f} lbs**")
             with c2:
-                if pe <= 3.0:
+                if pe_lb <= 3.0:
                     tot = min_usd
                     desc = f"Tarifa Mínima Base (1 a 3 lbs): **${min_usd:.2f} USD**"
                 else:
-                    tot = pe * t_lb
-                    desc = f"Tarifa por Libra: **{pe:.1f} lbs x ${t_lb:.2f}/lb**"
+                    tot = pe_lb * t_lb
+                    desc = f"Tarifa por Libra: **{pe_lb:.1f} lbs x ${t_lb:.2f}/lb**"
                 st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Flete marítimo e internación aduanal incluida.")
 
-            st.info(f"📌 **Detalle:** {desc} (Aplica para paquetes de 1 a 99 lbs).")
+            st.info(f"📌 **Detalle:** {desc} (Aplica para envíos menores a 45 kg).")
 
         else:
-            st.caption("Para cargas de 100 lbs hasta 860 lbs (Tope máx: 390 kg), el flete se calcula por Metro Cúbico ($680.00/CBM):")
+            st.caption("Cargas comerciales de 45 kg hasta el límite máximo estándar de 390 kg por bulto ($680.00/CBM):")
             c1, c2, c3, c4 = st.columns(4)
             with c1: al = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0)
             with c2: an = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0)
             with c3: la = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0)
             with c4: 
-                pe_com = st.number_input(
-                    "Peso Total (Libras / lb)", 
-                    min_value=100.0, 
-                    max_value=860.0, 
-                    value=500.0, 
+                pe_kg_com = st.number_input(
+                    "Peso Real (Kilogramos / kg)", 
+                    min_value=45.0, 
+                    max_value=390.0, 
+                    value=150.0, 
                     step=5.0,
-                    help="Tope máximo permitido: 860 lbs equivalentes a 390 kg por bulto comercial estándar."
+                    help="Límite máximo permitido: 390 kg por bulto comercial estándar."
                 )
-                pe_kg = pe_com / 2.20462
-                st.caption(f"Equivalente a: **{pe_kg:.2f} kg** / máx 390 kg")
+                pe_lb_com = pe_kg_com * 2.20462
+                st.caption(f"Equivalente a: **{pe_lb_com:.1f} lbs** (Tope: 390 kg)")
 
             vol_m3 = (al * an * la) / 1_000_000.0
             vol_ft3 = vol_m3 * 35.3147
 
             costo_cbm = vol_m3 * t_m3
-            costo_peso_cbm = (pe_com / 860.0) * t_m3
+            costo_peso_cbm = (pe_kg_com / 390.0) * t_m3
             tot = max(costo_cbm, costo_peso_cbm)
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -757,7 +757,7 @@ elif st.session_state["rol"] == "cliente":
             with m3:
                 st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Tarifa base de $680.00 por CBM con desaduanaje incluido.")
 
-            st.success(f"📌 **Cálculo aplicado:** Tarifa Comercial por Metro Cúbico (${t_m3:.2f}/CBM). Peso tasado: {pe_com:.1f} lbs ({pe_kg:.1f} kg).")
+            st.success(f"📌 **Cálculo aplicado:** Tarifa Comercial por Metro Cúbico (${t_m3:.2f}/CBM). Peso tasado: {pe_kg_com:.1f} kg ({pe_lb_com:.1f} lbs).")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
