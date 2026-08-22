@@ -33,10 +33,10 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
+# 2. GENERADORES DE PDF NATIVOS CON MEDIDAS DINÁMICAS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    """Compilador de PDF 1.4 binario estándar sin dependencias externas."""
+    """Compilador de PDF 1.4 binario estándar."""
     stream_bytes = stream_content.encode('latin-1', 'replace')
     stream_len = len(stream_bytes)
     
@@ -69,8 +69,12 @@ def compilar_pdf_simple(stream_content):
     pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
     return pdf_buffer.getvalue()
 
-def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
-    """Documento 1: Para el Fabricante/Proveedor (Sin precios ni costos)."""
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0):
+    """Documento 1: Para el Fabricante con medidas y peso exactos (sin tarifas)."""
+    dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
+    peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
+    vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
+
     stream = f"""BT
 /F1 16 Tf
 40 790 Td
@@ -105,9 +109,16 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
 0 -22 Td
 (================================================================) Tj
 /F1 10 Tf
-0 -18 Td
-(PACKAGE DETAILS: BOX [   ] OF [   ] | WEIGHT: _______ KG | VOL: _______ CBM) Tj
-0 -22 Td
+0 -16 Td
+(PACKAGE SPECIFICATIONS / DETALLES DE CARGA:) Tj
+/F1 9 Tf
+0 -14 Td
+(DIMENSIONS (L x W x H) : {dim_txt}) Tj
+0 -12 Td
+(GROSS WEIGHT           : {peso_txt}) Tj
+0 -12 Td
+(ESTIMATED VOLUME       : {vol_txt}) Tj
+0 -20 Td
 (----------------------------------------------------------------) Tj
 /F1 9 Tf
 0 -15 Td
@@ -121,8 +132,8 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad):
 ET"""
     return compilar_pdf_simple(stream)
 
-def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
-    """Documento 2: Comprobante Oficial con Precios (Para el Cliente y Administración CCM)."""
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
+    """Documento 2: Comprobante Oficial con Precios, Medidas y Desglose Completo."""
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     stream = f"""BT
 /F1 15 Tf
@@ -157,12 +168,14 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (================================================================) Tj
 /F1 11 Tf
 0 -16 Td
-(DESGLOSE DE LA CARGA COTIZADA:) Tj
+(DESGLOSE DE LA CARGA Y DIMENSIONES:) Tj
 /F1 9 Tf
 0 -14 Td
 (MODALIDAD DE CARGA      : {tipo_carga.upper()}) Tj
 0 -12 Td
-(PESO CALCULADO         : {peso_lb:.2f} LBS  ({peso_kg:.2f} KG)) Tj
+(DIMENSIONES DEL PAQUETE : {al:.1f} cm (Alto) x {an:.1f} cm (Ancho) x {la:.1f} cm (Largo)) Tj
+0 -12 Td
+(PESO TOTAL CALCULADO   : {peso_lb:.2f} LBS  ({peso_kg:.2f} KG)) Tj
 0 -12 Td
 (VOLUMEN ESTIMADO        : {vol_m3:.4f} M3  ({vol_ft3:.2f} FT3)) Tj
 0 -12 Td
@@ -198,7 +211,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
+# 3. ESTILOS CSS RESPONSIVOS
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -451,7 +464,7 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero_dni(dni_raw):
-    """Toma los primeros 8 dígitos del número de DNI ingresado."""
+    """Toma los primeros 8 dígitos del DNI ingresado."""
     solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
@@ -747,7 +760,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (COTIZADOR CON DIMENSIONES EN AMBAS OPCIONES)
+# 8. PORTAL DEL CLIENTE (COTIZADOR CON DIMENSIONES EN AMBOS CASOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -785,7 +798,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON DIMENSIONES Y CONFIRMACIÓN ----------------
+    # ---------------- COTIZADOR CON MEDIDAS EN PAQUETERÍA Y CARGA COMERCIAL ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -802,9 +815,9 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
-        # OPCIÓN 1: PAQUETERÍA MENOR (CON ENTRADA DE DIMENSIONES)
+        # OPCIÓN 1: PAQUETERÍA MENOR (CON ENTRADA DE DIMENSIONES COMPLETA)
         if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
-            st.caption("Ingrese las dimensiones y peso del paquete menor (1 a 99 lbs):")
+            st.caption("Ingrese las dimensiones y peso real del paquete menor (1 a 99 lbs):")
             c1, c2, c3, c4 = st.columns(4)
             with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="al_menor")
             with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="an_menor")
@@ -850,7 +863,7 @@ elif st.session_state["rol"] == "cliente":
                     "Peso Total (Libras / lb)", 
                     min_value=100.0, 
                     value=500.0, 
-                    step=10.0,
+                    step=10.0, 
                     key="pe_com",
                     help="Conversión: 390 kg = 859.8 lbs. Superar este umbral computa un segundo CBM o fracción correspondiente."
                 )
@@ -883,7 +896,7 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #374151;'>", unsafe_allow_html=True)
         st.markdown("#### ✅ Confirmación de Tarifa & Generación de Documentos")
-        st.caption("Al confirmar, el sistema emitirá el juego de documentos correspondientes para su compra:")
+        st.caption("Al confirmar, el sistema guardará las dimensiones ingresadas y emitirá los documentos con todos los datos:")
 
         if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary", key="btn_confirmar_tarifa"):
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -898,6 +911,9 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["ultima_cot_id"] = id_generado
             st.session_state["datos_pdf_confirmado"] = {
                 "tipo_carga": modalidad_pdf,
+                "al": al_val,
+                "an": an_val,
+                "la": la_val,
                 "peso_lb": pe_lb,
                 "peso_kg": pe_kg,
                 "vol_m3": vol_m3_val,
@@ -908,16 +924,15 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS DESPUÉS DE CONFIRMAR ----------------
+        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS CON MEDIDAS ----------------
         if "datos_pdf_confirmado" in st.session_state:
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf["id_cot"]
 
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            
             col_doc1, col_doc2 = st.columns(2, gap="large")
 
-            # DOCUMENTO 1: PARA EL FABRICANTE EN CHINA (SIN PRECIOS)
+            # DOCUMENTO 1: PARA EL FABRICANTE EN CHINA (CON MEDIDAS - SIN PRECIOS)
             with col_doc1:
                 st.markdown(f"""
                 <div style="background: {'#161e2e' if is_dark else '#ffffff'}; border: 2px solid #0052cc; border-radius: 12px; padding: 18px; text-align: center;">
@@ -925,12 +940,23 @@ elif st.session_state["rol"] == "cliente":
                     <h4 style="margin: 6px 0; color: #38bdf8;">DOCUMENTO 1: PARA EL FABRICANTE</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
                         <b>Envíe este PDF a su proveedor en China.</b><br>
-                        (Incluye casillero <b>{casillero}</b>, datos de envío e instrucciones en inglés/chino. <u>No muestra costos ni tarifas</u>).
+                        (Incluye casillero <b>{casillero}</b>, dimensiones <b>{d_pdf['al']}x{d_pdf['an']}x{d_pdf['la']} cm</b>, peso e instrucciones. <u>Sin tarifas ni costos</u>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                pdf_fabricante_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
+                pdf_fabricante_bytes = generar_pdf_etiqueta_proveedor(
+                    casillero=casillero,
+                    nombre=nombre_cli,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    al=d_pdf["al"],
+                    an=d_pdf["an"],
+                    la=d_pdf["la"],
+                    pe_lb=d_pdf["peso_lb"],
+                    pe_kg=d_pdf["peso_kg"],
+                    vol_m3=d_pdf["vol_m3"]
+                )
                 st.download_button(
                     label="📥 Descargar Etiqueta para Fabricante (PDF)",
                     data=pdf_fabricante_bytes,
@@ -939,9 +965,9 @@ elif st.session_state["rol"] == "cliente":
                     key="btn_dl_fab"
                 )
 
-            # DOCUMENTO 2: PARA WHATSAPP CENTRO DE CERÁMICAS Y MÁS (CON PRECIOS Y LIQUIDACIÓN)
+            # DOCUMENTO 2: PARA WHATSAPP CCM (CON MEDIDAS Y PRECIOS)
             with col_doc2:
-                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Adjunto mi comprobante oficial por ${d_pdf['total_usd']:.2f} USD."
+                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Medidas: {d_pdf['al']}x{d_pdf['an']}x{d_pdf['la']} cm | Peso: {d_pdf['peso_lb']:.1f} lbs. Total: ${d_pdf['total_usd']:.2f} USD."
                 url_wa_cot = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa_cot)}"
 
                 st.markdown(f"""
@@ -950,7 +976,7 @@ elif st.session_state["rol"] == "cliente":
                     <h4 style="margin: 6px 0; color: #22c55e;">DOCUMENTO 2: PARA NUESTRO WHATSAPP</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
                         <b>Descargue este comprobante y envíelo a nuestro WhatsApp.</b><br>
-                        (Contiene el control <b>CCM-COT-{id_c:05d}</b>, peso, volumen y total de flete: <b>${d_pdf['total_usd']:.2f} USD</b>).
+                        (Contiene control <b>CCM-COT-{id_c:05d}</b>, medidas completas, CBM y flete liquidado: <b>${d_pdf['total_usd']:.2f} USD</b>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -961,6 +987,9 @@ elif st.session_state["rol"] == "cliente":
                     telefono=tel_cli,
                     ciudad=ciu_cli,
                     tipo_carga=d_pdf["tipo_carga"],
+                    al=d_pdf["al"],
+                    an=d_pdf["an"],
+                    la=d_pdf["la"],
                     peso_lb=d_pdf["peso_lb"],
                     peso_kg=d_pdf["peso_kg"],
                     vol_m3=d_pdf["vol_m3"],
