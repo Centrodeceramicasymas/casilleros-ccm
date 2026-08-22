@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-DB_NAME = "casilleros_ccm.db"
+DB_NAME = "casilleros_ccm_v2.db"
 
 # 2. Estilos Visuales
 st.markdown("""
@@ -158,7 +158,7 @@ def inicializar_bd():
                 nombre_completo TEXT NOT NULL,
                 rtn_dni TEXT NOT NULL,
                 telefono TEXT NOT NULL,
-                correo TEXT,
+                correo TEXT NOT NULL,
                 departamento TEXT NOT NULL,
                 municipio TEXT NOT NULL,
                 direccion_entrega TEXT NOT NULL,
@@ -206,7 +206,7 @@ def enviar_correo_bienvenida(destinatario, nombre_cliente, codigo_casillero, tel
             </div>
             
             <p>Estimado(a) <strong>{nombre_cliente}</strong>,</p>
-            <p>Su casillero internacional ha sido aperturado con éxito. A continuación encontrará el resumen de sus datos y la <strong>Ficha Oficial de Envío</strong> para sus proveedores en China:</p>
+            <p>Su casillero internacional ha sido activado con éxito. A continuación encontrará sus datos registrados y la <strong>Ficha Oficial de Consignación</strong> para sus proveedores:</p>
             
             <div style="text-align: center; margin: 15px 0;">
                 <span style="font-size: 22px; font-weight: bold; color: #2563eb; background: #eff6ff; padding: 8px 18px; border-radius: 6px; border: 1px solid #bfdbfe;">
@@ -215,7 +215,7 @@ def enviar_correo_bienvenida(destinatario, nombre_cliente, codigo_casillero, tel
             </div>
 
             <div style="background-color: #f1f5f9; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; font-size: 13px;">
-                <strong>📋 Datos Registrados de Entrega en Honduras:</strong><br>
+                <strong>📋 Datos de Entrega en Honduras:</strong><br>
                 • <strong>Teléfono / WhatsApp:</strong> {telefono}<br>
                 • <strong>Destino Final:</strong> {municipio}, {depto}<br>
                 • <strong>Dirección de Entrega:</strong> {direccion}
@@ -228,7 +228,7 @@ def enviar_correo_bienvenida(destinatario, nombre_cliente, codigo_casillero, tel
                 COUNTRY         : HONDURAS<br>
                 TEL             : {telefono}<br>
                 <hr style="border-top: 1px dashed #d97706; margin: 10px 0;">
-                <strong>Instrucciones para su proveedor en China (Alibaba / Taobao):</strong><br>
+                <strong>Instrucciones para el vendedor en China (Alibaba / Taobao):</strong><br>
                 "Dear supplier, please ensure you paste our shipping label firmly on each box before dispatching. Packages without Client Code: {codigo_casillero} will be rejected."<br><br>
                 <strong>中文说明:</strong><br>
                 亲爱的卖家，发货前请务必在每个外箱上牢固张贴我们的唛头。外箱必须清晰标注客户代码：{codigo_casillero}，否则仓库将拒收该包裹。
@@ -318,7 +318,7 @@ with tab1:
                 st.balloons()
                 st.success(f"✅ ¡Casillero aperturado con éxito para **{nombre}**!")
                 
-                # Envío automático por correo
+                # Envío de correo
                 enviado, detalle = enviar_correo_bienvenida(correo, nombre, codigo_siguiente, telefono, depto, ciudad, direccion)
                 if enviado:
                     st.info(f"📧 Se envió la ficha completa al correo: **{correo}**")
