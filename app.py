@@ -5,6 +5,8 @@ import random
 import string
 from datetime import datetime
 import io
+import os
+import base64
 import urllib.parse
 import smtplib
 from email.mime.text import MIMEText
@@ -14,13 +16,14 @@ from email.mime.multipart import MIMEMultipart
 # 1. CONFIGURACIÓN DEL SISTEMA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="CCM Maritime Cloud Hub",
-    page_icon="🚢",
+    page_title="Centro de Cerámicas y Más — Casillero China",
+    page_icon="🏠",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 DB_NAME = "ccm_maritime_enterprise.db"
+LOGO_FILENAME = "logo centro y mas.jpg"
 
 if "tema_visual" not in st.session_state:
     st.session_state["tema_visual"] = "Oscuro (Dark)"
@@ -29,10 +32,9 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 # ---------------------------------------------------------
-# 2. GENERADOR DE PDF NATIVO (SIN DEPENDENCIAS EXTERNAS)
+# 2. GENERADOR DE PDF NATIVO
 # ---------------------------------------------------------
 def generar_pdf_nativo(casillero, nombre, telefono, ciudad):
-    """Genera un archivo PDF 1.4 binario válido usando la biblioteca estándar."""
     stream_content = f"""BT
 /F1 16 Tf
 40 790 Td
@@ -90,29 +92,23 @@ ET"""
     
     offsets = []
     
-    # Obj 1: Catálogo
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
     
-    # Obj 2: Páginas
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
     
-    # Obj 3: Página individual
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
     
-    # Obj 4: Flujo de contenido
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode('latin-1'))
     pdf_buffer.write(stream_bytes)
     pdf_buffer.write(b"\nendstream\nendobj\n")
     
-    # Obj 5: Fuente Helvetica
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
     
-    # Tabla XREF
     xref_offset = pdf_buffer.tell()
     pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
     for off in offsets:
@@ -210,15 +206,37 @@ st.markdown(f"""
 
     .logo-container {{
         text-align: center;
-        margin-top: 1.5rem;
-        margin-bottom: 1.8rem;
+        margin-top: 1rem;
+        margin-bottom: 1.5rem;
+    }}
+    .logo-image-box {{
+        width: 140px;
+        height: 140px;
+        margin: 0 auto;
+        border-radius: 18px;
+        padding: 8px;
+        background-color: #ffffff;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .logo-image-box img {{
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
     }}
     .brand-title {{
-        font-size: 1.4rem;
+        font-size: 1.25rem;
         font-weight: 800;
-        letter-spacing: 2px;
+        letter-spacing: 1px;
         color: {text_main};
-        margin-top: 10px;
+        margin-top: 12px;
+    }}
+    .brand-subtitle {{
+        font-size: 0.85rem;
+        color: {text_muted};
+        margin-top: 2px;
     }}
 
     .card-box {{
@@ -236,6 +254,25 @@ st.markdown(f"""
         font-family: 'Space Mono', monospace;
         font-size: 0.88rem;
         color: {text_main};
+    }}
+    .stat-card {{
+        background-color: {input_bg};
+        border-radius: 12px;
+        padding: 1.2rem;
+        border: 1px solid {input_border};
+        border-left: 4px solid #0052cc;
+    }}
+    .stat-title {{
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: {text_muted};
+        text-transform: uppercase;
+    }}
+    .stat-value {{
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: {text_main};
+        margin-top: 4px;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -332,6 +369,25 @@ def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
     return ''.join(random.choice(caracteres) for _ in range(8))
 
+def render_logo_header():
+    if os.path.exists(LOGO_FILENAME):
+        with open(LOGO_FILENAME, "rb") as f:
+            encoded_img = base64.b64encode(f.read()).decode()
+        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más">'
+    else:
+        # Fallback si el archivo no está en la raíz
+        img_html = '<div style="font-size:3rem;">🏠</div>'
+
+    st.markdown(f"""
+    <div class="logo-container">
+        <div class="logo-image-box">
+            {img_html}
+        </div>
+        <div class="brand-title">CENTRO DE CERÁMICAS Y MÁS</div>
+        <div class="brand-subtitle">Servicio de Consolidación Marítima China ➔ Honduras</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ---------------------------------------------------------
 # 5. GESTIÓN DE SESIÓN
 # ---------------------------------------------------------
@@ -373,7 +429,7 @@ with col_theme:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 7. PANTALLAS DE ACCESO (ESTILO SERCARGO)
+# 7. PANTALLAS DE ACCESO
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
 
@@ -381,20 +437,9 @@ if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         _, col_center, _ = st.columns([1, 1.25, 1])
         with col_center:
-            logo_fill_1 = "#ffffff" if is_dark else "#0052cc"
-            logo_fill_2 = "#0052cc" if is_dark else "#0f172a"
-            
-            st.markdown(f"""
-            <div class="logo-container">
-                <svg viewBox="0 0 100 50" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:115px;">
-                    <path d="M12 12 H88 L72 26 H28 L12 12Z" fill="{logo_fill_1}"/>
-                    <path d="M88 38 H12 L28 24 H72 L88 38Z" fill="{logo_fill_2}"/>
-                </svg>
-                <div class="brand-title">CCM LOGISTICS</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_logo_header()
 
-            u_ident = st.text_input("Casillero", placeholder="CCM-HN-0001 o correo registrado", key="log_cas")
+            u_ident = st.text_input("Casillero o Correo", placeholder="CCM-HN-0001 o correo@gmail.com", key="log_cas")
             u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña de acceso", key="log_pwd")
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -440,12 +485,12 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y BOTÓN DE WHATSAPP)
+    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
             st.markdown('<div class="card-box">', unsafe_allow_html=True)
-            st.markdown("### 📋 Apertura de Casillero en China")
+            st.markdown("### 📋 Apertura de Casillero en China — Centro de Cerámicas y Más")
             
             paso = st.session_state["reg_paso"]
             st.progress(paso / 4.0, text=f"Paso {paso} de 4")
@@ -501,8 +546,8 @@ if not st.session_state["autenticado"]:
 
             elif paso == 4:
                 st.markdown("#### 4. Preferencias y Confirmación")
-                rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Electrónica", "Ropa & Calzado", "Repuestos Automotrices", "General"])
-                mod = st.radio("Modalidad de Entrega", ["Retiro en Bodega Central (San Juan)", "Envío con Forza a Domicilio"])
+                rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"])
+                mod = st.radio("Modalidad de Entrega", ["Retiro en Bodega Central (San Juan, Intibucá)", "Envío con Forza a Domicilio"])
                 
                 c1, c2 = st.columns(2)
                 with c1:
@@ -528,7 +573,7 @@ if not st.session_state["autenticado"]:
                                 usuario_existente = cur.fetchone()
 
                                 if usuario_existente:
-                                    msg_wa = f"Hola, intenté aperturar mi casillero pero me indica que mis datos (DNI: {d['dni']} / Correo: {d['cor']}) ya están registrados. Necesito ayuda con mi casillero."
+                                    msg_wa = f"Hola Centro de Cerámicas y Más, intenté aperturar mi casillero pero me indica que mis datos (DNI: {d['dni']} / Correo: {d['cor']}) ya están registrados. Necesito ayuda."
                                     url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa)}"
                                     
                                     st.warning("⚠️ **Estimado cliente:** Ya existe una cuenta de casillero registrada con este correo electrónico o número de identidad (DNI).")
@@ -618,10 +663,10 @@ elif st.session_state["rol"] == "cliente":
     st.markdown(f"""
     <div style="background:{input_bg}; padding:1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
         <div>
-            <h3 style="margin:0; color:#0052cc;">🚢 CCM MARITIME &bull; {casillero}</h3>
+            <h3 style="margin:0; color:#0052cc;">🏠 CENTRO DE CERÁMICAS Y MÁS &bull; {casillero}</h3>
             <div style="font-size:0.85rem; color:{text_muted};">Titular: {nombre_cli}</div>
         </div>
-        <div style="background:#0052cc; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:0.8rem;">🟢 Activo</div>
+        <div style="background:#0052cc; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:0.8rem;">🟢 Casillero Activo</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -673,7 +718,6 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
         st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
 
-        # Generar el PDF nativo
         pdf_bytes = generar_pdf_nativo(casillero, nombre_cli, tel_cli, ciu_cli)
 
         st.download_button(
