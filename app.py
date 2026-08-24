@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL ESTRICTO
+# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL ESTRICTO Y FORZADO
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -623,27 +623,28 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO Y AISLADO */
+    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO (AISLADO PARA MÓVIL Y PC) */
     .horizontal-scroll-wrapper {
-        width: 100%;
-        overflow-x: auto;
-        white-space: nowrap;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
-        scrollbar-color: rgba(255,255,255,0.4) transparent;
-        margin-bottom: 8px;
-        padding-bottom: 6px;
+        width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        white-space: nowrap !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(255,255,255,0.4) transparent !important;
+        margin-bottom: 8px !important;
+        padding-bottom: 6px !important;
     }
     .horizontal-scroll-wrapper::-webkit-scrollbar {
-        height: 4px;
+        height: 4px !important;
     }
     .horizontal-scroll-wrapper::-webkit-scrollbar-thumb {
-        background-color: rgba(255,255,255,0.4);
-        border-radius: 10px;
+        background-color: rgba(255,255,255,0.4) !important;
+        border-radius: 10px !important;
     }
 
-    /* FORZAR FILA HORIZONTAL ESTRICTA EN CUALQUIER DISPOSITIVO */
-    .horizontal-scroll-wrapper div[data-testid="stHorizontalBlock"] {
+    /* FORZAR FILA HORIZONTAL ESTRICTA EN CUALQUIER TAMAÑO DE PANTALLA */
+    .horizontal-scroll-wrapper [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
@@ -651,7 +652,7 @@ st.markdown("""
         align-items: center !important;
         width: max-content !important;
     }
-    .horizontal-scroll-wrapper div[data-testid="stHorizontalBlock"] > div {
+    .horizontal-scroll-wrapper [data-testid="stHorizontalBlock"] > div {
         flex: 0 0 auto !important;
         width: 130px !important;
         min-width: 130px !important;
@@ -1032,7 +1033,7 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO ---
+    # --- CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO Y AISLADO ---
     st.markdown('<div class="horizontal-scroll-wrapper">', unsafe_allow_html=True)
     c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
     with c_nav_c:
