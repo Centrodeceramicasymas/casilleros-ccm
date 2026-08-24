@@ -64,6 +64,9 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+if "ver_panel_cotizaciones" not in st.session_state:
+    st.session_state["ver_panel_cotizaciones"] = False
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -517,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON MENÚ HORIZONTAL DESLIZABLE
+# 6. ESTILOS CSS REFINADOS CON MENÚ HORIZONTAL & ANIMACIÓN DE FLECHAS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -617,7 +620,7 @@ st.markdown("""
         overflow-y: hidden !important;
         -webkit-overflow-scrolling: touch !important;
         scrollbar-width: thin !important;
-        margin-bottom: 4px !important;
+        margin-bottom: 2px !important;
         padding-bottom: 4px !important;
         touch-action: pan-x !important;
     }
@@ -674,6 +677,28 @@ st.markdown("""
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div > div {
         min-width: 0 !important;
+    }
+
+    /* =========================================================
+       ANIMACIÓN DE FLECHITAS GUÍA PARPADEANTES
+       ========================================================= */
+    @keyframes pulseBlink {
+        0% { opacity: 0.25; transform: scale(0.95); }
+        50% { opacity: 1; transform: scale(1.05); }
+        100% { opacity: 0.25; transform: scale(0.95); }
+    }
+
+    .swipe-indicator-bar {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        color: #3b82f6;
+        font-size: 0.82rem;
+        font-weight: 800;
+        margin: 4px 0 10px 0;
+        animation: pulseBlink 1.4s infinite ease-in-out;
+        user-select: none;
     }
 
     /* BANNER PUBLICITARIO */
@@ -1034,6 +1059,9 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+    if "ver_panel_cotizaciones" not in st.session_state:
+        st.session_state["ver_panel_cotizaciones"] = False
+
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
@@ -1059,19 +1087,29 @@ elif st.session_state["rol"] == "cliente":
         with c_nav1:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
+                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav2:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
+                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav3:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
+                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav4:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
+                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
+
+    # --- FLECHAS GUÍA PARPADEANTES REACTIVAS ---
+    if st.session_state["sub_tab_inicio"] == "Etiqueta":
+        st.markdown('<div class="swipe-indicator-bar"><span>👈</span><span>Desliza a la izquierda</span><span>◀◀◀</span></div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="swipe-indicator-bar"><span>▶▶▶</span><span>Desliza a la derecha</span><span>👉</span></div>', unsafe_allow_html=True)
 
     # --- SELECTOR DE ENTREGA EN LUGAR DE LA BARRA DE BÚSQUEDA (SOLO VISIBLE EN COTIZADOR) ---
     if st.session_state["sub_tab_inicio"] == "Cotizador":
