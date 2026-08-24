@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON CONTENEDOR ESTRICTO DE SCROLL
+# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL AISLADO
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -623,12 +623,12 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO (SOLO SE MUEVE ESTA ZONA) */
+    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO (SOLO SE MUEVE ESTA ZONA AL DESLIZAR CON EL DEDO) */
     .horizontal-scroll-container {
         display: flex;
         overflow-x: auto;
         gap: 8px;
-        padding: 4px 0 8px 0;
+        padding: 6px 2px 10px 2px;
         margin-bottom: 8px;
         width: 100%;
         max-width: 100%;
@@ -639,7 +639,7 @@ st.markdown("""
         box-sizing: border-box;
     }
     .horizontal-scroll-container::-webkit-scrollbar {
-        height: 4px;
+        height: 5px;
     }
     .horizontal-scroll-container::-webkit-scrollbar-thumb {
         background-color: rgba(255,255,255,0.4);
@@ -733,19 +733,20 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* FORZAR FILA HORIZONTAL AISLADA */
-    div[data-testid="stHorizontalBlock"] {
+    /* FORZAR FILA HORIZONTAL AISLADA DENTRO DEL SCROLL */
+    .horizontal-scroll-container div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 8px !important;
         align-items: center !important;
-        width: 100% !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 auto !important;
         width: auto !important;
-        min-width: 110px !important;
+    }
+    .horizontal-scroll-container div[data-testid="stHorizontalBlock"] > div {
+        flex: 0 0 auto !important;
+        width: 130px !important;
+        min-width: 130px !important;
+        max-width: 130px !important;
     }
 
     /* BOTONES UNIFORMES Y ESTÉTICOS */
@@ -755,8 +756,8 @@ st.markdown("""
         min-height: 44px !important;
         max-height: 44px !important;
         border-radius: 10px !important;
-        padding: 0 10px !important;
-        font-size: 0.80rem !important;
+        padding: 0 6px !important;
+        font-size: 0.78rem !important;
         font-weight: 700 !important;
         display: flex !important;
         align-items: center !important;
@@ -970,7 +971,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE
+# 8. PORTAL DEL CLIENTE (LÓGICA CONDICIONAL DE DIRECCIONES)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1069,32 +1070,38 @@ elif st.session_state["rol"] == "cliente":
             <span>🔍</span>
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
+    """, unsafe_allow_html=True)
+
+    # --- CONDICIONAL SOLICITUD: LA SELECCIÓN DE DIRECCIÓN SOLO APARECE SI SE SELECCIONA EL COTIZADOR ---
+    if st.session_state["sub_tab_inicio"] == "Cotizador":
+        st.markdown("""
         <div class="app-delivery-container">
             <span style="font-size:1.2rem;">🏪</span>
             <div style="flex:1;">
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
-    idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+        st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
+        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
 
-    mod_elegida = st.selectbox(
-        "¿Cómo deseas recibir tu compra?",
-        opciones_modalidad,
-        index=idx_mod,
-        label_visibility="collapsed",
-        key="sb_modalidad_header"
-    )
-    if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-        st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-        st.session_state.pop("datos_pdf_confirmado", None)
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        mod_elegida = st.selectbox(
+            "¿Cómo deseas recibir tu compra?",
+            opciones_modalidad,
+            index=idx_mod,
+            label_visibility="collapsed",
+            key="sb_modalidad_header"
+        )
+        if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+            st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+            st.session_state.pop("datos_pdf_confirmado", None)
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("""
+        st.markdown("""
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True) # Cierre del header azul
 
     # --- PANEL DESPLEGABLE DE COTIZACIONES REALIZADAS PARA DESCARGAR ---
     if st.session_state["ver_panel_cotizaciones"]:
@@ -1144,7 +1151,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
-    if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
+    if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
         
