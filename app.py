@@ -497,7 +497,7 @@ def buscar_productos_1688_imagen(image_bytes):
     ]
 
 # ---------------------------------------------------------
-# 5. GESTIÓN DE SESIÓN
+# 5. GESTIÓN DE SESIÓN PERSISTENTE MEDIANTE QUERY_PARAMS
 # ---------------------------------------------------------
 if "autenticado" not in st.session_state:
     st.session_state.update({
@@ -512,11 +512,30 @@ if "autenticado" not in st.session_state:
         "reg_datos": {}
     })
 
+# RESTAURACIÓN AUTOMÁTICA DE SESIÓN AL REFRESCAR / RECARGAR LA PÁGINA (F5)
+if not st.session_state["autenticado"]:
+    params = st.query_params
+    if "casillero" in params:
+        cas_param = str(params["casillero"])
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE codigo_casillero = ? AND activo = 1", (cas_param,))
+            user_rec = c.fetchone()
+            if user_rec:
+                st.session_state["autenticado"] = True
+                st.session_state["casillero"] = user_rec[1]
+                st.session_state["nombre"] = user_rec[2]
+                st.session_state["usuario"] = user_rec[3]
+                st.session_state["rol"] = user_rec[4]
+                st.session_state["telefono"] = user_rec[6]
+                st.session_state["ciudad"] = user_rec[7]
+
 def logout():
     for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "sub_tab_inicio"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
+    st.query_params.clear()
     st.rerun()
 
 # ---------------------------------------------------------
@@ -881,6 +900,7 @@ if not st.session_state["autenticado"]:
                         st.session_state["telefono"] = user[6]
                         st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
+                        st.query_params["casillero"] = user[1]
                         st.rerun()
                 else:
                     st.error("❌ Credenciales inválidas.")
@@ -1145,10 +1165,10 @@ elif st.session_state["rol"] == "cliente":
         
         if lista_mis_cotizaciones:
             for cot in lista_mis_cotizaciones:
-                id_cot, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
+                id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
                 st.markdown(f"""
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_cot:05d}</b> &bull; Fecha: {fec_c}<br>
+                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {fec_c}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1164,16 +1184,16 @@ elif st.session_state["rol"] == "cliente":
                     vol_m3=vol_m3_c, vol_ft3=vol_m3_c*35.3147,
                     total_usd=tot_c,
                     detalle_tarifa="Tarifa Calculada Sistema CCM",
-                    id_cot=id_cot,
+                    id_cot=id_cot_item,
                     destino_entrega=st.session_state["modalidad_envio_seleccionada"],
                     fecha_emision=fec_c
                 )
                 st.download_button(
-                    f"📥 Descargar PDF CCM-COT-{id_cot:05d}",
+                    f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
                     pdf_historial,
-                    f"Comprobante_Cotizacion_CCM_COT_{id_cot:05d}.pdf",
+                    f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
                     "application/pdf",
-                    key=f"dl_cot_{id_cot}"
+                    key=f"dl_cot_{id_cot_item}"
                 )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
