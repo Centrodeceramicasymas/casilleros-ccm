@@ -240,16 +240,6 @@ st.markdown(f"""
         border-right: 1px solid #1f2937 !important;
     }}
 
-    .psk-topbar {{
-        background: {card_bg};
-        border: 1px solid {input_border};
-        border-radius: 12px;
-        padding: 10px 18px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.2rem;
-    }}
     .psk-badge-menu {{
         background-color: #22c55e;
         color: #ffffff;
@@ -473,7 +463,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. PANTALLAS DE ACCESO (LOGIN / REGISTRO / RECUPERACIÓN)
+# 6. PANTALLAS DE ACCESO
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
     col_vacia, col_theme = st.columns([4, 1.3])
@@ -600,7 +590,7 @@ if not st.session_state["autenticado"]:
                             cur = conn.cursor()
                             cur.execute("SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
                             if cur.fetchone():
-                                url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote('Hola, necesito asistencia con mi casillero ya registrado.')}"
+                                url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote("Hola, necesito asistencia con mi casillero ya registrado.")
                                 st.warning("⚠️ Ya existe un casillero registrado con este DNI o correo.")
                                 st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
                             else:
@@ -684,7 +674,7 @@ else:
         if st.button("🚪 Cerrar Sesión", type="secondary"):
             logout()
 
-    # --- TOPBAR SUPERIOR (BARRA HORIZONTAL CON MENÚ DESPLEGABLE) ---
+    # --- TOPBAR SUPERIOR ---
     col_nav_menu, col_nav_space, col_nav_user = st.columns([2.5, 3, 2.5])
     with col_nav_menu:
         st.markdown(f"""
@@ -705,13 +695,12 @@ else:
     st.markdown("<hr style='margin: 10px 0 20px 0; border: 0.5px solid #26354a;'>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
-    # MÓDULO 1: DASHBOARD GENERAL (TARJETAS KPI Y GRÁFICOS)
+    # MÓDULO 1: DASHBOARD GENERAL
     # ---------------------------------------------------------
     if st.session_state["modulo_activo"] == "📊 Dashboard General":
-        # Métricas KPI estilo PSKLOUD
         k1, k2, k3, k4 = st.columns(4)
         with k1:
-            st.markdown(f"""
+            st.markdown("""
             <div class="psk-kpi-card">
                 <div class="psk-kpi-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">📄</div>
                 <div>
@@ -721,7 +710,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with k2:
-            st.markdown(f"""
+            st.markdown("""
             <div class="psk-kpi-card">
                 <div class="psk-kpi-icon" style="background: rgba(34, 197, 94, 0.15); color: #22c55e;">📑</div>
                 <div>
@@ -731,7 +720,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with k3:
-            st.markdown(f"""
+            st.markdown("""
             <div class="psk-kpi-card">
                 <div class="psk-kpi-icon" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">👥</div>
                 <div>
@@ -741,7 +730,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with k4:
-            st.markdown(f"""
+            st.markdown("""
             <div class="psk-kpi-card">
                 <div class="psk-kpi-icon" style="background: rgba(249, 115, 22, 0.15); color: #f97316;">🚢</div>
                 <div>
@@ -753,7 +742,6 @@ else:
 
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
 
-        # Gráficos simulados de ventas y consolidación
         col_g1, col_g2 = st.columns([1.5, 1])
         with col_g1:
             st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -897,7 +885,9 @@ else:
                 st.download_button("📥 Descargar Etiqueta Fabricante (PDF)", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
 
             with col_d2:
-                url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(f'Hola CCM, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get(\"total_usd\",0):.2f} USD.')}"
+                texto_whatsapp = f"Hola CCM, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get('total_usd',0):.2f} USD."
+                url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_whatsapp)
+
                 st.markdown(f"""
                 <div style="background: {input_bg}; border: 2px solid #22c55e; border-radius: 12px; padding: 18px; text-align: center;">
                     <div style="font-size: 2rem;">📲📑</div>
