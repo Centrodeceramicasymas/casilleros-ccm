@@ -957,7 +957,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (BOTÓN MIS COTIZACIONES EN LA ESQUINA SUPERIOR IZQUIERDA)
+# 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1009,13 +1009,6 @@ elif st.session_state["rol"] == "cliente":
     if "ver_panel_cotizaciones" not in st.session_state:
         st.session_state["ver_panel_cotizaciones"] = False
 
-    # --- BOTÓN MIS COTIZACIONES EN LA ESQUINA SUPERIOR IZQUIERDA ---
-    col_btn_izq, col_dummy_der = st.columns([1.5, 2.5])
-    with col_btn_izq:
-        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
-            st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
-            st.rerun()
-
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
@@ -1027,7 +1020,17 @@ elif st.session_state["rol"] == "cliente":
             </div>
             <div class="app-header-logo">🏠</div>
         </div>
-        <div class="app-search-bar">
+    """, unsafe_allow_html=True)
+
+    # BOTÓN "Mis Cotizaciones" UBICADO EN LA ESQUINA INFERIOR IZQUIERDA DEL CUADRO AZUL
+    col_btn_izq, col_dummy_der = st.columns([1.5, 1])
+    with col_btn_izq:
+        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
+            st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
+            st.rerun()
+
+    st.markdown("""
+        <div class="app-search-bar" style="margin-top: 10px;">
             <span>🔍</span>
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
@@ -1178,7 +1181,7 @@ elif st.session_state["rol"] == "cliente":
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- BARRA DE NAVEGACIÓN SUPERIOR (CATÁLOGO, COTIZADOR, ENVÍOS, FICHAS) ---
+    # --- BARRA DE NAVEGACIÓN SUPERIOR ---
     col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
     with col_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
@@ -1214,7 +1217,7 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
+    # VISTA 1: CATÁLOGO CHINO 1688
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1522,7 +1525,7 @@ elif st.session_state["rol"] == "cliente":
             nombre=nombre_completo,
             telefono=tel_cli,
             ciudad=ciu_cli,
-        destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
             fecha_emision=f_etiqueta_actual
         )
         st.download_button("📄 Descargar Etiqueta para Proveedor (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
