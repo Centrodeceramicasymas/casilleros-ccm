@@ -546,7 +546,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: ETIQUETAS VISIBLES EN ENTRADAS
+# 6. ESTILOS CSS REFINADOS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -685,7 +685,7 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* ETIQUETAS DE TEXTO SOBRE LAS ENTRADAS DE DIMENSIONES (ALTO, ANCHO, LARGO, PESO) */
+    /* ETIQUETAS DE TEXTO SOBRE LAS ENTRADAS DE DIMENSIONES */
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stTextArea label, .stRadio label {
         color: #0f172a !important;
         font-weight: 700 !important;
@@ -705,6 +705,18 @@ st.markdown("""
         color: #0f172a !important;
         font-size: 0.9rem !important;
         font-weight: 600 !important;
+    }
+
+    /* ESTILO MÉTRICAS */
+    div[data-testid="stMetricValue"] {
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
+        color: #004ac1 !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
     }
 
     /* BOTONES HOMOGÉNEOS Y ELEGANTES */
@@ -932,7 +944,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (LABELS VISIBLES Y ACTUALIZACIÓN REACTIVA)
+# 8. PORTAL DEL CLIENTE (DESGLOSE COMPLETO DE METROS CÚBICOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1138,7 +1150,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (CON TEXTO DE MEDIDAS VISIBLES Y ACTUALIZACIÓN)
+    # VISTA 2: COTIZADOR MARÍTIMO (DESGLOSE COMPLETO DE CBM Y FT3)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1160,6 +1172,8 @@ elif st.session_state["rol"] == "cliente":
             key="sb_tipo_carga_select"
         )
 
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+
         if "Paquetería Menor" in tipo_carga:
             c1, c2, c3, c4 = st.columns(4)
             with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="in_al_menor")
@@ -1179,7 +1193,15 @@ elif st.session_state["rol"] == "cliente":
                 tot = pe_lb * t_lb
                 desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
 
-            st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help=f"Volumen: {vol_m3_val:.4f} m³ ({vol_ft3_val:.2f} ft³)")
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Volumen (m³)", f"{vol_m3_val:.4f} m³")
+            with m2:
+                st.metric("Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
+            with m3:
+                st.metric("Total Estimado", f"${tot:.2f} USD")
+
             modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
             detalle_pdf = desc
 
@@ -1198,10 +1220,19 @@ elif st.session_state["rol"] == "cliente":
             cbm_facturable = max(vol_m3_val, vol_m3_peso)
             tot = cbm_facturable * t_m3
 
-            st.metric("Total Estimado CBM (USD)", f"${tot:.2f} USD", help=f"Volumen tasado: {cbm_facturable:.4f} CBM")
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Volumen Físico", f"{vol_m3_val:.4f} m³")
+            with m2:
+                st.metric("CBM Facturable", f"{cbm_facturable:.4f} CBM")
+            with m3:
+                st.metric("Total Estimado", f"${tot:.2f} USD")
+
             modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
             detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
 
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with get_db() as conn:
@@ -1267,7 +1298,7 @@ elif st.session_state["rol"] == "cliente":
                     vol_ft3=d_pdf.get("vol_ft3", 0),
                     total_usd=d_pdf.get("total_usd", 0),
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                    id_cot=id_c,
+                    id_cot=id_cot if 'id_cot' in locals() else id_c,
                     destino_entrega=dest_pdf
                 )
                 
