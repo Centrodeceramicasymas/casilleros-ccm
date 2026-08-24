@@ -12,7 +12,7 @@ import urllib.parse
 import requests
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DEL SISTEMA
+# 1. CONFIGURACIÓN DEL SISTEMA & DICCIONARIO DE HONDURAS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
@@ -24,13 +24,33 @@ st.set_page_config(
 DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo centro y mas.jpg"
 
+MUNICIPIOS_HONDURAS = {
+    "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
+    "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
+    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
+    "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
+    "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
+    "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
+    "El Paraíso": ["Yuscarán", "Alauca", "Danlí", "El Paraíso", "Güinope", "Jacaleapa", "Liure", "Morocelí", "Oropolí", "Potrerillos", "San Antonio de Flores", "San Lucas", "San Matías", "Soledad", "Teupasenti", "Texiguat", "Vado Ancho", "Yauyupe", "Trojes"],
+    "Francisco Morazán": ["Distrito Central (Tegucigalpa / Comayagüela)", "Alubarén", "Cedros", "Curarén", "El Porvenir", "Guaimaca", "La Libertad", "La Venta", "Lepaterique", "Maraita", "Marale", "Nueva Armenia", "Ojojona", "Orica", "Reitoca", "Sabanagrande", "San Antonio de Oriente", "San Buenaventura", "San Ignacio", "San Juan de Flores (Cantarranas)", "San Miguelito", "Santa Ana", "Santa Lucía", "Talanga", "Tatumbla", "Valle de Ángeles", "Villa de San Francisco", "Vallecillo"],
+    "Gracias a Dios": ["Puerto Lempira", "Brus Laguna", "Ahuas", "Juan Francisco Bulnes", "Ramón Villeda Morales", "Wampusirpi"],
+    "Intibucá": ["San Juan", "La Esperanza", "Intibucá", "Camasca", "Colomoncagua", "Concepción", "Dolores", "Magdalena", "Masaguara", "San Antonio", "San Isidro", "San Marcos de la Sierra", "San Miguelito", "Santa Lucía", "Yamaranguila", "San Francisco de Opalaca"],
+    "Islas de la Bahía": ["Roatán", "Guanaja", "José Santos Guardiola", "Utila"],
+    "La Paz": ["La Paz", "Aguanqueterique", "Cabañas", "Cane", "Chinacla", "Guajiquiro", "Lauterique", "Marcala", "Mercedes de Oriente", "Opatoro", "San Antonio del Norte", "San José", "San Juan", "San Pedro de Tutule", "Santa Ana", "Santa Elena", "Santa María", "Santiago de Puringla", "Yarula"],
+    "Lempira": ["Gracias", "Belén", "Candelaria", "Cololaca", "Erandique", "Gualcince", "Guarita", "La Campa", "La Iguala", "La Unión", "La Virtud", "Lepaera", "Mapulaca", "Piraera", "San Andrés", "San Francisco", "San Juan Guarita", "San Manuel Colohete", "San Rafael", "San Sebastián", "Santa Cruz", "Talgua", "Tambla", "Tomalá", "Valladolid", "Virginia", "San Marcos de Caiquín"],
+    "Ocotepeque": ["Ocotepeque", "Belén Gualcho", "Concepción", "Dolores Merendón", "Fraternidad", "La Encarnación", "La Labor", "Lucerna", "Mercedes", "San Fernando", "San Francisco del Valle", "San Jorge", "San Marcos", "Santa Fe", "Sinuapa", "Sensenti"],
+    "Olancho": ["Juticalpa", "Campamento", "Catacamas", "Concordia", "Dulce Nombre de Culmí", "El Rosario", "Esquipulas del Norte", "Gualaco", "Guarizama", "Guata", "Guayape", "Jano", "La Unión", "Mangulile", "Manto", "Salamá", "San Esteban", "San Francisco de Becerra", "San Francisco de la Paz", "Santa María del Real", "Silca", "Yocón", "Patuca"],
+    "Santa Bárbara": ["Santa Bárbara", "Arada", "Atima", "Azacualpa", "Ceguaca", "Concepción del Norte", "Concepción del Sur", "Chinda", "El Níspero", "Gualala", "Ilama", "Las Vegas", "Macuelizo", "Naranjito", "Nuevo Celilac", "Petoa", "Protección", "Quimistán", "San Francisco de Ojuera", "San José de Colinas", "San Luis", "San Marcos", "San Nicolás", "San Pedro Zacapa", "Santa Rita", "San Vicente Centenario", "Trinidad"],
+    "Valle": ["Nacaome", "Alianza", "Amapala", "Aramecina", "Caridad", "Goascorán", "Langue", "San Francisco de Coray", "San Lorenzo"],
+    "Yoro": ["Yoro", "Arenal", "El Negrito", "El Progreso", "Jocón", "Morazán", "Olanchito", "Santa Rita", "Sulaco", "Victoria", "Yorito"]
+}
+
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 if "sub_tab_inicio" not in st.session_state:
     st.session_state["sub_tab_inicio"] = "Catálogo"
 
-# OPCIÓN PREDETERMINADA FIJA NO ELIMINABLE
 OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
 
 if "modalidad_envio_seleccionada" not in st.session_state:
@@ -872,8 +892,8 @@ if not st.session_state["autenticado"]:
                         st.error("Complete correo y teléfono.")
 
         elif paso == 3:
-            dep = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"])
-            ciu = st.text_input("Municipio / Ciudad *", value=st.session_state["reg_datos"].get("ciu", ""))
+            dep_reg = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_reg")
+            ciu_reg = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_reg], key="sb_ciu_reg")
             dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
             c1, c2 = st.columns(2)
             with c1:
@@ -882,8 +902,8 @@ if not st.session_state["autenticado"]:
                     st.rerun()
             with c2:
                 if st.button("Siguiente ➔", type="primary"):
-                    if ciu and dir_e:
-                        st.session_state["reg_datos"].update({"dep": dep, "ciu": ciu, "dir": dir_e})
+                    if ciu_reg and dir_e:
+                        st.session_state["reg_datos"].update({"dep": dep_reg, "ciu": ciu_reg, "dir": dir_e})
                         st.session_state["reg_paso"] = 4
                         st.rerun()
                     else:
@@ -947,7 +967,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DIRECCIÓN PREDETERMINADA FIJA & GESTIÓN DE ELIMINACIÓN)
+# 8. PORTAL DEL CLIENTE (MUNICIPIOS DE HONDURAS DINÁMICOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -961,13 +981,11 @@ elif st.session_state["rol"] == "cliente":
         c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
         direcciones_guardadas = c.fetchall()
 
-    # CONSTRUIR LISTA: PREDETERMINADA EN PRIMER LUGAR (NO ELIMINABLE)
     opciones_modalidad = [OPCION_PREDETERMINADA]
     for d in direcciones_guardadas:
         opciones_modalidad.append(f"📍 {d[1]} - {d[3]}")
     opciones_modalidad.append("➕ Crear Nueva Dirección de Envío")
 
-    # Asegurar que si la dirección actual fue borrada, vuelva a la predeterminada
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
@@ -1023,7 +1041,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
         
-        # 1. Mostrar dirección fija predeterminada
+        # Dirección fija predeterminada
         st.markdown(f"""
         <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
             <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
@@ -1031,7 +1049,7 @@ elif st.session_state["rol"] == "cliente":
         </div>
         """, unsafe_allow_html=True)
 
-        # 2. Listado de direcciones creadas con botón de eliminar
+        # Listado de direcciones creadas con botón de eliminar
         if direcciones_guardadas:
             st.markdown("<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>", unsafe_allow_html=True)
             for dir_item in direcciones_guardadas:
@@ -1063,9 +1081,10 @@ elif st.session_state["rol"] == "cliente":
             receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_cli)
         with c_et2:
             tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
-            dep_dir_in = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"], key="sb_dep_nueva_dir")
+            dep_dir_in = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_nueva_dir")
         
-        ciu_dir_in = st.text_input("Municipio / Ciudad *", placeholder="Ej: San Juan, San Pedro Sula, Tegucigalpa")
+        # MUNICIPIO / CIUDAD DINÁMICO SEGÚN DEPARTAMENTO SELECCIONADO
+        ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
         dir_exacta_in = st.text_area("Dirección exacta y referencias *", placeholder="Barrio, calle, número de casa, puntos clave...")
 
         c_sv1, c_sv2 = st.columns(2)
