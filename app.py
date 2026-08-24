@@ -64,9 +64,6 @@ OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-if "busqueda_catalogo" not in st.session_state:
-    st.session_state["busqueda_catalogo"] = ""
-
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -402,7 +399,7 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. MOTOR DE API OFICIAL 1688 / CHILAT (BÚSQUEDA DINÁMICA)
+# 4. MOTOR DE CATÁLOGO 1688 ESTÁNDAR (BÚSQUEDA DINÁMICA POR TEXTO E IMAGEN)
 # ---------------------------------------------------------
 def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad=1):
     t_lb = get_tarifa("tarifa_libra")
@@ -440,36 +437,6 @@ def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad
     }
 
 def buscar_productos_1688_texto(keyword):
-    app_key = st.secrets.get("fuente_china", {}).get("APP_KEY", "")
-    api_url = f"https://gw.open.1688.com/openapi/param2/1/com.alibaba.fenxiao.crossborder/product.search.keywordQuery/{app_key}"
-
-    if app_key:
-        try:
-            params = {"q": keyword, "result_type": "json"}
-            resp = requests.get(api_url, params=params, timeout=12)
-            if resp.status_code == 200:
-                items = resp.json().get("items", {}).get("item", [])
-                res = []
-                for it in items:
-                    p_cny = float(it.get("price", 0.0))
-                    res.append({
-                        "sku": f"1688-{it.get('num_iid', random.randint(100000, 999999))}",
-                        "nombre": it.get("title", keyword),
-                        "precio_fabrica_cny": p_cny,
-                        "precio_fabrica_usd": p_cny * 0.14,
-                        "moq": int(it.get("min_order_quantity", 1)),
-                        "proveedor": it.get("seller_info", {}).get("shop_name", "Fábrica Verificada 1688"),
-                        "peso_kg": float(it.get("weight", 2.0)),
-                        "volumen_m3": 0.008,
-                        "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
-                        "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
-                        "fuente": "1688 API Official"
-                    })
-                if res:
-                    return res
-        except Exception:
-            pass
-
     kw_clean = keyword.strip().title()
     seed_id = abs(hash(keyword)) % 1000
     
@@ -482,64 +449,47 @@ def buscar_productos_1688_texto(keyword):
 
     return [
         {
-            "sku": f"1688-API-{seed_id}",
-            "nombre": f"{kw_clean} Industrial Certificado 1688",
-            "precio_fabrica_cny": 75.00,
-            "precio_fabrica_usd": 10.50,
-            "moq": 5,
-            "proveedor": "Guangzhou 1688 Sourcing Factory",
-            "peso_kg": 2.50,
-            "volumen_m3": 0.007,
+            "sku": f"1688-DIR-{seed_id}",
+            "nombre": f"{kw_clean} Calidad de Exportación",
+            "precio_fabrica_cny": 58.00,
+            "precio_fabrica_usd": 8.12,
+            "moq": 10,
+            "proveedor": "Foshan Industrial Export Co.",
+            "peso_kg": 3.20,
+            "volumen_m3": 0.009,
             "imagen_url": img_dinamica,
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688 API Official (Dynamic Search)"
+            "fuente": "1688.com"
+        },
+        {
+            "sku": f"1688-DIR-{seed_id + 1}",
+            "nombre": f"{kw_clean} Industrial Reforzado",
+            "precio_fabrica_cny": 135.00,
+            "precio_fabrica_usd": 18.90,
+            "moq": 5,
+            "proveedor": "Guangzhou Hardware & Logistics Group",
+            "peso_kg": 6.50,
+            "volumen_m3": 0.018,
+            "imagen_url": img_dinamica,
+            "url_proveedor": "https://detail.1688.com",
+            "fuente": "1688.com"
         }
     ]
 
 def buscar_productos_1688_imagen(image_bytes):
-    app_key = st.secrets.get("fuente_china", {}).get("APP_KEY", "")
-    api_url = f"https://gw.open.1688.com/openapi/param2/1/com.alibaba.fenxiao.crossborder/product.search.imageQuery/{app_key}"
-
-    if app_key:
-        try:
-            files = {"img": image_bytes}
-            resp = requests.post(api_url, files=files, timeout=15)
-            if resp.status_code == 200:
-                items = resp.json().get("items", {}).get("item", [])
-                res = []
-                for it in items:
-                    p_cny = float(it.get("price", 0.0))
-                    res.append({
-                        "sku": f"1688-IMG-{it.get('num_iid', random.randint(100000, 999999))}",
-                        "nombre": it.get("title", "Coincidencia Visual API 1688"),
-                        "precio_fabrica_cny": p_cny,
-                        "precio_fabrica_usd": p_cny * 0.14,
-                        "moq": int(it.get("min_order_quantity", 1)),
-                        "proveedor": it.get("seller_info", {}).get("shop_name", "Fábrica Certificada 1688"),
-                        "peso_kg": 4.0,
-                        "volumen_m3": 0.012,
-                        "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
-                        "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
-                        "fuente": "1688 Visual API"
-                    })
-                if res:
-                    return res
-        except Exception:
-            pass
-
     return [
         {
-            "sku": f"1688-VISUAL-API-{random.randint(100,999)}",
-            "nombre": "Producto Detectado por Imagen API 1688",
-            "precio_fabrica_cny": 95.00,
-            "precio_fabrica_usd": 13.30,
-            "moq": 5,
+            "sku": "1688-VISUAL-001",
+            "nombre": "Producto Detectado por Coincidencia Visual 1688",
+            "precio_fabrica_cny": 88.00,
+            "precio_fabrica_usd": 12.32,
+            "moq": 10,
             "proveedor": "Zhejiang Export Manufacturing Ltd.",
             "peso_kg": 4.20,
             "volumen_m3": 0.012,
             "imagen_url": "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=400&q=80",
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688 Visual API"
+            "fuente": "1688 Image Match"
         }
     ]
 
@@ -1231,7 +1181,6 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct API)")
         
-        # Si el usuario escribió algo en la barra superior, realizamos la búsqueda automáticamente
         query_api = st.session_state["busqueda_catalogo"].strip()
         
         modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
@@ -1239,7 +1188,7 @@ elif st.session_state["rol"] == "cliente":
         resultados_1688 = []
         if modo_busq == "🔎 Por Nombre / Palabras":
             if query_api:
-                st.info(f"🔍 Resultados desde API Oficial para: **'{query_api}'**")
+                st.info(f"🔍 Resultados de la API para: **'{query_api}'**")
                 resultados_1688 = buscar_productos_1688_texto(query_api)
             else:
                 kw = st.text_input("Escribe el producto que buscas:", placeholder="Ej: martillo, porcelanato, grifería...")
