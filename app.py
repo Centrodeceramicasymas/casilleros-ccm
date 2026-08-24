@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON CONTENEDOR DESLIZABLE (SCROLL HORIZONTAL)
+# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL FLUIDO
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -620,17 +620,25 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DESLIZABLE HORIZONTAL PARA NAVEGACIÓN SUPERIOR */
-    .scrollable-nav {
+    /* CONTENEDOR DE DESPLAZAMIENTO HORIZONTAL PERFECTO */
+    .horizontal-scroll-container {
         display: flex;
         overflow-x: auto;
         gap: 8px;
-        padding-bottom: 4px;
-        margin-bottom: 10px;
-        scrollbar-width: none; /* Firefox */
+        padding: 4px 2px 8px 2px;
+        margin-bottom: 8px;
+        width: 100%;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.4) transparent;
     }
-    .scrollable-nav::-webkit-scrollbar {
-        display: none; /* Chrome, Safari, Opera */
+    .horizontal-scroll-container::-webkit-scrollbar {
+        height: 5px;
+    }
+    .horizontal-scroll-container::-webkit-scrollbar-thumb {
+        background-color: rgba(255,255,255,0.4);
+        border-radius: 10px;
     }
 
     /* BANNER PUBLICITARIO */
@@ -720,15 +728,29 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* BOTONES ADAPTADOS AL SCROLL HORIZONTAL */
-    div.stButton > button, div.stDownloadButton > button {
+    /* ANULAR GRID ESTÁTICO DE STREAMLIT PARA PERMITIR SCROLL HORIZONTAL */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        align-items: center !important;
+        width: 100% !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 0 0 auto !important;
         width: auto !important;
-        min-width: 110px !important;
+        min-width: 120px !important;
+    }
+
+    /* BOTONES UNIFORMES Y ESTÉTICOS */
+    div.stButton > button, div.stDownloadButton > button {
+        width: 100% !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
         border-radius: 10px !important;
-        padding: 0 12px !important;
+        padding: 0 10px !important;
         font-size: 0.82rem !important;
         font-weight: 700 !important;
         display: flex !important;
@@ -1008,8 +1030,8 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- CONTENEDOR DESLIZABLE HORIZONTAL PARA LOS BOTONES EN LA ESQUINA INFERIOR IZQUIERDA ---
-    st.markdown('<div class="scrollable-nav">', unsafe_allow_html=True)
+    # --- CONTENEDOR DESLIZABLE HORIZONTAL FLUIDO PARA LOS BOTONES ---
+    st.markdown('<div class="horizontal-scroll-container">', unsafe_allow_html=True)
     c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
     with c_nav_c:
         if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
