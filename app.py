@@ -665,38 +665,61 @@ st.markdown("""
         height: 2px !important;
     }
 
+    /* BOTÓN DE CERRAR SESIÓN — ESTILO BOTÓN DE APAGADO */
     .st-key-cliente_header div.stButton > button {
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        max-height: 44px !important;
+        width: 50px !important;
+        min-width: 50px !important;
+        max-width: 50px !important;
+        height: 50px !important;
+        min-height: 50px !important;
+        max-height: 50px !important;
         margin: 0 0 0 auto !important;
         padding: 0 !important;
-        border-radius: 12px !important;
-        background: #ffffff !important;
-        color: #004ac1 !important;
-        border: 1px solid rgba(255,255,255,0.85) !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.18) !important;
-        font-size: 1.5rem !important;
+        border-radius: 50% !important;
+        background: linear-gradient(145deg, #ff3b30, #c81e1e) !important;
+        color: #ffffff !important;
+        border: 3px solid rgba(255,255,255,0.92) !important;
+        box-shadow:
+            0 3px 8px rgba(0,0,0,0.28),
+            inset 0 1px 2px rgba(255,255,255,0.35) !important;
+        font-size: 1.75rem !important;
+        line-height: 1 !important;
         font-weight: 900 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        transition: all 0.15s ease !important;
+    }
+
+    .st-key-cliente_header div.stButton > button p {
+        color: #ffffff !important;
+        font-size: 1.75rem !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        font-weight: 900 !important;
     }
 
     .st-key-cliente_header div.stButton > button:hover {
-        background: #f1f5f9 !important;
-        color: #dc2626 !important;
+        background: linear-gradient(145deg, #ff5148, #b91c1c) !important;
+        color: #ffffff !important;
         border-color: #ffffff !important;
-        transform: translateY(-1px) !important;
+        transform: scale(1.06) !important;
+        box-shadow:
+            0 5px 12px rgba(0,0,0,0.32),
+            inset 0 1px 2px rgba(255,255,255,0.4) !important;
+    }
+
+    .st-key-cliente_header div.stButton > button:active {
+        transform: scale(0.96) !important;
     }
 
     .st-key-cliente_header div.stButton > button:focus {
-        color: #dc2626 !important;
+        color: #ffffff !important;
         border-color: #ffffff !important;
-        box-shadow: 0 0 0 3px rgba(255,255,255,0.28) !important;
+        box-shadow:
+            0 0 0 3px rgba(255,255,255,0.35),
+            0 3px 8px rgba(0,0,0,0.28) !important;
     }
 
     .app-header-blue {
