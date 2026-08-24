@@ -1028,7 +1028,7 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    # LÓGICA DE FECHA Y HORA LOCAL
+    # LÓGICA DE FECHA Y HORA LOCAL (CORREGIDO: ahora.month es un entero)
     ahora = datetime.now()
     hora_actual = ahora.hour
     if 5 <= hora_actual < 12:
@@ -1039,7 +1039,7 @@ elif st.session_state["rol"] == "cliente":
         saludo_horario = "Buenas noches"
 
     dia_nombre = DIAS_SEMANA_ES.get(ahora.weekday(), "")
-    mes_nombre = MESES_ES.get(ahora.month(), "")
+    mes_nombre = MESES_ES.get(ahora.month, "")
     hora_formato = ahora.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora.day} {mes_nombre} {ahora.year} &bull; {hora_formato}"
 
