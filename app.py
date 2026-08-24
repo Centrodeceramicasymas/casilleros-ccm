@@ -64,6 +64,9 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+if "mostrar_modal_cotizaciones" not in st.session_state:
+    st.session_state["mostrar_modal_cotizaciones"] = False
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -510,7 +513,7 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "ver_panel_cotizaciones"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
@@ -913,8 +916,6 @@ if not st.session_state["autenticado"]:
 
                     with get_db() as conn:
                         cur = conn.cursor()
-                        cur.execute("SELECT codigo_casillero WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
-                        # Fixed query safety check below
                         cur.execute("SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
                         if cur.fetchone():
                             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote("Hola, necesito asistencia con mi casillero ya registrado.")
@@ -956,7 +957,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (NAVEGACIÓN SUPERIOR ORIGINAL RESTAURADA)
+# 8. PORTAL DEL CLIENTE (HISTORIAL DE COTIZACIONES EN EL HEADER)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -986,11 +987,13 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
-    # CONSULTAR CANTIDAD REAL DE COTIZACIONES EN VIVO
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
         total_cotizaciones = c.fetchone()[0]
+
+        c.execute("SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC", (casillero,))
+        lista_mis_cotizaciones = c.fetchall()
 
         c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
         direcciones_guardadas = c.fetchall()
@@ -1003,7 +1006,10 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR ---
+    if "ver_panel_cotizaciones" not in st.session_state:
+        st.session_state["ver_panel_cotizaciones"] = False
+
+    # --- HEADER AZUL SUPERIOR CON BOTÓN DE HISTORIAL DE COTIZACIONES ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -1012,13 +1018,16 @@ elif st.session_state["rol"] == "cliente":
                 <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
                 <div style="font-size:0.72rem; color:#bfdbfe; margin-top:2px; font-weight:600;">🕒 {fecha_hora_texto}</div>
             </div>
-            <div class="app-header-logo">🏠</div>
-            <div style="display:flex; align-items:center; gap:12px; font-size:1.25rem;">
-                <span style="position:relative; cursor:pointer;">
-                    🛒<span style="position:absolute; top:-6px; right:-8px; background:#ef4444; color:white; font-size:0.65rem; padding:1px 5px; border-radius:10px; font-weight:800;">0</span>
-                </span>
-                <span style="cursor:pointer;">🔔</span>
-            </div>
+    """, unsafe_allow_html=True)
+
+    # BOTÓN DE DOCUMENTO / DESCARGA DE COTIZACIONES EN LA ESQUINA SUPERIOR DERECHA
+    col_h1, col_h2 = st.columns([1.5, 1])
+    with col_h2:
+        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
+            st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
+            st.rerun()
+
+    st.markdown("""
         </div>
         <div class="app-search-bar">
             <span>🔍</span>
@@ -1050,6 +1059,54 @@ elif st.session_state["rol"] == "cliente":
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # --- PANEL DESPLEGABLE DE COTIZACIONES REALIZADAS PARA DESCARGAR ---
+    if st.session_state["ver_panel_cotizaciones"]:
+        st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
+        st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF", unsafe_allow_html=True)
+        st.caption("Aquí puedes consultar y descargar el comprobante en PDF de cada cotización generada.")
+        
+        if lista_mis_cotizaciones:
+            for cot in lista_mis_cotizaciones:
+                id_cot, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
+                st.markdown(f"""
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
+                    <b>🔖 CCM-COT-{id_cot:05d}</b> &bull; Fecha: {fec_c}<br>
+                    <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Generar PDF individual para cada cotización del historial
+                pdf_historial = generar_pdf_confirmacion_cotizacion(
+                    casillero=casillero,
+                    nombre=nombre_completo,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    tipo_carga="Cotización Histórica",
+                    al=al_c, an=an_c, la=la_c,
+                    peso_lb=pe_lb_c, peso_kg=pe_lb_c/2.20462,
+                    vol_m3=vol_m3_c, vol_ft3=vol_m3_c*35.3147,
+                    total_usd=tot_c,
+                    detalle_tarifa="Tarifa Calculada Sistema CCM",
+                    id_cot=id_cot,
+                    destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+                    fecha_emision=fec_c
+                )
+                st.download_button(
+                    f"📥 Descargar PDF CCM-COT-{id_cot:05d}",
+                    pdf_historial,
+                    f"Comprobante_Cotizacion_CCM_COT_{id_cot:05d}.pdf",
+                    "application/pdf",
+                    key=f"dl_cot_{id_cot}"
+                )
+                st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
+        else:
+            st.info("Aún no has generado ninguna cotización.")
+        
+        if st.button("Cerrar Panel", type="secondary", key="btn_cerrar_cot_panel"):
+            st.session_state["ver_panel_cotizaciones"] = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
     if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
