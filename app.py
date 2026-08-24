@@ -623,27 +623,39 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO (SOLO SE MUEVE ESTA ZONA AL DESLIZAR CON EL DEDO) */
-    .horizontal-scroll-container {
-        display: flex;
-        overflow-x: auto;
-        gap: 8px;
-        padding: 6px 2px 10px 2px;
-        margin-bottom: 8px;
+    /* CONTENEDOR DE SCROLL HORIZONTAL AISLADO */
+    .horizontal-scroll-wrapper {
         width: 100%;
-        max-width: 100%;
+        overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: thin;
         scrollbar-color: rgba(255,255,255,0.4) transparent;
-        box-sizing: border-box;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
     }
-    .horizontal-scroll-container::-webkit-scrollbar {
-        height: 5px;
+    .horizontal-scroll-wrapper::-webkit-scrollbar {
+        height: 4px;
     }
-    .horizontal-scroll-container::-webkit-scrollbar-thumb {
+    .horizontal-scroll-wrapper::-webkit-scrollbar-thumb {
         background-color: rgba(255,255,255,0.4);
         border-radius: 10px;
+    }
+
+    /* FORZAR FILA HORIZONTAL DE BOTONES EN UNA SOLA LÍNEA */
+    .horizontal-scroll-wrapper div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        align-items: center !important;
+        width: max-content !important;
+    }
+    .horizontal-scroll-wrapper div[data-testid="stHorizontalBlock"] > div {
+        flex: 0 0 auto !important;
+        width: 130px !important;
+        min-width: 130px !important;
+        max-width: 130px !important;
     }
 
     /* BANNER PUBLICITARIO */
@@ -731,22 +743,6 @@ st.markdown("""
         font-size: 0.78rem !important;
         font-weight: 700 !important;
         color: #475569 !important;
-    }
-
-    /* FORZAR FILA HORIZONTAL AISLADA DENTRO DEL SCROLL */
-    .horizontal-scroll-container div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 8px !important;
-        align-items: center !important;
-        width: auto !important;
-    }
-    .horizontal-scroll-container div[data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 auto !important;
-        width: 130px !important;
-        min-width: 130px !important;
-        max-width: 130px !important;
     }
 
     /* BOTONES UNIFORMES Y ESTÉTICOS */
@@ -971,7 +967,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (LÓGICA CONDICIONAL DE DIRECCIONES)
+# 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1036,8 +1032,8 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- CONTENEDOR DE SCROLL HORIZONTAL AISLADO PARA LOS BOTONES ---
-    st.markdown('<div class="horizontal-scroll-container">', unsafe_allow_html=True)
+    # --- CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO ---
+    st.markdown('<div class="horizontal-scroll-wrapper">', unsafe_allow_html=True)
     c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
     with c_nav_c:
         if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
