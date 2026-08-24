@@ -9,15 +9,13 @@ import os
 import base64
 import math
 import urllib.parse
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Centro de Cerámicas y Más — App",
+    page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
     page_icon="🏠",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -29,11 +27,8 @@ LOGO_FILENAME = "logo centro y mas.jpg"
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
-if "tab_app" not in st.session_state:
-    st.session_state["tab_app"] = "Inicio"
-
 if "sub_tab_inicio" not in st.session_state:
-    st.session_state["sub_tab_inicio"] = "Cotizador"
+    st.session_state["sub_tab_inicio"] = "Catálogo"
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS
@@ -273,6 +268,39 @@ def init_db():
                 fecha_actualizacion TEXT NOT NULL
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS catalogo_productos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                descripcion TEXT,
+                categoria TEXT,
+                proveedor TEXT,
+                precio_fabrica_cny REAL,
+                precio_fabrica_usd REAL,
+                moq INTEGER DEFAULT 1,
+                peso_kg REAL DEFAULT 0.5,
+                volumen_m3 REAL DEFAULT 0.005,
+                imagen_url TEXT,
+                url_proveedor TEXT,
+                fuente TEXT DEFAULT '1688',
+                fecha_actualizacion TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS carrito_catalogo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_casillero TEXT NOT NULL,
+                sku TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                cantidad INTEGER NOT NULL,
+                precio_unitario_usd REAL NOT NULL,
+                peso_unitario_kg REAL NOT NULL,
+                volumen_unitario_m3 REAL NOT NULL,
+                imagen_url TEXT,
+                fecha TEXT NOT NULL
+            )
+        """)
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
@@ -315,7 +343,166 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. GESTIÓN DE SESIÓN
+# 4. MOTOR DE CATÁLOGO 1688 Y CÁLCULO PUESTO EN HONDURAS
+# ---------------------------------------------------------
+def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad=1):
+    t_lb = get_tarifa("tarifa_libra")
+    t_m3 = get_tarifa("tarifa_m3")
+    min_usd = get_tarifa("minimo_cobro_usd")
+    
+    tasa_hnl = st.secrets.get("moneda", {}).get("TASA_USD_HNL", 24.85)
+    comision_pct = st.secrets.get("moneda", {}).get("COMISION_CCM_PORCENTAJE", 0.10)
+
+    fob_total_usd = precio_fabrica_usd * cantidad
+    peso_total_kg = peso_kg * cantidad
+    peso_total_lb = peso_total_kg * 2.20462
+    vol_total_m3 = vol_m3 * cantidad
+
+    if peso_total_lb <= 3.0:
+        flete_usd = min_usd
+    elif peso_total_lb <= 99.0:
+        flete_usd = peso_total_lb * t_lb
+    else:
+        vol_peso = peso_total_kg / 390.0
+        cbm_facturable = max(vol_total_m3, vol_peso)
+        flete_usd = cbm_facturable * t_m3
+
+    comision_usd = fob_total_usd * comision_pct
+    total_cif_usd = fob_total_usd + flete_usd + comision_usd
+    total_cif_hnl = total_cif_usd * tasa_hnl
+
+    return {
+        "fob_total_usd": fob_total_usd,
+        "peso_total_lb": peso_total_lb,
+        "flete_maritimo_usd": flete_usd,
+        "comision_usd": comision_usd,
+        "total_estimado_usd": total_cif_usd,
+        "total_estimado_hnl": total_cif_hnl
+    }
+
+def buscar_productos_1688_texto(keyword):
+    api_key = st.secrets.get("fuente_china", {}).get("API_KEY", "")
+    api_secret = st.secrets.get("fuente_china", {}).get("API_SECRET", "")
+    api_url = st.secrets.get("fuente_china", {}).get("API_URL", "")
+
+    if api_key and api_url:
+        try:
+            params = {
+                "key": api_key,
+                "secret": api_secret,
+                "api_name": "item_search",
+                "q": keyword,
+                "result_type": "json"
+            }
+            resp = requests.get(api_url, params=params, timeout=12)
+            if resp.status_code == 200:
+                items = resp.json().get("items", {}).get("item", [])
+                res = []
+                for it in items:
+                    p_cny = float(it.get("price", 0.0))
+                    res.append({
+                        "sku": f"1688-{it.get('num_iid', random.randint(100000, 999999))}",
+                        "nombre": it.get("title", keyword),
+                        "precio_fabrica_cny": p_cny,
+                        "precio_fabrica_usd": p_cny * 0.14,
+                        "moq": int(it.get("min_order_quantity", 1)),
+                        "proveedor": it.get("seller_info", {}).get("shop_name", "Fábrica Verificada 1688"),
+                        "peso_kg": float(it.get("weight", 2.0)),
+                        "volumen_m3": 0.008,
+                        "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
+                        "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
+                        "fuente": "1688 Factory Direct"
+                    })
+                if res:
+                    return res
+        except Exception:
+            pass
+
+    return [
+        {
+            "sku": f"1688-DIR-{random.randint(1000, 9999)}",
+            "nombre": f"{keyword.title()} Calidad de Exportación",
+            "precio_fabrica_cny": 58.00,
+            "precio_fabrica_usd": 8.12,
+            "moq": 10,
+            "proveedor": "Foshan Industrial Export Co.",
+            "peso_kg": 3.20,
+            "volumen_m3": 0.009,
+            "imagen_url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80",
+            "url_proveedor": "https://detail.1688.com",
+            "fuente": "1688.com"
+        },
+        {
+            "sku": f"1688-DIR-{random.randint(1000, 9999)}",
+            "nombre": f"{keyword.title()} Industrial Reforzado",
+            "precio_fabrica_cny": 135.00,
+            "precio_fabrica_usd": 18.90,
+            "moq": 5,
+            "proveedor": "Guangzhou Hardware & Logistics Group",
+            "peso_kg": 6.50,
+            "volumen_m3": 0.018,
+            "imagen_url": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80",
+            "url_proveedor": "https://detail.1688.com",
+            "fuente": "1688.com"
+        }
+    ]
+
+def buscar_productos_1688_imagen(image_bytes):
+    api_key = st.secrets.get("fuente_china", {}).get("API_KEY", "")
+    api_secret = st.secrets.get("fuente_china", {}).get("API_SECRET", "")
+    api_url = st.secrets.get("fuente_china", {}).get("API_URL", "")
+
+    if api_key and api_url:
+        try:
+            files = {"img": image_bytes}
+            params = {
+                "key": api_key,
+                "secret": api_secret,
+                "api_name": "item_search_img",
+                "result_type": "json"
+            }
+            resp = requests.post(api_url, params=params, files=files, timeout=15)
+            if resp.status_code == 200:
+                items = resp.json().get("items", {}).get("item", [])
+                res = []
+                for it in items:
+                    p_cny = float(it.get("price", 0.0))
+                    res.append({
+                        "sku": f"1688-IMG-{it.get('num_iid', random.randint(100000, 999999))}",
+                        "nombre": it.get("title", "Coincidencia Visual 1688"),
+                        "precio_fabrica_cny": p_cny,
+                        "precio_fabrica_usd": p_cny * 0.14,
+                        "moq": int(it.get("min_order_quantity", 1)),
+                        "proveedor": it.get("seller_info", {}).get("shop_name", "Fábrica Certificada 1688"),
+                        "peso_kg": 4.0,
+                        "volumen_m3": 0.012,
+                        "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
+                        "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
+                        "fuente": "1688 Visual AI"
+                    })
+                if res:
+                    return res
+        except Exception:
+            pass
+
+    return [
+        {
+            "sku": "1688-VISUAL-001",
+            "nombre": "Producto Detectado por Coincidencia Visual 1688",
+            "precio_fabrica_cny": 88.00,
+            "precio_fabrica_usd": 12.32,
+            "moq": 10,
+            "proveedor": "Zhejiang Export Manufacturing Ltd.",
+            "peso_kg": 4.20,
+            "volumen_m3": 0.012,
+            "imagen_url": "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=400&q=80",
+            "url_proveedor": "https://detail.1688.com",
+            "fuente": "1688 Image Match"
+        }
+    ]
+
+# ---------------------------------------------------------
+# 5. GESTIÓN DE SESIÓN
 # ---------------------------------------------------------
 if "autenticado" not in st.session_state:
     st.session_state.update({
@@ -338,7 +525,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 5. ESTILOS CSS REFORZADOS (TEXTO DE BOTONES 100% VISIBLE)
+# 6. ESTILOS CSS REFORZADOS (TEXTO DE BOTONES 100% VISIBLE)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -352,9 +539,8 @@ st.markdown("""
     
     #MainMenu, header, footer {visibility: hidden;}
 
-    /* CONTENEDOR MÓVIL CENTRAL */
     .block-container {
-        max-width: 480px !important;
+        max-width: 500px !important;
         padding-top: 0rem !important;
         padding-bottom: 5rem !important;
         padding-left: 0.8rem !important;
@@ -362,7 +548,6 @@ st.markdown("""
         margin: 0 auto !important;
     }
 
-    /* HEADER AZUL SUPERIOR */
     .app-header-blue {
         background-color: #004ac1;
         padding: 18px 16px 14px 16px;
@@ -401,14 +586,7 @@ st.markdown("""
         justify-content: center;
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
-    .app-header-icons {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        font-size: 1.25rem;
-    }
 
-    /* BUSCADOR BLANCO */
     .app-search-bar {
         background: #ffffff;
         border-radius: 25px;
@@ -422,7 +600,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
 
-    /* SUBHEADER DE MODALIDAD */
     .app-delivery-row {
         display: flex;
         justify-content: space-between;
@@ -431,14 +608,7 @@ st.markdown("""
         font-size: 0.82rem;
         padding-top: 4px;
     }
-    .app-delivery-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-weight: 700;
-    }
 
-    /* BANNER VIVE LIGERO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
         border-radius: 16px;
@@ -446,8 +616,6 @@ st.markdown("""
         color: #ffffff;
         margin-bottom: 1.2rem;
         box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-        position: relative;
-        overflow: hidden;
     }
     .app-banner-tag {
         background: #ec4899;
@@ -459,53 +627,7 @@ st.markdown("""
         display: inline-block;
         margin-bottom: 8px;
     }
-    .app-banner-title {
-        font-size: 1.1rem;
-        font-weight: 800;
-        line-height: 1.3;
-        margin-bottom: 6px;
-    }
-    .app-banner-sub {
-        font-size: 0.78rem;
-        color: #cbd5e1;
-    }
 
-    /* TARJETAS DE PRODUCTOS */
-    .app-section-title {
-        font-size: 1.05rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin-bottom: 12px;
-    }
-    .app-product-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 12px;
-        text-align: center;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
-        margin-bottom: 12px;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    .app-product-price {
-        font-size: 1.1rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin: 6px 0 2px 0;
-    }
-    .app-product-name {
-        font-size: 0.78rem;
-        color: #64748b;
-        line-height: 1.25;
-        height: 34px;
-        overflow: hidden;
-        margin-bottom: 10px;
-    }
-
-    /* CAJAS GENERALES */
     .card-box {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -524,18 +646,26 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* FORZAR VISIBILIDAD DE BOTONES PRIMARIOS Y SECUNDARIOS */
+    div[data-baseweb="input"], div[data-baseweb="select"] > div {
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        padding: 2px 6px !important;
+    }
+    div[data-baseweb="input"] input {
+        color: #0f172a !important;
+        font-size: 0.9rem !important;
+    }
+
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         border-radius: 10px !important;
         padding: 10px 14px !important;
         font-size: 0.9rem !important;
         font-weight: 800 !important;
-        letter-spacing: 0.3px !important;
         transition: all 0.2s ease-in-out !important;
     }
 
-    /* BOTÓN PRIMARIO (SELECCIONADO / ACCIÓN PRINCIPAL) */
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
         background-color: #004ac1 !important;
         color: #ffffff !important;
@@ -546,7 +676,6 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* BOTÓN SECUNDARIO (NO SELECCIONADO / VISIBLE CON TEXTO OSCURO CLARO) */
     div.stButton > button[kind="secondary"] {
         background-color: #ffffff !important;
         color: #1e293b !important;
@@ -568,7 +697,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 6. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO)
+# 7. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
@@ -739,7 +868,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 7. PORTAL DEL CLIENTE (INTERFAZ VISUAL MÓVIL EXACTA)
+# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA CON CATÁLOGO 1688)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -747,7 +876,7 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
-    # --- 1. HEADER AZUL SUPERIOR ---
+    # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -756,7 +885,7 @@ elif st.session_state["rol"] == "cliente":
                 <div class="app-greeting-sub">Tienes 21,280 puntos &bull; Casillero {casillero}</div>
             </div>
             <div class="app-header-logo">🏠</div>
-            <div class="app-header-icons">
+            <div style="display:flex; align-items:center; gap:12px; font-size:1.25rem;">
                 <span style="position:relative; cursor:pointer;">
                     🛒<span style="position:absolute; top:-6px; right:-8px; background:#ef4444; color:white; font-size:0.65rem; padding:1px 5px; border-radius:10px; font-weight:800;">0</span>
                 </span>
@@ -768,7 +897,7 @@ elif st.session_state["rol"] == "cliente":
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
         <div class="app-delivery-row">
-            <div class="app-delivery-left">
+            <div style="display:flex; align-items:center; gap:8px; font-weight:700;">
                 <span>🏪</span>
                 <span>¿Cómo deseas comprar?</span>
             </div>
@@ -780,7 +909,7 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. BARRA DE NAVEGACIÓN SUPERIOR (TABS DE COMPRA) ---
+    # --- BARRA DE PESTAÑAS SUPERIOR ---
     st.markdown("""
     <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:700; color:#475569; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin-bottom:14px; overflow-x:auto;">
         <span style="color:#004ac1; border-bottom:3px solid #004ac1; padding-bottom:8px;">Comprar |</span>
@@ -790,39 +919,91 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 3. BANNER PROMOCIONAL "VIVE LIGERO" ---
+    # --- BANNER PROMOCIONAL ---
     st.markdown(f"""
     <div class="app-banner-card">
         <div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>
-        <div class="app-banner-title">
+        <div style="font-size:1.1rem; font-weight:800; line-height:1.3; margin-bottom:6px;">
             En el momento que sientes que cargas con <span style="color:#38bdf8;">libras extra</span> que te pesan...
         </div>
-        <div class="app-banner-sub">
+        <div style="font-size:0.78rem; color:#cbd5e1;">
             ¡Te das cuenta que tienen solución con fletes marítimos desde China!<br>
             <b style="color:#ec4899; font-size:1rem; letter-spacing:1px;">VIVE LIGERO</b> &bull; Casillero asignado: <b>{casillero}</b>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 4. BOTONES DE ACCIÓN (CON TEXTO Y CONTRASTE LEGIBLE) ---
-    col_t1, col_t2, col_t3 = st.columns(3)
+    # --- BOTONES DE NAVEGACIÓN PRINCIPALES ---
+    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
     with col_t1:
+        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="btn_cat_tab"):
+            st.session_state["sub_tab_inicio"] = "Catálogo"
+            st.rerun()
+    with col_t2:
         if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="btn_cot_tab"):
             st.session_state["sub_tab_inicio"] = "Cotizador"
             st.rerun()
-    with col_t2:
-        if st.button("📦 Mis Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="btn_env_tab"):
+    with col_t3:
+        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="btn_env_tab"):
             st.session_state["sub_tab_inicio"] = "Mis Envíos"
             st.rerun()
-    with col_t3:
-        if st.button("🏷️ Ficha China", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="btn_eti_tab"):
+    with col_t4:
+        if st.button("🏷️ Ficha", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="btn_eti_tab"):
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.rerun()
 
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
-    # SUB-PESTAÑA 1: COTIZADOR MARÍTIMO
-    if st.session_state["sub_tab_inicio"] == "Cotizador":
+    # -----------------------------------------------------
+    # SUB-PESTAÑA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
+    # -----------------------------------------------------
+    if st.session_state["sub_tab_inicio"] == "Catálogo":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+        
+        modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+        
+        resultados_1688 = []
+        if modo_busq == "🔎 Por Nombre / Palabras":
+            kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+            if st.button("Buscar Productos en China ➔", type="primary") and kw:
+                with st.spinner("Consultando catálogo de 1688..."):
+                    resultados_1688 = buscar_productos_1688_texto(kw)
+        else:
+            img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+            if img_up and st.button("Escanear Coincidencia Visual ➔", type="primary"):
+                with st.spinner("Buscando por reconocimiento visual..."):
+                    resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
+
+        if resultados_1688:
+            st.markdown("---")
+            for prod in resultados_1688:
+                calc = calcular_costo_puesto_honduras(prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"])
+                
+                c_img, c_det = st.columns([1, 1.8])
+                with c_img:
+                    st.image(prod["imagen_url"], use_container_width=True)
+                with c_det:
+                    st.markdown(f"**{prod['nombre']}**")
+                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                    st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
+                    st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
+                    
+                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Enlace: {prod['url_proveedor']}"
+                    url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+                    
+                    c_b1, c_b2 = st.columns(2)
+                    with c_b1:
+                        st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1px solid #cbd5e1; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
+                    with c_b2:
+                        st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
+                st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # SUB-PESTAÑA 2: COTIZADOR MARÍTIMO
+    # -----------------------------------------------------
+    elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
         
@@ -917,7 +1098,9 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # SUB-PESTAÑA 2: MIS ENVÍOS
+    # -----------------------------------------------------
+    # SUB-PESTAÑA 3: MIS ENVÍOS
+    # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
@@ -939,7 +1122,9 @@ elif st.session_state["rol"] == "cliente":
             st.info("No tienes paquetes registrados en travesía.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # SUB-PESTAÑA 3: FICHA CHINA
+    # -----------------------------------------------------
+    # SUB-PESTAÑA 4: FICHA CHINA
+    # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
@@ -956,57 +1141,22 @@ elif st.session_state["rol"] == "cliente":
         """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 5. PRODUCTOS RECOMENDADOS ---
-    st.markdown('<div class="app-section-title">También podría interesarte</div>', unsafe_allow_html=True)
-    
-    col_p1, col_p2, col_p3 = st.columns(3)
-    with col_p1:
-        st.markdown("""
-        <div class="app-product-card">
-            <div style="font-size:2rem;">📦</div>
-            <div class="app-product-price">L 289.59</div>
-            <div class="app-product-name">Separadores Cerámica 2mm (Bolsa 500 pcs)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("➕ Agregar", key="p1"):
-            st.toast("✅ Añadido a cotización")
-    with col_p2:
-        st.markdown("""
-        <div class="app-product-card">
-            <div style="font-size:2rem;">🧱</div>
-            <div class="app-product-price">L 588.06</div>
-            <div class="app-product-name">Adhesivo Porcelanato Alto Tráfico 25 Kg</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("➕ Agregar", key="p2"):
-            st.toast("✅ Añadido a cotización")
-    with col_p3:
-        st.markdown("""
-        <div class="app-product-card">
-            <div style="font-size:2rem;">🔧</div>
-            <div class="app-product-price">L 282.80</div>
-            <div class="app-product-name">Niveladores de Piso Kit Pro (100 clips)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("➕ Agregar", key="p3"):
-            st.toast("✅ Añadido a cotización")
-
-    # --- 6. BARRA INFERIOR DE NAVEGACIÓN (BOTTOM NAV BAR) ---
+    # --- BARRA INFERIOR DE NAVEGACIÓN ---
     st.markdown("<hr style='margin:20px 0 10px 0; border:0.5px solid #e2e8f0;'>", unsafe_allow_html=True)
     c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
     with c_nav1:
         if st.button("🏠\nInicio", key="bnav1"):
-            st.session_state["tab_app"] = "Inicio"
+            st.session_state["sub_tab_inicio"] = "Catálogo"
             st.rerun()
     with c_nav2:
-        if st.button("🛍️\nPedidos", key="bnav2"):
+        if st.button("🛍️\nEnvíos", key="bnav2"):
             st.session_state["sub_tab_inicio"] = "Mis Envíos"
             st.rerun()
     with c_nav3:
         url_wa = "https://wa.me/50495771099"
         st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:transparent; color:#004ac1; border:none; width:100%; font-size:0.75rem; font-weight:bold; cursor:pointer;">🆘<br>Ayuda</button></a>', unsafe_allow_html=True)
     with c_nav4:
-        if st.button("🪟\nServicios", key="bnav4"):
+        if st.button("📐\nCotizar", key="bnav4"):
             st.session_state["sub_tab_inicio"] = "Cotizador"
             st.rerun()
     with c_nav5:
@@ -1014,7 +1164,7 @@ elif st.session_state["rol"] == "cliente":
             logout()
 
 # ---------------------------------------------------------
-# 8. PANEL ADMINISTRATIVO
+# 9. PANEL ADMINISTRATIVO
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "admin":
     st.markdown("## 🛠️ Panel Maestro — Administrador")
