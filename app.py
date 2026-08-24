@@ -512,23 +512,80 @@ if "autenticado" not in st.session_state:
         "reg_datos": {}
     })
 
-# RESTAURACIÓN AUTOMÁTICA DE SESIÓN AL REFRESCAR / RECARGAR LA PÁGINA (F5)
-if not st.session_state["autenticado"]:
-    params = st.query_params
-    if "casillero" in params:
-        cas_param = str(params["casillero"])
+# ---------------------------------------------------------
+# SESIÓN PERSISTENTE: NO CERRAR AL ACTUALIZAR / F5
+# ---------------------------------------------------------
+# Streamlit reconstruye st.session_state cuando el navegador hace F5.
+# Por eso guardamos el casillero en la URL como identificador persistente
+# y lo restauramos automáticamente desde SQLite.
+def restaurar_sesion_persistente():
+    if st.session_state.get("autenticado", False):
+        return True
+
+    try:
+        params = st.query_params
+        cas_param = params.get("casillero", "")
+        if isinstance(cas_param, list):
+            cas_param = cas_param[0] if cas_param else ""
+        cas_param = str(cas_param).strip()
+
+        if not cas_param:
+            return False
+
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE codigo_casillero = ? AND activo = 1", (cas_param,))
+            c.execute("""
+                SELECT id, codigo_casillero, nombre_completo, correo_principal,
+                       rol, activo, telefono_principal, ciudad
+                FROM usuarios
+                WHERE codigo_casillero = ? AND activo = 1
+            """, (cas_param,))
             user_rec = c.fetchone()
-            if user_rec:
-                st.session_state["autenticado"] = True
-                st.session_state["casillero"] = user_rec[1]
-                st.session_state["nombre"] = user_rec[2]
-                st.session_state["usuario"] = user_rec[3]
-                st.session_state["rol"] = user_rec[4]
-                st.session_state["telefono"] = user_rec[6]
-                st.session_state["ciudad"] = user_rec[7]
+
+        if not user_rec:
+            return False
+
+        st.session_state["autenticado"] = True
+        st.session_state["casillero"] = user_rec[1]
+        st.session_state["nombre"] = user_rec[2]
+        st.session_state["usuario"] = user_rec[3]
+        st.session_state["rol"] = user_rec[4]
+        st.session_state["telefono"] = user_rec[6]
+        st.session_state["ciudad"] = user_rec[7]
+
+        # Recuperar también la última vista si existe en la URL.
+        vista_url = params.get("vista", "")
+        if isinstance(vista_url, list):
+            vista_url = vista_url[0] if vista_url else ""
+        vistas_validas = {
+            "Mis Cotizaciones",
+            "Catálogo",
+            "Cotizador",
+            "Mis Envíos",
+            "Etiqueta"
+        }
+        if vista_url in vistas_validas:
+            st.session_state["sub_tab_inicio"] = vista_url
+
+        return True
+
+    except Exception:
+        # Si existe algún problema leyendo los parámetros, mostramos login
+        # en lugar de romper toda la aplicación.
+        return False
+
+restaurar_sesion_persistente()
+
+# Mientras el usuario esté autenticado, mantenemos el casillero en la URL.
+# Así una navegación interna o un F5 no elimina la sesión.
+if st.session_state.get("autenticado", False):
+    cas_actual = str(st.session_state.get("casillero", "")).strip()
+    if cas_actual:
+        try:
+            if st.query_params.get("casillero") != cas_actual:
+                st.query_params["casillero"] = cas_actual
+        except Exception:
+            pass
 
 def logout():
     for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "sub_tab_inicio"]:
@@ -900,7 +957,12 @@ if not st.session_state["autenticado"]:
                         st.session_state["telefono"] = user[6]
                         st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
-                        st.query_params["casillero"] = user[1]
+                        st.session_state["sub_tab_inicio"] = "Catálogo"
+
+                        # IDENTIFICADOR PERSISTENTE:
+                        # queda en la URL y permite recuperar la sesión después de F5.
+                        st.query_params["casillero"] = str(user[1])
+                        st.query_params["vista"] = "Catálogo"
                         st.rerun()
                 else:
                     st.error("❌ Credenciales inválidas.")
@@ -1100,22 +1162,32 @@ elif st.session_state["rol"] == "cliente":
         with c_nav_c:
             if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
                 st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Mis Cotizaciones"
                 st.rerun()
         with c_nav1:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Catálogo"
                 st.rerun()
         with c_nav2:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Cotizador"
                 st.rerun()
         with c_nav3:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Mis Envíos"
                 st.rerun()
         with c_nav4:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Etiqueta"
                 st.rerun()
 
     # --- FLECHAS GUÍA PARPADEANTES REACTIVAS A LA POSICIÓN ---
