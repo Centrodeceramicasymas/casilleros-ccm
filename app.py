@@ -540,19 +540,6 @@ st.markdown("""
         margin: 0 auto !important;
     }
 
-    /* ESTILO SIDEBAR IZQUIERDO ESTILO PSKCLOUD */
-    [data-testid="stSidebar"] {
-        background-color: #111827 !important;
-        color: #ffffff !important;
-        border-right: 1px solid #1f2937 !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #ffffff !important;
-    }
-    [data-testid="stSidebar"] hr {
-        border-color: #374151 !important;
-    }
-
     /* HEADER AZUL SUPERIOR */
     .app-header-blue {
         background-color: #004ac1;
@@ -926,6 +913,8 @@ if not st.session_state["autenticado"]:
 
                     with get_db() as conn:
                         cur = conn.cursor()
+                        cur.execute("SELECT codigo_casillero WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
+                        # Fixed query safety check below
                         cur.execute("SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
                         if cur.fetchone():
                             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote("Hola, necesito asistencia con mi casillero ya registrado.")
@@ -967,7 +956,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (MENÚ LATERAL IZQUIERDO ESTILO PSKCLOUD)
+# 8. PORTAL DEL CLIENTE (NAVEGACIÓN SUPERIOR ORIGINAL RESTAURADA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -997,6 +986,7 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
+    # CONSULTAR CANTIDAD REAL DE COTIZACIONES EN VIVO
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
@@ -1012,39 +1002,6 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
-
-    # --- MENÚ LATERAL IZQUIERDO (SIDEBAR ESTILO PSKCLOUD) ---
-    with st.sidebar:
-        st.markdown("### ☁️ **CCM CLOUD**")
-        st.caption("SISTEMA DE GESTIÓN 3.0")
-        st.markdown("---")
-        st.markdown(f"👤 Hola, **{nombre_display}**")
-        st.markdown(f"🏢 Casillero: `{casillero}`")
-        st.markdown("---")
-        
-        st.markdown("📂 **MENÚ PRINCIPAL**")
-        if st.button("🛍️ Catálogo 1688", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", use_container_width=True):
-            st.session_state["sub_tab_inicio"] = "Catálogo"
-            st.rerun()
-            
-        if st.button("📐 Cotizador Marítimo", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", use_container_width=True):
-            st.session_state["sub_tab_inicio"] = "Cotizador"
-            st.rerun()
-            
-        if st.button("📦 Mis Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", use_container_width=True):
-            st.session_state["sub_tab_inicio"] = "Mis Envíos"
-            st.rerun()
-            
-        if st.button("🏷️ Ficha / Etiqueta", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", use_container_width=True):
-            st.session_state["sub_tab_inicio"] = "Etiqueta"
-            st.rerun()
-            
-        st.markdown("---")
-        url_wa = "https://wa.me/50495771099"
-        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:10px; height:42px; width:100%; font-size:0.82rem; font-weight:bold; cursor:pointer; margin-bottom:6px;">💬 Soporte WhatsApp</button></a>', unsafe_allow_html=True)
-        
-        if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
-            logout()
 
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
@@ -1167,6 +1124,27 @@ elif st.session_state["rol"] == "cliente":
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # --- BARRA DE NAVEGACIÓN SUPERIOR (CATÁLOGO, COTIZADOR, ENVÍOS, FICHAS) ---
+    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
+    with col_nav1:
+        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+            st.session_state["sub_tab_inicio"] = "Catálogo"
+            st.rerun()
+    with col_nav2:
+        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+            st.session_state["sub_tab_inicio"] = "Cotizador"
+            st.rerun()
+    with col_nav3:
+        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+            st.session_state["sub_tab_inicio"] = "Mis Envíos"
+            st.rerun()
+    with col_nav4:
+        if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+            st.session_state["sub_tab_inicio"] = "Etiqueta"
+            st.rerun()
+
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
     # --- BANNER PROMOCIONAL ---
     st.markdown(f"""
     <div class="app-banner-card">
@@ -1182,7 +1160,7 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 (ORIGINAL)
+    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
