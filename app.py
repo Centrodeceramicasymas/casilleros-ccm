@@ -24,7 +24,6 @@ st.set_page_config(
 DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo centro y mas.jpg"
 
-# Zona horaria de Honduras (UTC-6 sin horario de verano)
 ZONA_HONDURAS = timezone(timedelta(hours=-6))
 
 def obtener_tiempo_honduras():
@@ -33,7 +32,7 @@ def obtener_tiempo_honduras():
 MUNICIPIOS_HONDURAS = {
     "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
     "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
-    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
+    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "La Laminí", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
     "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
     "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
     "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
@@ -1021,7 +1020,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (SALUDO, HORA LOCAL Y FECHA EXACTA DE HONDURAS)
+# 8. PORTAL DEL CLIENTE (VISUALIZACIÓN HERMOSA Y ELEGANTE)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1038,7 +1037,7 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    # LÓGICA DE FECHA Y HORA LOCAL EN HONDURAS (UTC-6)
+    # HORA LOCAL DE HONDURAS (UTC-6)
     ahora_hn = obtener_tiempo_honduras()
     hora_actual = ahora_hn.hour
     if 5 <= hora_actual < 12:
@@ -1270,7 +1269,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES Y METROS CÚBICOS)
+    # VISTA 2: COTIZADOR MARÍTIMO (DISEÑO ELEGANTE Y VISUALMENTE HERMOSO)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1420,7 +1419,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.rerun()
 
-        # VALIDACIÓN COMPLETA: SOLO MOSTRAR SI COINCIDEN TODAS LAS MEDIDAS, PESO, PRECIO Y DESTINO
+        # VALIDACIÓN COMPLETA: VISUALIZACIÓN ELEGANTE Y HERMOSA DE LA COTIZACIÓN CONFIRMADA
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             
@@ -1436,7 +1435,20 @@ elif st.session_state["rol"] == "cliente":
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
                 
-                st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada el **{fecha_doc}** para entrega en: {dest_pdf}.")
+                # DISEÑO VISUAL HERMOSO Y MODERNO DE ÉXITO
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                        <span style="font-size: 1.4rem;">🎉</span>
+                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">¡Cotización Confirmada Exitosamente!</h4>
+                    </div>
+                    <p style="color: #15803d; font-size: 0.88rem; margin: 0; line-height: 1.5;">
+                        <b>No. Control:</b> CCM-COT-{id_c:05d}<br>
+                        <b>Fecha y Hora:</b> {fecha_doc}<br>
+                        <b>Destino de Entrega:</b> {dest_pdf}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
@@ -1481,7 +1493,7 @@ elif st.session_state["rol"] == "cliente":
                 
                 texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                 url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
             else:
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
