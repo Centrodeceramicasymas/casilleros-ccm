@@ -546,7 +546,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS
+# 6. ESTILOS CSS REFINADOS: ETIQUETAS VISIBLES EN ENTRADAS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -685,16 +685,26 @@ st.markdown("""
         color: #ffffff;
     }
 
+    /* ETIQUETAS DE TEXTO SOBRE LAS ENTRADAS DE DIMENSIONES (ALTO, ANCHO, LARGO, PESO) */
+    .stTextInput label, .stNumberInput label, .stSelectbox label, .stTextArea label, .stRadio label {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 0.84rem !important;
+        margin-bottom: 4px !important;
+        display: block !important;
+    }
+
     /* INPUTS */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
+        border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
     }
     div[data-baseweb="input"] input {
         color: #0f172a !important;
         font-size: 0.9rem !important;
+        font-weight: 600 !important;
     }
 
     /* BOTONES HOMOGÉNEOS Y ELEGANTES */
@@ -922,7 +932,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & RESETEO AL CAMBIAR DATOS)
+# 8. PORTAL DEL CLIENTE (LABELS VISIBLES Y ACTUALIZACIÓN REACTIVA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1128,7 +1138,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (VALIDACIÓN DE MEDIDAS, PESO Y PRECIOS)
+    # VISTA 2: COTIZADOR MARÍTIMO (CON TEXTO DE MEDIDAS VISIBLES Y ACTUALIZACIÓN)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1179,7 +1189,7 @@ elif st.session_state["rol"] == "cliente":
             with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="in_an_com")
             with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="in_la_com")
             with c4: 
-                pe_lb = st.number_input("Peso Total (lb)", min_value=100.0, value=500.0, step=10.0, key="in_pe_com")
+                pe_lb = st.number_input("Peso (lb)", min_value=100.0, value=500.0, step=10.0, key="in_pe_com")
                 pe_kg = pe_lb / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
@@ -1215,7 +1225,6 @@ elif st.session_state["rol"] == "cliente":
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             
-            # Verificación de consistencia entre los inputs actuales y los datos confirmados
             mismo_destino = (d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"])
             mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
             mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
