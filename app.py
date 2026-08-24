@@ -569,7 +569,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: ENTRADAS VISIBLES Y BOTONES 100% RESPONSIVOS
+# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA 100% BLANCOS Y VISIBLES
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -1008,13 +1008,31 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (GRID PERFECTO EN MÓVILES Y COMPUTADORA)
+# 8. PORTAL DEL CLIENTE (SALUDO DINÁMICO & PRIMER NOMBRE Y APELLIDO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
-    nombre_cli = st.session_state["nombre"]
+    nombre_completo = st.session_state["nombre"]
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
+
+    # LÓGICA DE PRIMER NOMBRE Y PRIMER APELLIDO
+    partes_nombre = nombre_completo.strip().split()
+    if len(partes_nombre) >= 2:
+        nombre_display = f"{partes_nombre[0]} {partes_nombre[1]}"
+    elif len(partes_nombre) == 1:
+        nombre_display = partes_nombre[0]
+    else:
+        nombre_display = "Cliente"
+
+    # LÓGICA DE SALUDO SEGÚN HORARIO LOCAL
+    hora_actual = datetime.now().hour
+    if 5 <= hora_actual < 12:
+        saludo_horario = "Buenos días"
+    elif 12 <= hora_actual < 19:
+        saludo_horario = "Buenas tardes"
+    else:
+        saludo_horario = "Buenas noches"
 
     # CARGAR DIRECCIONES CREADAS POR EL CLIENTE
     with get_db() as conn:
@@ -1035,7 +1053,7 @@ elif st.session_state["rol"] == "cliente":
     <div class="app-header-blue">
         <div class="app-header-row">
             <div>
-                <h3 class="app-greeting-title">Hola, {nombre_cli.split()[0]}</h3>
+                <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
                 <div class="app-greeting-sub">Tienes 21,280 puntos &bull; Casillero {casillero}</div>
             </div>
             <div class="app-header-logo">🏠</div>
@@ -1117,7 +1135,7 @@ elif st.session_state["rol"] == "cliente":
         c_et1, c_et2 = st.columns(2)
         with c_et1:
             etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Sucursal 2, Taller")
-            receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_cli)
+            receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_completo)
         with c_et2:
             tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
             dep_dir_in = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_nueva_dir")
@@ -1150,7 +1168,7 @@ elif st.session_state["rol"] == "cliente":
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- BARRA SUPERIOR CON BOTONES EN FILA EXACTA (SIN DESORDEN EN MÓVIL) ---
+    # --- BARRA SUPERIOR CON BOTONES EN FILA EXACTA ---
     col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
     with col_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
@@ -1399,7 +1417,7 @@ elif st.session_state["rol"] == "cliente":
                 
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
-                    nombre=nombre_cli,
+                    nombre=nombre_completo,
                     telefono=tel_cli,
                     ciudad=ciu_cli,
                     al=d_pdf.get("al", 0),
@@ -1413,7 +1431,7 @@ elif st.session_state["rol"] == "cliente":
                 
                 pdf_conf = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
-                    nombre=nombre_cli,
+                    nombre=nombre_completo,
                     telefono=tel_cli,
                     ciudad=ciu_cli,
                     tipo_carga=d_pdf.get("tipo_carga", ""),
@@ -1478,7 +1496,7 @@ elif st.session_state["rol"] == "cliente":
         
         pdf_bytes = generar_pdf_etiqueta_proveedor(
             casillero=casillero,
-            nombre=nombre_cli,
+            nombre=nombre_completo,
             telefono=tel_cli,
             ciudad=ciu_cli,
             destino_entrega=st.session_state["modalidad_envio_seleccionada"]
