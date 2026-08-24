@@ -547,7 +547,7 @@ st.markdown("""
     /* HEADER AZUL SUPERIOR */
     .app-header-blue {
         background-color: #004ac1;
-        padding: 18px 16px 14px 16px;
+        padding: 18px 16px 16px 16px;
         border-radius: 0 0 20px 20px;
         color: #ffffff;
         margin: -1rem -0.8rem 1rem -0.8rem;
@@ -586,25 +586,12 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
-    .app-search-bar {
-        background: #ffffff;
-        border-radius: 25px;
-        padding: 10px 16px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: #64748b;
-        font-size: 0.88rem;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
     .app-delivery-container {
         display: flex;
         align-items: center;
         gap: 8px;
         color: #ffffff;
-        margin-top: 4px;
+        margin-top: 10px;
     }
     .app-delivery-select div[data-baseweb="select"] > div {
         background-color: rgba(255, 255, 255, 0.18) !important;
@@ -626,7 +613,6 @@ st.markdown("""
     /* =========================================================
        MENÚ HORIZONTAL DESLIZABLE CON EL DEDO
        ========================================================= */
-
     .st-key-nav_scroll {
         width: 100% !important;
         max-width: 100% !important;
@@ -634,8 +620,8 @@ st.markdown("""
         overflow-y: hidden !important;
         -webkit-overflow-scrolling: touch !important;
         scrollbar-width: thin !important;
-        margin-bottom: 8px !important;
-        padding-bottom: 8px !important;
+        margin-bottom: 4px !important;
+        padding-bottom: 4px !important;
         touch-action: pan-x !important;
     }
 
@@ -1070,73 +1056,34 @@ elif st.session_state["rol"] == "cliente":
     # =========================================================
     # MENÚ HORIZONTAL DESLIZABLE
     # =========================================================
-
     with st.container(key="nav_scroll"):
-
-        c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(
-            5,
-            gap="small"
-        )
-
+        c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
         with c_nav_c:
-            if st.button(
-                "📄 Mis Cotiz.",
-                type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary",
-                key="btn_toggle_cotizaciones"
-            ):
-                st.session_state["ver_panel_cotizaciones"] = not st.session_state[
-                    "ver_panel_cotizaciones"
-                ]
+            if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
+                st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
                 st.rerun()
-
         with c_nav1:
-            if st.button(
-                "🛍️ Catálogo",
-                type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary",
-                key="nav_top_cat"
-            ):
+            if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
                 st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
-
         with c_nav2:
-            if st.button(
-                "📐 Cotizador",
-                type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary",
-                key="nav_top_cot"
-            ):
+            if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
                 st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
-
         with c_nav3:
-            if st.button(
-                "📦 Envíos",
-                type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary",
-                key="nav_top_env"
-            ):
+            if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
                 st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
-
         with c_nav4:
-            if st.button(
-                "🏷️ Fichas",
-                type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary",
-                key="nav_top_eti"
-            ):
+            if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
                 st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
 
-    st.markdown("""
-        <div class="app-search-bar" style="margin-top: 10px;">
-            <span>🔍</span>
-            <span>Compra tus productos o cotiza fletes...</span>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # --- CONDICIONAL SOLICITUD: LA SELECCIÓN DE DIRECCIÓN SOLO APARECE SI SE SELECCIONA EL COTIZADOR ---
+    # --- SELECCIÓN DE MODALIDAD DE ENTREGA EN LUGAR DEL BUSCADOR (CONDICIONADO AL COTIZADOR) ---
     if st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown("""
         <div class="app-delivery-container">
@@ -1151,7 +1098,7 @@ elif st.session_state["rol"] == "cliente":
             "¿Cómo deseas recibir tu compra?",
             opciones_modalidad,
             index=idx_mod,
-            label_visibility="collapsed",
+            label_visibility="visible",
             key="sb_modalidad_header"
         )
         if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
@@ -1165,7 +1112,7 @@ elif st.session_state["rol"] == "cliente":
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True) # Cierre del header azul
+    st.markdown("</div>", unsafe_allow_html=True)  # Cierre del header azul
 
     # --- PANEL DESPLEGABLE DE COTIZACIONES REALIZADAS PARA DESCARGAR ---
     if st.session_state["ver_panel_cotizaciones"]:
@@ -1399,7 +1346,7 @@ elif st.session_state["rol"] == "cliente":
             else:
                 al_val = al_input
                 an_val = an_input
-                la_val = la_input
+                la_val = al_input
 
             if "Kilogramos" in unidad_peso:
                 pe_lb = pe_input * 2.20462
@@ -1553,7 +1500,7 @@ elif st.session_state["rol"] == "cliente":
                     vol_ft3=d_pdf.get("vol_ft3", 0),
                     total_usd=d_pdf.get("total_usd", 0),
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                    id_cot=id_c,
+                    id_cot=id_cot,
                     destino_entrega=dest_pdf,
                     fecha_emision=fecha_doc
                 )
