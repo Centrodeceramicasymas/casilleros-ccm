@@ -922,7 +922,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & CONDICIÓN DE RENDERIZADO)
+# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & RESETEO AL CAMBIAR DIRECCIÓN)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -983,6 +983,7 @@ elif st.session_state["rol"] == "cliente":
     )
     if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
         st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+        st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1034,12 +1035,14 @@ elif st.session_state["rol"] == "cliente":
                         conn.commit()
                     st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
                     st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
+                    st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
                     st.rerun()
                 else:
                     st.error("Completa todos los campos obligatorios (*).")
         with c_sv2:
             if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
                 st.session_state["modalidad_envio_seleccionada"] = "📦 Servicio a Domicilio"
+                st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1125,7 +1128,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (PDFs CON CONDICIÓN DE RENDERIZADO)
+    # VISTA 2: COTIZADOR MARÍTIMO
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1207,56 +1210,61 @@ elif st.session_state["rol"] == "cliente":
             }
             st.rerun()
 
-        # RENDERIZADO EXCLUSIVO CUANDO EL BOTÓN HA SIDO PRESIONADO
+        # RENDERIZADO EXCLUSIVO: SOLO SI COINCIDE CON LA DIRECCIÓN ACTUAL
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            id_c = d_pdf.get("id_cot", 1)
-            dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+            dest_pdf = d_pdf.get("destino_entrega", "")
             
-            st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada para entrega en: {dest_pdf}.")
-            
-            pdf_fab = generar_pdf_etiqueta_proveedor(
-                casillero=casillero,
-                nombre=nombre_cli,
-                telefono=tel_cli,
-                ciudad=ciu_cli,
-                al=d_pdf.get("al", 0),
-                an=d_pdf.get("an", 0),
-                la=d_pdf.get("la", 0),
-                pe_lb=d_pdf.get("peso_lb", 0),
-                pe_kg=d_pdf.get("peso_kg", 0),
-                vol_m3=d_pdf.get("vol_m3", 0),
-                destino_entrega=dest_pdf
-            )
-            
-            pdf_conf = generar_pdf_confirmacion_cotizacion(
-                casillero=casillero,
-                nombre=nombre_cli,
-                telefono=tel_cli,
-                ciudad=ciu_cli,
-                tipo_carga=d_pdf.get("tipo_carga", ""),
-                al=d_pdf.get("al", 0),
-                an=d_pdf.get("an", 0),
-                la=d_pdf.get("la", 0),
-                peso_lb=d_pdf.get("peso_lb", 0),
-                peso_kg=d_pdf.get("peso_kg", 0),
-                vol_m3=d_pdf.get("vol_m3", 0),
-                vol_ft3=d_pdf.get("vol_ft3", 0),
-                total_usd=d_pdf.get("total_usd", 0),
-                detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                id_cot=id_c,
-                destino_entrega=dest_pdf
-            )
-            
-            c_doc1, c_doc2 = st.columns(2)
-            with c_doc1:
-                st.download_button("📥 PDF Fabricante", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
-            with c_doc2:
-                st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
-            
-            texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
-            url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+            if dest_pdf == st.session_state["modalidad_envio_seleccionada"]:
+                id_c = d_pdf.get("id_cot", 1)
+                
+                st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada para entrega en: {dest_pdf}.")
+                
+                pdf_fab = generar_pdf_etiqueta_proveedor(
+                    casillero=casillero,
+                    nombre=nombre_cli,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    al=d_pdf.get("al", 0),
+                    an=d_pdf.get("an", 0),
+                    la=d_pdf.get("la", 0),
+                    pe_lb=d_pdf.get("peso_lb", 0),
+                    pe_kg=d_pdf.get("peso_kg", 0),
+                    vol_m3=d_pdf.get("vol_m3", 0),
+                    destino_entrega=dest_pdf
+                )
+                
+                pdf_conf = generar_pdf_confirmacion_cotizacion(
+                    casillero=casillero,
+                    nombre=nombre_cli,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    tipo_carga=d_pdf.get("tipo_carga", ""),
+                    al=d_pdf.get("al", 0),
+                    an=d_pdf.get("an", 0),
+                    la=d_pdf.get("la", 0),
+                    peso_lb=d_pdf.get("peso_lb", 0),
+                    peso_kg=d_pdf.get("peso_kg", 0),
+                    vol_m3=d_pdf.get("vol_m3", 0),
+                    vol_ft3=d_pdf.get("vol_ft3", 0),
+                    total_usd=d_pdf.get("total_usd", 0),
+                    detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
+                    id_cot=id_c,
+                    destino_entrega=dest_pdf
+                )
+                
+                c_doc1, c_doc2 = st.columns(2)
+                with c_doc1:
+                    st.download_button("📥 PDF Fabricante", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
+                with c_doc2:
+                    st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
+                
+                texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
+                url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
+                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+            else:
+                st.session_state.pop("datos_pdf_confirmado", None)
+                st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
