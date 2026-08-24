@@ -922,7 +922,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & RESETEO AL CAMBIAR DIRECCIÓN)
+# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & RESETEO AL CAMBIAR DATOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -983,7 +983,7 @@ elif st.session_state["rol"] == "cliente":
     )
     if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
         st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-        st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
+        st.session_state.pop("datos_pdf_confirmado", None)
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1035,14 +1035,14 @@ elif st.session_state["rol"] == "cliente":
                         conn.commit()
                     st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
                     st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
-                    st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
+                    st.session_state.pop("datos_pdf_confirmado", None)
                     st.rerun()
                 else:
                     st.error("Completa todos los campos obligatorios (*).")
         with c_sv2:
             if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
                 st.session_state["modalidad_envio_seleccionada"] = "📦 Servicio a Domicilio"
-                st.session_state.pop("datos_pdf_confirmado", None)  # RESETEA LA CONFIRMACIÓN
+                st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1128,7 +1128,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO
+    # VISTA 2: COTIZADOR MARÍTIMO (VALIDACIÓN DE MEDIDAS, PESO Y PRECIOS)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1146,16 +1146,17 @@ elif st.session_state["rol"] == "cliente":
                 "📦 Paquetería Menor (1 a 99 lbs)",
                 "🚢 Carga Comercial por CBM (100 a 860 lbs / 390 kg)"
             ],
-            index=0
+            index=0,
+            key="sb_tipo_carga_select"
         )
 
         if "Paquetería Menor" in tipo_carga:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0)
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0)
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0)
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="in_al_menor")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="in_an_menor")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0, key="in_la_menor")
             with c4: 
-                pe_lb = st.number_input("Peso (lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5)
+                pe_lb = st.number_input("Peso (lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5, key="in_pe_menor")
                 pe_kg = pe_lb / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
@@ -1174,11 +1175,11 @@ elif st.session_state["rol"] == "cliente":
 
         else:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0)
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0)
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0, key="in_al_com")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="in_an_com")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="in_la_com")
             with c4: 
-                pe_lb = st.number_input("Peso Total (lb)", min_value=100.0, value=500.0, step=10.0)
+                pe_lb = st.number_input("Peso Total (lb)", min_value=100.0, value=500.0, step=10.0, key="in_pe_com")
                 pe_kg = pe_lb / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
@@ -1210,13 +1211,21 @@ elif st.session_state["rol"] == "cliente":
             }
             st.rerun()
 
-        # RENDERIZADO EXCLUSIVO: SOLO SI COINCIDE CON LA DIRECCIÓN ACTUAL
+        # VALIDACIÓN COMPLETA: SOLO MOSTRAR SI COINCIDEN TODAS LAS MEDIDAS, PESO, PRECIO Y DESTINO
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            dest_pdf = d_pdf.get("destino_entrega", "")
             
-            if dest_pdf == st.session_state["modalidad_envio_seleccionada"]:
+            # Verificación de consistencia entre los inputs actuales y los datos confirmados
+            mismo_destino = (d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"])
+            mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
+            mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
+            mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
+            mismo_peso = abs(d_pdf.get("peso_lb", 0.0) - pe_lb) < 0.01
+            mismo_precio = abs(d_pdf.get("total_usd", 0.0) - tot) < 0.01
+
+            if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
                 id_c = d_pdf.get("id_cot", 1)
+                dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 
                 st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada para entrega en: {dest_pdf}.")
                 
