@@ -954,7 +954,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (MENÚ SUPERIOR VISIBLE E INTEGRADO)
+# 8. PORTAL DEL CLIENTE (MENÚ LATERAL IZQUIERDO DESLIZANTE)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1000,10 +1000,37 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    if "menu_activo" not in st.session_state:
-        st.session_state["menu_activo"] = False
+    # --- MENÚ LATERAL IZQUIERDO (SIDEBAR OFICIAL) ---
+    with st.sidebar:
+        st.markdown("### 📂 Menú Principal")
+        st.markdown(f"**Usuario:** {nombre_display}")
+        st.markdown(f"**Casillero:** `{casillero}`")
+        st.markdown("---")
+        
+        if st.button("🛍️ Catálogo de Productos", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", use_container_width=True):
+            st.session_state["sub_tab_inicio"] = "Catálogo"
+            st.rerun()
+            
+        if st.button("📐 Cotizador Marítimo", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", use_container_width=True):
+            st.session_state["sub_tab_inicio"] = "Cotizador"
+            st.rerun()
+            
+        if st.button("📦 Mis Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", use_container_width=True):
+            st.session_state["sub_tab_inicio"] = "Mis Envíos"
+            st.rerun()
+            
+        if st.button("🏷️ Ficha / Etiqueta China", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", use_container_width=True):
+            st.session_state["sub_tab_inicio"] = "Etiqueta"
+            st.rerun()
+            
+        st.markdown("---")
+        url_wa = "https://wa.me/50495771099"
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; height:45px; width:100%; font-size:0.85rem; font-weight:bold; cursor:pointer; margin-bottom:8px;">💬 Soporte WhatsApp</button></a>', unsafe_allow_html=True)
+        
+        if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
+            logout()
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN MENÚ VISIBLE ---
+    # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -1020,17 +1047,11 @@ elif st.session_state["rol"] == "cliente":
                 <span style="cursor:pointer;">🔔</span>
             </div>
         </div>
-    """, unsafe_allow_html=True)
-
-    # BOTÓN DE MENÚ PRINCIPAL INTEGRADO EN EL HEADER
-    col_btn_m, col_dummy_m = st.columns([2.2, 1])
-    with col_btn_m:
-        if st.button("📂 Menú de Navegación ☰", type="primary" if st.session_state["menu_activo"] else "secondary", key="btn_toggle_menu_main"):
-            st.session_state["menu_activo"] = not st.session_state["menu_activo"]
-            st.rerun()
-
-    st.markdown("""
-        <div class="app-delivery-container" style="margin-top: 10px;">
+        <div class="app-search-bar">
+            <span>🔍</span>
+            <span>Compra tus productos o cotiza fletes...</span>
+        </div>
+        <div class="app-delivery-container">
             <span style="font-size:1.2rem;">🏪</span>
             <div style="flex:1;">
     """, unsafe_allow_html=True)
@@ -1056,37 +1077,6 @@ elif st.session_state["rol"] == "cliente":
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # --- PANEL DESPLEGABLE DE OPCIONES AL ACTIVAR EL MENÚ ---
-    if st.session_state["menu_activo"]:
-        st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
-        st.markdown("<p style='font-weight:800; font-size:0.92rem; color:#004ac1; margin-bottom:10px;'>🧭 Seleccione una opción:</p>", unsafe_allow_html=True)
-        
-        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
-        with m_col1:
-            if st.button("🛍️\nCatálogo", key="nav_m_cat"):
-                st.session_state["sub_tab_inicio"] = "Catálogo"
-                st.session_state["menu_activo"] = False
-                st.rerun()
-        with m_col2:
-            if st.button("📐\nCotizar", key="nav_m_cot"):
-                st.session_state["sub_tab_inicio"] = "Cotizador"
-                st.session_state["menu_activo"] = False
-                st.rerun()
-        with m_col3:
-            if st.button("📦\nEnvíos", key="nav_m_env"):
-                st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                st.session_state["menu_activo"] = False
-                st.rerun()
-        with m_col4:
-            if st.button("🏷️\nFichas", key="nav_m_eti"):
-                st.session_state["sub_tab_inicio"] = "Etiqueta"
-                st.session_state["menu_activo"] = False
-                st.rerun()
-        with m_col5:
-            if st.button("👤\nSalir", key="nav_m_out"):
-                logout()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
     if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
