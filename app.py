@@ -18,7 +18,7 @@ st.set_page_config(
     page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 DB_NAME = "ccm_maritime_enterprise.db"
@@ -63,6 +63,9 @@ if "sub_tab_inicio" not in st.session_state:
 
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+
+if "menu_izq_abierto" not in st.session_state:
+    st.session_state["menu_izq_abierto"] = False
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
@@ -517,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS (INCLUYENDO ESTILO DE MENÚ LATERAL IZQUIERDO IDÉNTICO A PSKCLOUD)
+# 6. ESTILOS CSS REFINADOS (DISEÑO PSKCLOUD LATERAL)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -540,7 +543,7 @@ st.markdown("""
         margin: 0 auto !important;
     }
 
-    /* ESTILO SIDEBAR IZQUIERDO IDÉNTICO A PSKCLOUD */
+    /* ESTILO SIDEBAR IZQUIERDO ESTILO PSKCLOUD */
     [data-testid="stSidebar"] {
         background-color: #111827 !important;
         color: #ffffff !important;
@@ -1013,7 +1016,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- BARRA LATERAL IZQUIERDA (SIDEBAR DESLIZANTE ESTILO PSKCLOUD) ---
+    # --- MENÚ LATERAL IZQUIERDO (SIDEBAR ESTILO PSKCLOUD) ---
     with st.sidebar:
         st.markdown("### ☁️ **CCM CLOUD**")
         st.caption("SISTEMA DE GESTIÓN 3.0")
