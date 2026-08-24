@@ -569,7 +569,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS
+# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA EN COLOR BLANCO 100% VISIBLE
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -717,17 +717,26 @@ st.markdown("""
         display: block !important;
     }
 
-    /* INPUTS */
-    div[data-baseweb="input"], div[data-baseweb="select"] > div {
-        background-color: #f1f5f9 !important;
-        border: 1.5px solid #cbd5e1 !important;
+    /* CONTENEDOR DE INPUTS Y TEXTAREA OSCURO ELEGANTE */
+    div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
+        background-color: #1e293b !important;
+        border: 1.5px solid #334155 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
     }
-    div[data-baseweb="input"] input {
-        color: #0f172a !important;
-        font-size: 0.9rem !important;
+    
+    /* TEXTO ESCRITO EN INPUTS Y TEXTAREA 100% BLANCO */
+    div[data-baseweb="input"] input, div[data-baseweb="textarea"] textarea {
+        color: #ffffff !important;
+        font-size: 0.92rem !important;
         font-weight: 600 !important;
+        background-color: transparent !important;
+    }
+    
+    /* PLACEHOLDER CLARO Y LEGIBLE */
+    div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder {
+        color: #94a3b8 !important;
+        font-weight: 400 !important;
     }
 
     /* ESTILO MÉTRICAS */
@@ -967,7 +976,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (MUNICIPIOS DE HONDURAS DINÁMICOS)
+# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL LIMPIA CON TEXTO BLANCO EN INPUTS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1041,7 +1050,6 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
         
-        # Dirección fija predeterminada
         st.markdown(f"""
         <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
             <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
@@ -1049,7 +1057,6 @@ elif st.session_state["rol"] == "cliente":
         </div>
         """, unsafe_allow_html=True)
 
-        # Listado de direcciones creadas con botón de eliminar
         if direcciones_guardadas:
             st.markdown("<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>", unsafe_allow_html=True)
             for dir_item in direcciones_guardadas:
@@ -1083,7 +1090,6 @@ elif st.session_state["rol"] == "cliente":
             tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
             dep_dir_in = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_nueva_dir")
         
-        # MUNICIPIO / CIUDAD DINÁMICO SEGÚN DEPARTAMENTO SELECCIONADO
         ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
         dir_exacta_in = st.text_area("Dirección exacta y referencias *", placeholder="Barrio, calle, número de casa, puntos clave...")
 
