@@ -1125,13 +1125,12 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (PDFs CON DIRECCIÓN SELECCIONADA)
+    # VISTA 2: COTIZADOR MARÍTIMO
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
         
-        # MUESTRA EL DESTINO SELECCIONADO EN EL HEADER
         st.info(f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*")
 
         t_lb = get_tarifa("tarifa_libra")       # $3.50
@@ -1206,12 +1205,15 @@ elif st.session_state["rol"] == "cliente":
                 "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado,
                 "destino_entrega": st.session_state["modalidad_envio_seleccionada"]
             }
-            st.success(f"🎉 Cotización CCM-COT-{id_generado:05d} confirmada para entrega en: {st.session_state['modalidad_envio_seleccionada']}.")
+            st.rerun()
 
+        # RENDERIZADO EXCLUSIVO: SOLO APARECE SI SE PULSÓ EL BOTÓN Y EXISTE LA CONFIRMACIÓN
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
             dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+            
+            st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada para entrega en: {dest_pdf}.")
             
             pdf_fab = generar_pdf_etiqueta_proveedor(
                 casillero=casillero,
@@ -1282,7 +1284,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 4: FICHA CHINA (PDF CON DIRECCIÓN DINÁMICA)
+    # VISTA 4: FICHA CHINA
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
