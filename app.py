@@ -582,7 +582,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER METÁLICO Y BRILLANTE
+# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER EN HEADER SUPERIOR
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -606,7 +606,7 @@ st.markdown("""
         overflow-x: hidden !important;
     }
 
-    /* HEADER AZUL SUPERIOR */
+    /* HEADER AZUL SUPERIOR CON BOTÓN POWER FIJO A LA DERECHA */
     .st-key-cliente_header {
         background-color: #004ac1 !important;
         padding: 18px 16px 16px 16px !important;
@@ -618,9 +618,28 @@ st.markdown("""
         box-sizing: border-box !important;
     }
 
-    .st-key-cliente_header [data-testid="stHorizontalBlock"] {
-        align-items: center !important;
+    /* FORZAR GRID HORIZONTAL DENTRO DEL HEADER PARA QUE NO SE DESPLACE HACIA ABAJO */
+    .st-key-cliente_header div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        width: 100% !important;
         margin: 0 !important;
+    }
+
+    .st-key-cliente_header div[data-testid="stHorizontalBlock"] > div:first-child {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+
+    .st-key-cliente_header div[data-testid="stHorizontalBlock"] > div:last-child {
+        flex: 0 0 54px !important;
+        min-width: 54px !important;
+        max-width: 54px !important;
+        display: flex !important;
+        justify-content: flex-end !important;
     }
 
     .st-key-cliente_header .app-header-info {
@@ -650,26 +669,26 @@ st.markdown("""
     /* =========================================================
        BOTÓN DE APAGADO / POWER ROJO BRILLANTE 3D
        ========================================================= */
-    .st-key-btn_logout_cliente div.stButton > button,
+    .st-key-cliente_header div.stButton > button,
     div.stButton > button[key="btn_logout_cliente"] {
-        width: 52px !important;
-        min-width: 52px !important;
-        max-width: 52px !important;
-        height: 52px !important;
-        min-height: 52px !important;
-        max-height: 52px !important;
-        margin: 0 0 0 auto !important;
+        width: 48px !important;
+        min-width: 48px !important;
+        max-width: 48px !important;
+        height: 48px !important;
+        min-height: 48px !important;
+        max-height: 48px !important;
+        margin: 0 !important;
         padding: 0 !important;
         border-radius: 50% !important;
         background: radial-gradient(circle at 35% 30%, #ff4d4d 0%, #d60000 60%, #850000 100%) !important;
         color: #ffffff !important;
-        border: 4px solid #d1d5db !important;
+        border: 3.5px solid #d1d5db !important;
         outline: 1.5px solid #9ca3af !important;
         box-shadow: 
             0 4px 10px rgba(0, 0, 0, 0.4),
             inset 0 3px 6px rgba(255, 255, 255, 0.6),
             inset 0 -3px 6px rgba(0, 0, 0, 0.5) !important;
-        font-size: 1.45rem !important;
+        font-size: 1.35rem !important;
         font-weight: 900 !important;
         line-height: 1 !important;
         display: flex !important;
@@ -680,8 +699,8 @@ st.markdown("""
         cursor: pointer !important;
     }
 
-    .st-key-btn_logout_cliente div.stButton > button p {
-        font-size: 1.45rem !important;
+    .st-key-cliente_header div.stButton > button p {
+        font-size: 1.35rem !important;
         font-weight: 900 !important;
         color: #ffffff !important;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6) !important;
@@ -690,7 +709,7 @@ st.markdown("""
         display: block !important;
     }
 
-    .st-key-btn_logout_cliente div.stButton > button:hover {
+    .st-key-cliente_header div.stButton > button:hover {
         background: radial-gradient(circle at 35% 30%, #ff6b6b 0%, #e60000 60%, #990000 100%) !important;
         border-color: #f3f4f6 !important;
         transform: scale(1.08) !important;
@@ -700,7 +719,7 @@ st.markdown("""
             inset 0 -3px 6px rgba(0, 0, 0, 0.6) !important;
     }
 
-    .st-key-btn_logout_cliente div.stButton > button:active {
+    .st-key-cliente_header div.stButton > button:active {
         transform: scale(0.95) !important;
         box-shadow: 
             0 2px 5px rgba(0, 0, 0, 0.5),
@@ -1180,7 +1199,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN POWER METÁLICO 3D ---
+    # --- HEADER AZUL SUPERIOR CON BOTÓN POWER EN ESQUINA SUPERIOR DERECHA ---
     with st.container(key="cliente_header"):
         col_header_info, col_header_logout = st.columns([8.2, 1.3], gap="small")
 
@@ -1194,7 +1213,7 @@ elif st.session_state["rol"] == "cliente":
             """, unsafe_allow_html=True)
 
         with col_header_logout:
-            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión segura"):
+            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
     # =========================================================
