@@ -17,10 +17,10 @@ from email.mime.multipart import MIMEMultipart
 # 1. CONFIGURACIÓN DEL SISTEMA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Centro de Cerámicas y Más — Casillero China",
+    page_title="Centro de Cerámicas y Más — Cloud Logistics",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 DB_NAME = "ccm_maritime_enterprise.db"
@@ -32,11 +32,13 @@ if "tema_visual" not in st.session_state:
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
+if "modulo_activo" not in st.session_state:
+    st.session_state["modulo_activo"] = "📊 Dashboard General"
+
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
+# 2. GENERADORES DE PDF NATIVOS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    """Compilador de PDF 1.4 binario estándar sin dependencias externas."""
     stream_bytes = stream_content.encode('latin-1', 'replace')
     stream_len = len(stream_bytes)
     
@@ -70,7 +72,6 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0):
-    """Documento 1: Para el Fabricante/Proveedor (Con medidas y peso, sin precios)."""
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
@@ -133,7 +134,6 @@ ET"""
     return compilar_pdf_simple(stream)
 
 def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
-    """Documento 2: Comprobante Oficial con Precios, Medidas y Desglose Completo."""
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     stream = f"""BT
 /F1 15 Tf
@@ -211,20 +211,17 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
+# 3. ESTILOS CSS ESTILO PSKLOUD / SERCARGO
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
-bg_body = "#05070c" if is_dark else "#f1f5f9"
+bg_body = "#0d131f" if is_dark else "#f4f6f9"
 text_main = "#ffffff" if is_dark else "#0f172a"
 text_muted = "#94a3b8" if is_dark else "#64748b"
-input_bg = "#111827" if is_dark else "#ffffff"
-input_border = "#1f2937" if is_dark else "#cbd5e1"
-input_color = "#ffffff" if is_dark else "#0f172a"
-
-btn_sec_bg = "#161e2e" if is_dark else "#e2e8f0"
-btn_sec_text = "#e2e8f0" if is_dark else "#1e293b"
-btn_sec_border = "#27354a" if is_dark else "#cbd5e1"
+card_bg = "#151e2e" if is_dark else "#ffffff"
+input_bg = "#1a2538" if is_dark else "#ffffff"
+input_border = "#26354a" if is_dark else "#cbd5e1"
+sidebar_bg = "#111827" if is_dark else "#1e293b"
 
 st.markdown(f"""
 <style>
@@ -238,101 +235,81 @@ st.markdown(f"""
     
     #MainMenu, header, footer {{visibility: hidden;}}
 
-    div[data-baseweb="input"] {{
-        background-color: {input_bg} !important;
-        border: 1px solid {input_border} !important;
-        border-radius: 12px !important;
-        overflow: hidden !important;
-        padding: 4px 6px !important;
-    }}
-    div[data-baseweb="input"] input {{
-        color: {input_color} !important;
-        background-color: transparent !important;
-        font-size: 0.95rem !important;
-    }}
-    div[data-baseweb="input"] input::placeholder {{
-        color: {text_muted} !important;
-        opacity: 0.7 !important;
+    [data-testid="stSidebar"] {{
+        background-color: {sidebar_bg} !important;
+        border-right: 1px solid #1f2937 !important;
     }}
 
-    .stTextInput label, .stSelectbox label, .stTextArea label, .stRadio label {{
-        color: {text_main} !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        margin-bottom: 2px !important;
+    .psk-topbar {{
+        background: {card_bg};
+        border: 1px solid {input_border};
+        border-radius: 12px;
+        padding: 10px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.2rem;
     }}
-
-    div.stButton > button, div.stDownloadButton > button {{
-        width: 100% !important;
-        border-radius: 12px !important;
-        padding: 12px 18px !important;
-        font-size: 0.95rem !important;
-        font-weight: 700 !important;
-        transition: all 0.2s ease-in-out !important;
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
+    .psk-badge-menu {{
+        background-color: #22c55e;
+        color: #ffffff;
+        font-weight: 800;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
     }}
-
-    div.stButton > button[kind="primary"], .btn-login-blue div.stButton > button, div.stDownloadButton > button {{
-        background-color: #0052cc !important;
-        color: #ffffff !important;
-        border: none !important;
-        box-shadow: 0 4px 14px rgba(0, 82, 204, 0.4) !important;
+    .psk-kpi-card {{
+        background: {card_bg};
+        border: 1px solid {input_border};
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }}
-    div.stButton > button[kind="primary"]:hover, .btn-login-blue div.stButton > button:hover, div.stDownloadButton > button:hover {{
-        background-color: #0040a8 !important;
-        transform: translateY(-1px);
-    }}
-
-    div.stButton > button[kind="secondary"], .btn-action-sec div.stButton > button {{
-        background-color: {btn_sec_bg} !important;
-        color: {btn_sec_text} !important;
-        border: 1px solid {btn_sec_border} !important;
-    }}
-
-    .theme-dropdown div[data-baseweb="select"] {{
-        background-color: {input_bg} !important;
-        border: 1px solid {input_border} !important;
-        border-radius: 10px !important;
-    }}
-
-    .logo-container {{
-        text-align: center;
-        margin-top: 1rem;
-        margin-bottom: 1.5rem;
-    }}
-    .logo-image-box {{
-        width: 140px;
-        height: 140px;
-        margin: 0 auto;
-        border-radius: 18px;
-        padding: 8px;
-        background-color: #ffffff;
-        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    .psk-kpi-icon {{
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 1.4rem;
     }}
-    .logo-image-box img {{
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }}
-    .brand-title {{
-        font-size: 1.25rem;
-        font-weight: 800;
-        letter-spacing: 1px;
-        color: {text_main};
-        margin-top: 12px;
-    }}
-    .brand-subtitle {{
-        font-size: 0.85rem;
+    .psk-kpi-title {{
+        font-size: 0.78rem;
+        font-weight: 600;
         color: {text_muted};
+        text-transform: uppercase;
+    }}
+    .psk-kpi-value {{
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: {text_main};
         margin-top: 2px;
     }}
 
+    div[data-baseweb="input"], div[data-baseweb="select"] > div {{
+        background-color: {input_bg} !important;
+        border: 1px solid {input_border} !important;
+        border-radius: 10px !important;
+        color: {text_main} !important;
+    }}
+    div[data-baseweb="input"] input {{
+        color: {text_main} !important;
+    }}
+
+    div.stButton > button, div.stDownloadButton > button {{
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+    }}
+
     .card-box {{
-        background-color: {input_bg};
+        background-color: {card_bg};
         border: 1px solid {input_border};
         border-radius: 14px;
         padding: 1.5rem;
@@ -346,25 +323,6 @@ st.markdown(f"""
         font-family: 'Space Mono', monospace;
         font-size: 0.88rem;
         color: {text_main};
-    }}
-    .stat-card {{
-        background-color: {input_bg};
-        border-radius: 12px;
-        padding: 1.2rem;
-        border: 1px solid {input_border};
-        border-left: 4px solid #0052cc;
-    }}
-    .stat-title {{
-        font-size: 0.78rem;
-        font-weight: 700;
-        color: {text_muted};
-        text-transform: uppercase;
-    }}
-    .stat-value {{
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: {text_main};
-        margin-top: 4px;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -464,7 +422,6 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 def generar_codigo_casillero_dni(dni_raw):
-    """Toma los primeros 8 dígitos del número de DNI ingresado."""
     solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
@@ -478,17 +435,17 @@ def render_logo_header():
     if os.path.exists(LOGO_FILENAME):
         with open(LOGO_FILENAME, "rb") as f:
             encoded_img = base64.b64encode(f.read()).decode()
-        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más">'
+        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más" style="max-width:100%; max-height:100%; object-fit:contain;">'
     else:
         img_html = '<div style="font-size:3rem;">🏠</div>'
 
     st.markdown(f"""
-    <div class="logo-container">
-        <div class="logo-image-box">
+    <div style="text-align: center; margin-top: 1rem; margin-bottom: 1.5rem;">
+        <div style="width: 130px; height: 130px; margin: 0 auto; border-radius: 18px; padding: 8px; background-color: #ffffff; box-shadow: 0 6px 18px rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center;">
             {img_html}
         </div>
-        <div class="brand-title">CENTRO DE CERÁMICAS Y MÁS</div>
-        <div class="brand-subtitle">Servicio de Consolidación Marítima China ➔ Honduras</div>
+        <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: 1px; color: {text_main}; margin-top: 12px;">CENTRO DE CERÁMICAS Y MÁS</div>
+        <div style="font-size: 0.85rem; color: {text_muted}; margin-top: 2px;">Sistema Administrativo y Logístico China ➔ Honduras</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -516,49 +473,30 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. HEADER SUPERIOR CON SELECTOR DE TEMA
-# ---------------------------------------------------------
-col_vacia, col_theme = st.columns([4, 1.3])
-with col_theme:
-    st.markdown('<div class="theme-dropdown">', unsafe_allow_html=True)
-    tema_elegido = st.selectbox(
-        "Tema",
-        ["Oscuro (Dark)", "Blanco (Light)"],
-        index=0 if is_dark else 1,
-        label_visibility="collapsed"
-    )
-    if tema_elegido != st.session_state["tema_visual"]:
-        st.session_state["tema_visual"] = tema_elegido
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# 7. PANTALLAS DE ACCESO
+# 6. PANTALLAS DE ACCESO (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
+    col_vacia, col_theme = st.columns([4, 1.3])
+    with col_theme:
+        tema_elegido = st.selectbox("Tema", ["Oscuro (Dark)", "Blanco (Light)"], index=0 if is_dark else 1, label_visibility="collapsed")
+        if tema_elegido != st.session_state["tema_visual"]:
+            st.session_state["tema_visual"] = tema_elegido
+            st.rerun()
 
-    # 7.1 VISTA LOGIN
     if st.session_state["vista_actual"] == "login":
         _, col_center, _ = st.columns([1, 1.25, 1])
         with col_center:
             render_logo_header()
-
             u_ident = st.text_input("Casillero (8 dígitos) o Correo", placeholder="Ej: 13011998 o correo@gmail.com", key="log_cas")
             u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña de acceso", key="log_pwd")
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            
-            st.markdown('<div class="btn-login-blue">', unsafe_allow_html=True)
             if st.button("Iniciar sesión", type="primary", key="btn_login_submit"):
                 if u_ident and u_pass:
                     p_hash = hash_pwd(u_pass)
                     with get_db() as conn:
                         c = conn.cursor()
-                        c.execute("""
-                            SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad 
-                            FROM usuarios 
-                            WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?
-                        """, (u_ident, u_ident, p_hash))
+                        c.execute("SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?", (u_ident, u_ident, p_hash))
                         user = c.fetchone()
                         
                     if user:
@@ -578,9 +516,7 @@ if not st.session_state["autenticado"]:
                         st.error("❌ Credenciales inválidas.")
                 else:
                     st.warning("Ingrese su casillero y contraseña.")
-            st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="btn-action-sec">', unsafe_allow_html=True)
             if st.button("Restablecer contraseña", type="secondary", key="btn_to_reset"):
                 st.session_state["vista_actual"] = "recuperar"
                 st.rerun()
@@ -588,36 +524,29 @@ if not st.session_state["autenticado"]:
             if st.button("Aperturar casillero", type="secondary", key="btn_to_register"):
                 st.session_state["vista_actual"] = "registro"
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
             st.markdown('<div class="card-box">', unsafe_allow_html=True)
             st.markdown("### 📋 Apertura de Casillero en China — Centro de Cerámicas y Más")
-            
             paso = st.session_state["reg_paso"]
             st.progress(paso / 4.0, text=f"Paso {paso} de 4")
 
             if paso == 1:
-                st.markdown("#### 1. Datos Personales")
                 nom = st.text_input("Nombre Completo *", value=st.session_state["reg_datos"].get("nom", ""))
                 dni = st.text_input("Número de Identidad (DNI - 13 dígitos) *", value=st.session_state["reg_datos"].get("dni", ""), placeholder="Ej: 1301199800990")
                 if dni:
-                    cas_prev = generar_codigo_casillero_dni(dni)
-                    st.caption(f"ℹ️ Su número de casillero asignado será: **{cas_prev}** (Primeros 8 dígitos de su ID)")
-                    
+                    st.caption(f"ℹ️ Su casillero asignado será: **{generar_codigo_casillero_dni(dni)}** (Primeros 8 dígitos de su ID)")
                 if st.button("Siguiente ➔", type="primary"):
                     if nom and dni and len(''.join(filter(str.isdigit, dni))) >= 8:
                         st.session_state["reg_datos"].update({"nom": nom, "dni": dni})
                         st.session_state["reg_paso"] = 2
                         st.rerun()
                     else:
-                        st.error("Por favor ingrese un número de DNI válido de al menos 8 dígitos.")
+                        st.error("Ingrese un DNI válido con al menos 8 dígitos.")
 
             elif paso == 2:
-                st.markdown("#### 2. Contacto")
                 cor = st.text_input("Correo Electrónico *", value=st.session_state["reg_datos"].get("cor", ""))
                 tel = st.text_input("Teléfono / WhatsApp *", value=st.session_state["reg_datos"].get("tel", ""))
                 c1, c2 = st.columns(2)
@@ -632,10 +561,9 @@ if not st.session_state["autenticado"]:
                             st.session_state["reg_paso"] = 3
                             st.rerun()
                         else:
-                            st.error("Ingrese correo y teléfono.")
+                            st.error("Complete correo y teléfono.")
 
             elif paso == 3:
-                st.markdown("#### 3. Dirección en Honduras")
                 dep = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"])
                 ciu = st.text_input("Municipio / Ciudad *", value=st.session_state["reg_datos"].get("ciu", ""))
                 dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
@@ -651,13 +579,11 @@ if not st.session_state["autenticado"]:
                             st.session_state["reg_paso"] = 4
                             st.rerun()
                         else:
-                            st.error("Llene la dirección completa.")
+                            st.error("Complete la dirección.")
 
             elif paso == 4:
-                st.markdown("#### 4. Preferencias y Confirmación")
                 rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"])
                 mod = st.radio("Modalidad de Entrega", ["Retiro en Bodega Central (San Juan, Intibucá)", "Envío con Forza a Domicilio"])
-                
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button("⬅️ Atrás", type="secondary"):
@@ -670,71 +596,26 @@ if not st.session_state["autenticado"]:
                         n_pwd = generar_clave_provisional()
                         f_crea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        try:
-                            with get_db() as conn:
-                                cur = conn.cursor()
-                                
-                                cur.execute("""
-                                    SELECT codigo_casillero, correo_principal, dni 
-                                    FROM usuarios 
-                                    WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?
-                                """, (d["cor"], d["dni"], n_cod))
-                                usuario_existente = cur.fetchone()
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            cur.execute("SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
+                            if cur.fetchone():
+                                url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote('Hola, necesito asistencia con mi casillero ya registrado.')}"
+                                st.warning("⚠️ Ya existe un casillero registrado con este DNI o correo.")
+                                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+                            else:
+                                cur.execute("INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)", (n_cod, d["nom"], d["dni"], d["cor"], d["tel"], d["dep"], d["ciu"], d["dir"], rub, mod, hash_pwd(n_pwd), f_crea))
+                                conn.commit()
+                                st.success("🎉 ¡Casillero Creado!")
+                                st.info(f"🔑 **Casillero:** `{n_cod}` | 🔒 **Contraseña:** `{n_pwd}`")
+                                st.session_state["reg_paso"] = 1
+                                st.session_state["reg_datos"] = {}
 
-                                if usuario_existente:
-                                    msg_wa = f"Hola Centro de Cerámicas y Más, intenté aperturar mi casillero pero me indica que mis datos (DNI: {d['dni']} / Correo: {d['cor']}) ya están registrados. Necesito ayuda."
-                                    url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa)}"
-                                    
-                                    st.warning("⚠️ **Estimado cliente:** Ya existe una cuenta de casillero registrada con este correo electrónico o número de identidad (DNI).")
-                                    
-                                    st.markdown(f"""
-                                    <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 10px; padding: 15px; text-align: center; margin-top: 10px; margin-bottom: 15px;">
-                                        <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: {'#ffffff' if is_dark else '#0f172a'};">
-                                            Para mayor información o consultar el acceso a su casillero, por favor contáctenos directamente:
-                                        </p>
-                                        <a href="{url_wa}" target="_blank" style="text-decoration: none;">
-                                            <div style="background-color: #22c55e; color: white; padding: 10px 18px; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 0.9rem;">
-                                                📲 Escribir por WhatsApp al +504 9577-1099
-                                            </div>
-                                        </a>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                else:
-                                    cur.execute("""
-                                        INSERT INTO usuarios (
-                                            codigo_casillero, nombre_completo, dni, correo_principal,
-                                            telefono_principal, departamento, ciudad, direccion_exacta,
-                                            rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
-                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)
-                                    """, (
-                                        n_cod, d["nom"], d["dni"], d["cor"], 
-                                        d["tel"], d["dep"], d["ciu"], d["dir"], 
-                                        rub, mod, hash_pwd(n_pwd), f_crea
-                                    ))
-                                    conn.commit()
-
-                                    st.balloons()
-                                    st.success("🎉 ¡Casillero Creado Exitosamente!")
-                                    st.info(f"🔑 **Casillero Asignado (8 dígitos de ID):** `{n_cod}`\n\n🔒 **Contraseña Temporal:** `{n_pwd}`\n\n*Guarde estos datos para iniciar sesión.*")
-                                    
-                                    st.session_state["reg_paso"] = 1
-                                    st.session_state["reg_datos"] = {}
-
-                        except sqlite3.IntegrityError:
-                            msg_wa = f"Hola, tuve un problema al crear mi casillero. Mi DNI es {d.get('dni', '')}."
-                            url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa)}"
-                            st.error("⚠️ El casillero o documento ya se encuentra registrado.")
-                            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
-                        except Exception as e:
-                            st.error(f"❌ Ocurrió un error inesperado: {e}")
-
-            st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
-            if st.button("Volver al inicio de sesión", type="secondary"):
+            if st.button("Volver al Login", type="secondary"):
                 st.session_state["vista_actual"] = "login"
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.3 VISTA RECUPERAR
     elif st.session_state["vista_actual"] == "recuperar":
         _, col_rec, _ = st.columns([1, 1.25, 1])
         with col_rec:
@@ -744,87 +625,188 @@ if not st.session_state["autenticado"]:
             if st.button("Generar Nueva Contraseña", type="primary"):
                 with get_db() as conn:
                     c = conn.cursor()
-                    c.execute("SELECT id, codigo_casillero FROM usuarios WHERE correo_principal = ?", (r_mail,))
+                    c.execute("SELECT id FROM usuarios WHERE correo_principal = ?", (r_mail,))
                     u = c.fetchone()
                 if u:
                     nueva_p = generar_clave_provisional()
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(nueva_p), u[0]))
-                    st.success(f"✅ Nueva clave provisional generada: **{nueva_p}**")
+                    st.success(f"✅ Nueva clave: **{nueva_p}**")
                 else:
                     st.error("Correo no registrado.")
-
             if st.button("Volver al Login", type="secondary"):
                 st.session_state["vista_actual"] = "login"
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE
+# 7. ENTORNO EMPRESARIAL AUTENTICADO (SIDEBAR + TOPBAR + MÓDULOS)
 # ---------------------------------------------------------
-elif st.session_state["rol"] == "cliente":
+else:
     casillero = st.session_state["casillero"]
     nombre_cli = st.session_state["nombre"]
-    tel_cli = st.session_state.get("telefono", "+504 0000-0000")
+    tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "Honduras")
+    rol_user = st.session_state["rol"]
 
-    st.markdown(f"""
-    <div style="background:{input_bg}; padding:1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <div>
-            <h3 style="margin:0; color:#0052cc;">🏠 CENTRO DE CERÁMICAS Y MÁS &bull; Casillero {casillero}</h3>
-            <div style="font-size:0.85rem; color:{text_muted};">Titular: {nombre_cli}</div>
+    # --- SIDEBAR PROFESIONAL ESTILO PSKLOUD ---
+    with st.sidebar:
+        st.markdown(f"""
+        <div style="text-align:center; padding: 10px 0; border-bottom: 1px solid #26354a; margin-bottom: 15px;">
+            <div style="font-size: 1.4rem; font-weight: 800; color: #38bdf8; letter-spacing: 1px;">☁️ PSKLOUD CCM</div>
+            <div style="font-size: 0.72rem; color: #94a3b8;">SISTEMA 3.0 &bull; PIN 51127</div>
+            <div style="font-size: 0.8rem; font-weight: 700; color: #ffffff; margin-top: 6px;">👤 {nombre_cli}</div>
+            <div style="font-size: 0.75rem; color: #22c55e;">CASILLERO: {casillero}</div>
         </div>
-        <div style="background:#0052cc; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:0.8rem;">🟢 Casillero Activo</div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    tab_cargas, tab_cotizador, tab_direccion = st.tabs(["📦 Mis Envíos", "📐 Cotizador Marítimo", "📍 Etiqueta & Ficha de Envío (PDF)"])
-
-    with tab_cargas:
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute("SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?", (casillero,))
-            paquetes = c.fetchall()
-
-        if paquetes:
-            for p in paquetes:
-                st.markdown(f"""
-                <div class="card-box">
-                    <b>Tracking:</b> {p[0]} | <b>Contenedor:</b> {p[2]}<br>
-                    <b>Estado:</b> <span style="color:#0052cc; font-weight:bold;">{p[3]}</span><br>
-                    <small style="color:{text_muted};">Actualizado: {p[4]}</small>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("No tienes paquetes registrados en tránsito en este momento.")
-
-    # ---------------- COTIZADOR CON DIMENSIONES Y CONFIRMACIÓN CORREGIDA ----------------
-    with tab_cotizador:
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+        st.markdown("<p style='font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase;'>MENÚ PRINCIPAL</p>", unsafe_allow_html=True)
         
-        t_lb = get_tarifa("tarifa_libra")       # $3.50
-        t_m3 = get_tarifa("tarifa_m3")           # $680.00
-        min_usd = get_tarifa("minimo_cobro_usd") # $10.00
+        lista_modulos = [
+            "📊 Dashboard General",
+            "📐 Cotizador & Tarifas Marítimas",
+            "📄 Documentos de Ventas & Facturas",
+            "📦 Seguimiento de Paquetes & Tracking",
+            "📍 Dirección en China & Etiquetas",
+            "💰 Caja Chica & Pagos",
+            "⚙️ Configuración del Sistema"
+        ]
 
-        tipo_carga = st.radio(
-            "¿El producto pesa 100 lbs o más (Carga Comercial)?",
-            ["No (Menos de 100 lbs - Paquetería)", "Sí (100 lbs o más - Carga Comercial / CBM)"],
-            horizontal=True
+        st.session_state["modulo_activo"] = st.radio(
+            "Navegación:",
+            lista_modulos,
+            index=lista_modulos.index(st.session_state["modulo_activo"]) if st.session_state["modulo_activo"] in lista_modulos else 0,
+            label_visibility="collapsed"
+        )
+
+        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+        if st.button("🚪 Cerrar Sesión", type="secondary"):
+            logout()
+
+    # --- TOPBAR SUPERIOR (BARRA HORIZONTAL CON MENÚ DESPLEGABLE) ---
+    col_nav_menu, col_nav_space, col_nav_user = st.columns([2.5, 3, 2.5])
+    with col_nav_menu:
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="psk-badge-menu">☰ MENÚ</span>
+            <span style="font-weight: 700; font-size: 0.95rem; color: {text_main};">{st.session_state['modulo_activo']}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_nav_user:
+        st.markdown(f"""
+        <div style="text-align: right; font-size: 0.85rem; color: {text_muted};">
+            <span style="background: #22c55e; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 0.75rem;">🟢 En Línea</span>
+            <b>{casillero}</b> &bull; San Juan, Intibucá
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin: 10px 0 20px 0; border: 0.5px solid #26354a;'>", unsafe_allow_html=True)
+
+    # ---------------------------------------------------------
+    # MÓDULO 1: DASHBOARD GENERAL (TARJETAS KPI Y GRÁFICOS)
+    # ---------------------------------------------------------
+    if st.session_state["modulo_activo"] == "📊 Dashboard General":
+        # Métricas KPI estilo PSKLOUD
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.markdown(f"""
+            <div class="psk-kpi-card">
+                <div class="psk-kpi-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">📄</div>
+                <div>
+                    <div class="psk-kpi-title">Facturas del Mes</div>
+                    <div class="psk-kpi-value">L 602,906.01</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k2:
+            st.markdown(f"""
+            <div class="psk-kpi-card">
+                <div class="psk-kpi-icon" style="background: rgba(34, 197, 94, 0.15); color: #22c55e;">📑</div>
+                <div>
+                    <div class="psk-kpi-title">Cotizaciones del Mes</div>
+                    <div class="psk-kpi-value">L 894,018.95</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k3:
+            st.markdown(f"""
+            <div class="psk-kpi-card">
+                <div class="psk-kpi-icon" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">👥</div>
+                <div>
+                    <div class="psk-kpi-title">Casilleros Activos</div>
+                    <div class="psk-kpi-value">128</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k4:
+            st.markdown(f"""
+            <div class="psk-kpi-card">
+                <div class="psk-kpi-icon" style="background: rgba(249, 115, 22, 0.15); color: #f97316;">🚢</div>
+                <div>
+                    <div class="psk-kpi-title">En Travesía China</div>
+                    <div class="psk-kpi-value">3 Contenedores</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+
+        # Gráficos simulados de ventas y consolidación
+        col_g1, col_g2 = st.columns([1.5, 1])
+        with col_g1:
+            st.markdown('<div class="card-box">', unsafe_allow_html=True)
+            st.markdown("#### 📈 Ventas Mensuales & Importaciones Consolidadas (Neto Lempiras)")
+            st.line_chart({
+                "Facturación Marítima (HNL)": [720000, 880000, 680000, 380000, 920000, 740000, 760000, 602906]
+            })
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with col_g2:
+            st.markdown('<div class="card-box">', unsafe_allow_html=True)
+            st.markdown("#### 🏆 10 Productos Más Importados")
+            st.bar_chart({
+                "CBM / Volumen": {
+                    "Porcelanato": 85,
+                    "Separadores Cerámica": 42,
+                    "Herramientas": 38,
+                    "Grifería": 30,
+                    "Iluminación LED": 25
+                }
+            })
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # ---------------------------------------------------------
+    # MÓDULO 2: COTIZADOR & TARIFAS MARÍTIMAS
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "📐 Cotizador & Tarifas Marítimas":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 📐 Cotizador de Flete Marítimo China ➔ Honduras")
+        
+        t_lb = get_tarifa("tarifa_libra")
+        t_m3 = get_tarifa("tarifa_m3")
+        min_usd = get_tarifa("minimo_cobro_usd")
+
+        tipo_carga = st.selectbox(
+            "Seleccione la Modalidad de Carga:",
+            [
+                "📦 Paquetería Menor (Menos de 100 lbs / 1 a 45 kg)",
+                "🚢 Carga Comercial por Metro Cúbico (100 lbs o más / 45 a 390 kg)"
+            ],
+            index=0
         )
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
-        # OPCIÓN 1: PAQUETERÍA MENOR
-        if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
-            st.caption("Ingrese las dimensiones y peso real del paquete menor (1 a 99 lbs):")
+        if "Paquetería Menor" in tipo_carga:
+            st.caption("Dimensiones y peso del paquete menor (1 a 99 lbs):")
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="al_menor")
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="an_menor")
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0, key="la_menor")
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="al_m")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="an_m")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0, key="la_m")
             with c4: 
-                pe_lb = st.number_input("Peso Real (Libras / lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5, key="pe_menor")
+                pe_lb = st.number_input("Peso Real (Libras / lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5, key="pe_m")
                 pe_kg = pe_lb / 2.20462
                 st.caption(f"Equivalente a: **{pe_kg:.2f} kg**")
 
@@ -838,213 +820,179 @@ elif st.session_state["rol"] == "cliente":
                 tot = pe_lb * t_lb
                 desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
 
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Volumen Calculado (m³)", f"{vol_m3_val:.4f} m³", help="(Alto x Ancho x Largo en cm) / 1,000,000")
-            with m2:
-                st.metric("Equivalencia en Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
-            with m3:
-                st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Flete marítimo e internación aduanal incluida.")
+            with m1: st.metric("Volumen Calculado (m³)", f"{vol_m3_val:.4f} m³")
+            with m2: st.metric("Equivalencia (ft³)", f"{vol_ft3_val:.2f} ft³")
+            with m3: st.metric("Total Estimado (USD)", f"${tot:.2f} USD")
 
-            st.info(f"📌 **Detalle:** {desc} (Aplica para paquetes de 1 a 99 lbs).")
-            
-            detalle_pdf = desc
+            st.info(f"📌 **Detalle:** {desc}")
             modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
+            detalle_pdf = desc
 
-        # OPCIÓN 2: CARGA COMERCIAL
         else:
-            st.caption("Carga comercial: 1 Metro Cúbico (CBM) cubre hasta 390 kg (859.8 lbs). Cada fracción adicional de 390 kg liquida como CBM adicional.")
+            st.caption("Carga comercial: 1 CBM cubre hasta 390 kg (859.8 lbs).")
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0, key="al_com")
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="an_com")
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="la_com")
+            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0, key="al_c")
+            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="an_c")
+            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="la_c")
             with c4: 
-                pe_lb = st.number_input(
-                    "Peso Total (Libras / lb)", 
-                    min_value=100.0, 
-                    value=500.0, 
-                    step=10.0, 
-                    key="pe_com",
-                    help="Conversión: 390 kg = 859.8 lbs. Superar este umbral computa un segundo CBM o fracción correspondiente."
-                )
+                pe_lb = st.number_input("Peso Total (Libras / lb)", min_value=100.0, value=500.0, step=10.0, key="pe_c")
                 pe_kg = pe_lb / 2.20462
                 st.caption(f"Equivalente a: **{pe_kg:.2f} kg**")
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
             vol_ft3_val = vol_m3_val * 35.3147
-
             vol_m3_peso = pe_kg / 390.0
             cbm_facturable = max(vol_m3_val, vol_m3_peso)
             tot = cbm_facturable * t_m3
 
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Volumen Físico (m³)", f"{vol_m3_val:.4f} m³", help="(Alto x Ancho x Largo en cm) / 1,000,000")
-            with m2:
-                st.metric("CBM Tasable Facturado", f"{cbm_facturable:.4f} CBM", help="Mayor entre el volumen físico y la relación de peso (1 CBM = 390 kg / 859.8 lbs)")
-            with m3:
-                st.metric("Total Estimado (USD)", f"${tot:.2f} USD", help="Tarifa base de $680.00 por CBM con desaduanaje incluido.")
+            with m1: st.metric("Volumen Físico (m³)", f"{vol_m3_val:.4f} m³")
+            with m2: st.metric("CBM Tasable Facturado", f"{cbm_facturable:.4f} CBM")
+            with m3: st.metric("Total Estimado (USD)", f"${tot:.2f} USD")
 
             if pe_kg > 390.0:
-                st.warning(f"⚖️ **Aviso de Peso Excedente:** El peso de **{pe_kg:.2f} kg ({pe_lb:.1f} lbs)** supera el límite de 390 kg (859.8 lbs) por CBM estándar, liquidándose proporcionalmente a **{cbm_facturable:.4f} CBM**.")
+                st.warning(f"⚖️ Peso de **{pe_kg:.2f} kg** supera 390 kg por CBM estándar, liquidándose a **{cbm_facturable:.4f} CBM**.")
             else:
-                st.success(f"📌 **Cálculo aplicado:** Tarifa Comercial CBM (${t_m3:.2f}/m³). Peso dentro del límite de 390 kg por CBM.")
+                st.success(f"📌 Tarifa Comercial CBM (${t_m3:.2f}/m³).")
 
-            detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
             modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
+            detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
 
-        st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #374151;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #26354a;'>", unsafe_allow_html=True)
         st.markdown("#### ✅ Confirmación de Tarifa & Generación de Documentos")
-        st.caption("Al confirmar, el sistema guardará las dimensiones ingresadas y emitirá los documentos con todos los datos:")
 
-        if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary", key="btn_confirmar_tarifa"):
+        if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary"):
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with get_db() as conn:
                 cur = conn.cursor()
-                cur.execute("""
-                    INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
+                cur.execute("INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
                 id_generado = cur.lastrowid
             
             st.session_state["ultima_cot_id"] = id_generado
             st.session_state["datos_pdf_confirmado"] = {
-                "tipo_carga": modalidad_pdf,
-                "al": al_val,
-                "an": an_val,
-                "la": la_val,
-                "peso_lb": pe_lb,
-                "peso_kg": pe_kg,
-                "vol_m3": vol_m3_val,
-                "vol_ft3": vol_ft3_val,
-                "total_usd": tot,
-                "detalle_tarifa": detalle_pdf,
-                "id_cot": id_generado
+                "tipo_carga": modalidad_pdf, "al": al_val, "an": an_val, "la": la_val,
+                "peso_lb": pe_lb, "peso_kg": pe_kg, "vol_m3": vol_m3_val, "vol_ft3": vol_ft3_val,
+                "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado
             }
-            st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
+            st.success(f"🎉 ¡Tarifa Confirmada! Control: **CCM-COT-{id_generado:05d}**")
 
-        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS CON MEDIDAS (ACCESO SEGURO CON .GET) ----------------
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
-            al_guardado = d_pdf.get("al", 0.0)
-            an_guardado = d_pdf.get("an", 0.0)
-            la_guardado = d_pdf.get("la", 0.0)
-            pe_lb_guardado = d_pdf.get("peso_lb", 0.0)
-            pe_kg_guardado = d_pdf.get("peso_kg", 0.0)
-            vol_m3_guardado = d_pdf.get("vol_m3", 0.0)
-            vol_ft3_guardado = d_pdf.get("vol_ft3", 0.0)
-            total_usd_guardado = d_pdf.get("total_usd", 0.0)
-            detalle_guardado = d_pdf.get("detalle_tarifa", "")
-            tipo_carga_guardada = d_pdf.get("tipo_carga", "Carga")
-
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            col_doc1, col_doc2 = st.columns(2, gap="large")
-
-            # DOCUMENTO 1: PARA EL FABRICANTE EN CHINA (CON MEDIDAS - SIN PRECIOS)
-            with col_doc1:
+            
+            col_d1, col_d2 = st.columns(2, gap="large")
+            with col_d1:
                 st.markdown(f"""
-                <div style="background: {'#161e2e' if is_dark else '#ffffff'}; border: 2px solid #0052cc; border-radius: 12px; padding: 18px; text-align: center;">
+                <div style="background: {input_bg}; border: 2px solid #0052cc; border-radius: 12px; padding: 18px; text-align: center;">
                     <div style="font-size: 2rem;">📦🏭</div>
                     <h4 style="margin: 6px 0; color: #38bdf8;">DOCUMENTO 1: PARA EL FABRICANTE</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
-                        <b>Envíe este PDF a su proveedor en China.</b><br>
-                        (Incluye casillero <b>{casillero}</b>, dimensiones <b>{al_guardado:.1f}x{an_guardado:.1f}x{la_guardado:.1f} cm</b>, peso e instrucciones. <u>Sin tarifas ni costos</u>).
+                        Envíe este PDF a su proveedor en China.<br>
+                        (Incluye casillero <b>{casillero}</b> y medidas. <u>Sin precios ni tarifas</u>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                pdf_fabricante_bytes = generar_pdf_etiqueta_proveedor(
-                    casillero=casillero,
-                    nombre=nombre_cli,
-                    telefono=tel_cli,
-                    ciudad=ciu_cli,
-                    al=al_guardado,
-                    an=an_guardado,
-                    la=la_guardado,
-                    pe_lb=pe_lb_guardado,
-                    pe_kg=pe_kg_guardado,
-                    vol_m3=vol_m3_guardado
-                )
-                st.download_button(
-                    label="📥 Descargar Etiqueta para Fabricante (PDF)",
-                    data=pdf_fabricante_bytes,
-                    file_name=f"Shipping_Label_Fabricante_{casillero}.pdf",
-                    mime="application/pdf",
-                    key="btn_dl_fab"
-                )
+                pdf_fab = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli, d_pdf.get("al",0), d_pdf.get("an",0), d_pdf.get("la",0), d_pdf.get("peso_lb",0), d_pdf.get("peso_kg",0), d_pdf.get("vol_m3",0))
+                st.download_button("📥 Descargar Etiqueta Fabricante (PDF)", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
 
-            # DOCUMENTO 2: PARA WHATSAPP CCM (CON MEDIDAS Y PRECIOS)
-            with col_doc2:
-                msg_wa_cot = f"Hola Centro de Cerámicas y Más, confirmo mi cotización CCM-COT-{id_c:05d}. Mi casillero es {casillero} ({nombre_cli}). Medidas: {al_guardado:.1f}x{an_guardado:.1f}x{la_guardado:.1f} cm | Peso: {pe_lb_guardado:.1f} lbs. Total: ${total_usd_guardado:.2f} USD."
-                url_wa_cot = f"https://wa.me/50495771099?text={urllib.parse.quote(msg_wa_cot)}"
-
+            with col_d2:
+                url_wa = f"https://wa.me/50495771099?text={urllib.parse.quote(f'Hola CCM, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get(\"total_usd\",0):.2f} USD.')}"
                 st.markdown(f"""
-                <div style="background: {'#161e2e' if is_dark else '#ffffff'}; border: 2px solid #22c55e; border-radius: 12px; padding: 18px; text-align: center;">
+                <div style="background: {input_bg}; border: 2px solid #22c55e; border-radius: 12px; padding: 18px; text-align: center;">
                     <div style="font-size: 2rem;">📲📑</div>
                     <h4 style="margin: 6px 0; color: #22c55e;">DOCUMENTO 2: PARA NUESTRO WHATSAPP</h4>
                     <p style="font-size: 0.85rem; color: {text_muted};">
-                        <b>Descargue este comprobante y envíelo a nuestro WhatsApp.</b><br>
-                        (Contiene control <b>CCM-COT-{id_c:05d}</b>, medidas completas, CBM y flete liquidado: <b>${total_usd_guardado:.2f} USD</b>).
+                        Descargue y envíe este comprobante con desglose de flete (<b>${d_pdf.get('total_usd',0):.2f} USD</b>).
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
-
-                pdf_confirmacion_bytes = generar_pdf_confirmacion_cotizacion(
-                    casillero=casillero,
-                    nombre=nombre_cli,
-                    telefono=tel_cli,
-                    ciudad=ciu_cli,
-                    tipo_carga=tipo_carga_guardada,
-                    al=al_guardado,
-                    an=an_guardado,
-                    la=la_guardado,
-                    peso_lb=pe_lb_guardado,
-                    peso_kg=pe_kg_guardado,
-                    vol_m3=vol_m3_guardado,
-                    vol_ft3=vol_ft3_guardado,
-                    total_usd=total_usd_guardado,
-                    detalle_tarifa=detalle_guardado,
-                    id_cot=id_c
-                )
-
-                st.download_button(
-                    label=f"📥 Descargar Comprobante con Tarifa (CCM-COT-{id_c:05d})",
-                    data=pdf_confirmacion_bytes,
-                    file_name=f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
-                    mime="application/pdf",
-                    key="btn_dl_confirmacion"
-                )
-
-                st.markdown(f"""
-                <a href="{url_wa_cot}" target="_blank" style="text-decoration:none;">
-                    <div style="background-color: #22c55e; color: white; padding: 12px 16px; border-radius: 10px; font-weight: bold; text-align: center; margin-top: 6px; font-size: 0.92rem;">
-                        📲 Enviar Comprobante al WhatsApp (+504 9577-1099)
-                    </div>
-                </a>
-                """, unsafe_allow_html=True)
+                pdf_conf = generar_pdf_confirmacion_cotizacion(casillero, nombre_cli, tel_cli, ciu_cli, d_pdf.get("tipo_carga",""), d_pdf.get("al",0), d_pdf.get("an",0), d_pdf.get("la",0), d_pdf.get("peso_lb",0), d_pdf.get("peso_kg",0), d_pdf.get("vol_m3",0), d_pdf.get("vol_ft3",0), d_pdf.get("total_usd",0), d_pdf.get("detalle_tarifa",""), id_c)
+                st.download_button(f"📥 Descargar Comprobante con Tarifa (CCM-COT-{id_c:05d})", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
+                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:12px; border-radius:10px; width:100%; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab_direccion:
+    # ---------------------------------------------------------
+    # MÓDULO 3: DOCUMENTOS DE VENTAS & FACTURAS
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "📄 Documentos de Ventas & Facturas":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
-        st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
+        st.markdown("### 📄 Documentos de Ventas & Cotizaciones Registradas")
+        st.caption("Historial de cotizaciones emitidas, facturas proforma y comprobantes autorizados:")
 
-        pdf_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
+        with get_db() as conn:
+            c = conn.cursor()
+            if rol_user == "admin":
+                c.execute("SELECT id, codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones ORDER BY id DESC")
+            else:
+                c.execute("SELECT id, codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC", (casillero,))
+            rows = c.fetchall()
 
-        st.download_button(
-            label="📄 Descargar Etiqueta de Envío en PDF (Para Proveedor)",
-            data=pdf_bytes,
-            file_name=f"Shipping_Label_{casillero}.pdf",
-            mime="application/pdf"
-        )
+        if rows:
+            st.dataframe(
+                [{"No. Control": f"CCM-COT-{r[0]:05d}", "Casillero": r[1], "Dimensiones (cm)": f"{r[2]}x{r[3]}x{r[4]}", "Peso (lb)": f"{r[5]:.1f}", "Volumen (m³)": f"{r[6]:.4f}", "Total (USD)": f"${r[7]:.2f}", "Fecha": r[8]} for r in rows],
+                use_container_width=True
+            )
+        else:
+            st.info("No hay documentos de ventas ni cotizaciones registradas actualmente.")
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # ---------------------------------------------------------
+    # MÓDULO 4: SEGUIMIENTO DE PAQUETES & TRACKING
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "📦 Seguimiento de Paquetes & Tracking":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 📦 Seguimiento de Envíos en Travesía")
+        
+        with get_db() as conn:
+            c = conn.cursor()
+            if rol_user == "admin":
+                c.execute("SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes")
+                paquetes = c.fetchall()
+            else:
+                c.execute("SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?", (casillero,))
+                paquetes = c.fetchall()
+
+        if paquetes:
+            for p in paquetes:
+                st.markdown(f"""
+                <div style="background:{input_bg}; border:1px solid {input_border}; border-radius:10px; padding:15px; margin-bottom:10px;">
+                    <b>Tracking:</b> {p[0]} | <b>Casillero:</b> {p[1]} | <b>Contenedor:</b> {p[3]}<br>
+                    <b>Estado Actual:</b> <span style="color:#38bdf8; font-weight:bold;">{p[4]}</span><br>
+                    <small style="color:{text_muted};">Última actualización: {p[5]}</small>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No hay paquetes registrados en tránsito en este momento.")
+
+        if rol_user == "admin":
+            st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+            st.markdown("#### 🛠️ Actualizar Estado de Paquete (Admin)")
+            t_in = st.text_input("Tracking de China")
+            c_in = st.text_input("Casillero (8 dígitos)")
+            e_in = st.selectbox("Estado", ["En Bodega China", "En Travesía Marítima", "En Desaduanaje Puerto Cortés", "Disponible en Bodega San Juan", "Entregado"])
+            if st.button("Guardar Estado de Carga", type="primary"):
+                if t_in and c_in:
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("INSERT OR REPLACE INTO paquetes (tracking, codigo_casillero, estado, fecha_actualizacion) VALUES (?, ?, ?, ?)", (t_in, c_in, e_in, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    st.success("Paquete actualizado correctamente.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ---------------------------------------------------------
+    # MÓDULO 5: DIRECCIÓN EN CHINA & ETIQUETA
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "📍 Dirección en China & Etiquetas":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 📍 Dirección Oficial de Bodega en Guangzhou, China")
+        
+        pdf_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
+        st.download_button("📄 Descargar Ficha de Envío Estándar (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
+        
         st.markdown(f"""
-        <div class="china-address-box">
+        <div class="china-address-box" style="margin-top:15px;">
 ============================================================<br>
               CENTRO DE CERÁMICAS Y MÁS — HONDURAS<br>
                   MARITIME CONSOLIDATION CARGO<br>
@@ -1058,42 +1006,56 @@ elif st.session_state["rol"] == "cliente":
 <strong>ADDRESS (EN)    :</strong> CHILAT Logistics Warehouse, District B, Port Area<br>
 <strong>ADDRESS (中文)   :</strong> 广东省广州市白云区集运仓 / 转 {casillero}<br>
 ------------------------------------------------------------<br>
-<strong>INSTRUCTIONS FOR SUPPLIER (Copiar y pegar al vendedor):</strong><br>
-"Dear supplier, please ensure you paste our shipping label firmly <br>
-on the exterior of each box before dispatching. Our warehouse will <br>
-NOT accept packages without the Client Code: {casillero} clearly visible."<br>
+<strong>INSTRUCTIONS FOR SUPPLIER:</strong><br>
+"Please paste this shipping label firmly on each box before dispatching. <br>
+Packages without the Client Code: {casillero} will NOT be accepted."<br>
 ============================================================
         </div>
         """, unsafe_allow_html=True)
-
-        if st.button("🚪 Cerrar Sesión", type="secondary"):
-            logout()
-
-# ---------------------------------------------------------
-# 9. PANEL ADMINISTRATIVO
-# ---------------------------------------------------------
-elif st.session_state["rol"] == "admin":
-    st.markdown("## 🛠️ Panel Maestro — Administrador")
-    tab_u, tab_p = st.tabs(["👥 Directorio de Clientes", "📦 Registrar Paquetes"])
-
-    with tab_u:
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute("SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal, ciudad FROM usuarios WHERE rol = 'cliente'")
-            st.dataframe(c.fetchall(), use_container_width=True)
-
-    with tab_p:
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        t_in = st.text_input("Tracking de China")
-        c_in = st.text_input("Casillero Asignado (8 dígitos)")
-        e_in = st.selectbox("Estado", ["En Bodega China", "En Travesía Marítima", "En Desaduanaje", "Disponible en Bodega Central", "Entregado"])
-        if st.button("Actualizar Paquete", type="primary"):
-            if t_in and c_in:
-                with get_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute("INSERT OR REPLACE INTO paquetes (tracking, codigo_casillero, estado, fecha_actualizacion) VALUES (?, ?, ?, ?)", (t_in, c_in, e_in, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                st.success("Paquete actualizado.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.button("Cerrar Sesión Admin", type="secondary"):
-        logout()
+    # ---------------------------------------------------------
+    # MÓDULO 6: CAJA CHICA & PAGOS
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "💰 Caja Chica & Pagos":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 💰 Control de Pagos y Liquidaciones")
+        st.write("Cuentas bancarias autorizadas en Honduras para liquidación de fletes marítimos:")
+        st.markdown("""
+        * **Banco Atlántida:** Cuenta de Cheques en Lempiras `1100-XXXX-XXXX`
+        * **Banco de Occidente:** Cuenta en Lempiras `2100-XXXX-XXXX`
+        * **BAC Credomatic:** Cuenta en Dólares / Lempiras `7400-XXXX-XXXX`
+        """)
+        st.info("Para registrar un comprobante de transferencia bancaria, envíelo directamente al WhatsApp **+504 9577-1099**.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ---------------------------------------------------------
+    # MÓDULO 7: CONFIGURACIÓN DEL SISTEMA
+    # ---------------------------------------------------------
+    elif st.session_state["modulo_activo"] == "⚙️ Configuración del Sistema":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### ⚙️ Configuración General y Tarifaria")
+
+        if rol_user == "admin":
+            st.markdown("#### Tarifas Base del Sistema")
+            tar_lb_actual = get_tarifa("tarifa_libra")
+            tar_m3_actual = get_tarifa("tarifa_m3")
+            tar_min_actual = get_tarifa("minimo_cobro_usd")
+
+            c_t1, c_t2, c_t3 = st.columns(3)
+            with c_t1: n_t_lb = st.number_input("Tarifa por Libra (USD)", value=tar_lb_actual, step=0.25)
+            with c_t2: n_t_m3 = st.number_input("Tarifa por Metro Cúbico (USD)", value=tar_m3_actual, step=10.0)
+            with c_t3: n_t_min = st.number_input("Mínimo Base (USD)", value=tar_min_actual, step=1.0)
+
+            if st.button("Actualizar Tarifas Globales", type="primary"):
+                set_tarifa("tarifa_libra", n_t_lb)
+                set_tarifa("tarifa_m3", n_t_m3)
+                set_tarifa("minimo_cobro_usd", n_t_min)
+                st.success("Tarifas actualizadas correctamente.")
+        else:
+            st.write(f"**Usuario:** {nombre_cli}")
+            st.write(f"**Casillero Asignado:** {casillero}")
+            st.write(f"**Teléfono:** {tel_cli}")
+            st.write(f"**Ciudad de Entrega:** {ciu_cli}")
+
+        st.markdown('</div>', unsafe_allow_html=True)
