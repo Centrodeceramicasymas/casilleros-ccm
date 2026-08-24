@@ -569,7 +569,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA 100% BLANCOS Y VISIBLES
+# 6. ESTILOS CSS REFINADOS: ENTRADAS VISIBLES Y BOTONES 100% RESPONSIVOS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -758,6 +758,21 @@ st.markdown("""
         color: #475569 !important;
     }
 
+    /* FORZAR GRID HORIZONTAL EN MÓVIL (EVITAR QUE SE APILEN VERTICALMENTE) */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        align-items: stretch !important;
+        width: 100% !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0px !important;
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
     /* BOTONES HOMOGÉNEOS Y ELEGANTES */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
@@ -765,10 +780,10 @@ st.markdown("""
         min-height: 48px !important;
         max-height: 48px !important;
         border-radius: 12px !important;
-        padding: 0 8px !important;
-        font-size: 0.86rem !important;
+        padding: 0 4px !important;
+        font-size: 0.78rem !important;
         font-weight: 700 !important;
-        letter-spacing: 0.2px !important;
+        letter-spacing: 0px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -777,6 +792,16 @@ st.markdown("""
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
+    @media (min-width: 600px) {
+        div.stButton > button, div.stDownloadButton > button {
+            font-size: 0.86rem !important;
+            padding: 0 8px !important;
+        }
+        div[data-testid="stHorizontalBlock"] {
+            gap: 10px !important;
+        }
     }
 
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
@@ -983,7 +1008,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA Y FUNCIONAL)
+# 8. PORTAL DEL CLIENTE (GRID PERFECTO EN MÓVILES Y COMPUTADORA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1125,8 +1150,8 @@ elif st.session_state["rol"] == "cliente":
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- BARRA SUPERIOR CON BOTONES HOMOGÉNEOS Y ELEGANTES ---
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
+    # --- BARRA SUPERIOR CON BOTONES EN FILA EXACTA (SIN DESORDEN EN MÓVIL) ---
+    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
     with col_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
@@ -1474,7 +1499,7 @@ elif st.session_state["rol"] == "cliente":
 
     # --- BARRA INFERIOR DE NAVEGACIÓN ---
     st.markdown("<hr style='margin:20px 0 10px 0; border:0.5px solid #e2e8f0;'>", unsafe_allow_html=True)
-    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5, gap="small")
+    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
     with c_nav1:
         if st.button("🏠\nInicio", key="bnav1"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
