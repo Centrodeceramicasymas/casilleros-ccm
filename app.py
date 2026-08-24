@@ -60,7 +60,7 @@ if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS CON DIRECCIÓN DINÁMICA
+# 2. GENERADORES DE PDF NATIVOS CON FECHA Y HORA DE EMISIÓN
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     stream_bytes = stream_content.encode('latin-1', 'replace')
@@ -95,20 +95,24 @@ def compilar_pdf_simple(stream_content):
     pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
     return pdf_buffer.getvalue()
 
-def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Retirar en Almacén"):
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Retirar en Almacén", fecha_emision=None):
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
+    fecha_txt = fecha_emision if fecha_emision else datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
 
     stream = f"""BT
 /F1 16 Tf
 40 790 Td
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 9 Tf
+0 -16 Td
+(EMITIDO EL: {fecha_txt}) Tj
 /F1 10 Tf
-0 -18 Td
+0 -16 Td
 (MARITIME CONSOLIDATION CARGO [CHINA -> HONDURAS]) Tj
-0 -30 Td
+0 -26 Td
 (================================================================) Tj
 /F1 13 Tf
 0 -22 Td
@@ -158,8 +162,8 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
 ET"""
     return compilar_pdf_simple(stream)
 
-def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén"):
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén", fecha_emision=None):
+    fecha_txt = fecha_emision if fecha_emision else datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
 
     stream = f"""BT
@@ -176,7 +180,7 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (NO. CONTROL / COTIZACION : CCM-COT-{id_cot:05d}) Tj
 /F1 9 Tf
 0 -14 Td
-(FECHA Y HORA DE EMISION : {fecha_hoy}) Tj
+(FECHA Y HORA DE EMISION : {fecha_txt}) Tj
 0 -18 Td
 (================================================================) Tj
 /F1 11 Tf
@@ -1028,7 +1032,7 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    # LÓGICA DE FECHA Y HORA LOCAL (CORREGIDO: ahora.month es un entero)
+    # LÓGICA DE FECHA Y HORA LOCAL
     ahora = datetime.now()
     hora_actual = ahora.hour
     if 5 <= hora_actual < 12:
@@ -1260,7 +1264,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES Y METROS CÚBICOS)
+    # VISTA 2: COTIZADOR MARÍTIMO (DOCUMENTOS CON FECHA Y HORA LOCAL)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1390,13 +1394,14 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
-            f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f_hoy_sql = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f_hoy_doc = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
             with get_db() as conn:
                 cur = conn.cursor()
                 cur.execute("""
                     INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
+                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql))
                 id_generado = cur.lastrowid
             
             st.session_state["ultima_cot_id"] = id_generado
@@ -1404,7 +1409,8 @@ elif st.session_state["rol"] == "cliente":
                 "tipo_carga": modalidad_pdf, "al": al_val, "an": an_val, "la": la_val,
                 "peso_lb": pe_lb, "peso_kg": pe_kg, "vol_m3": vol_m3_val, "vol_ft3": vol_ft3_val,
                 "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado,
-                "destino_entrega": st.session_state["modalidad_envio_seleccionada"]
+                "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
+                "fecha_hora_doc": f_hoy_doc
             }
             st.rerun()
 
@@ -1422,8 +1428,9 @@ elif st.session_state["rol"] == "cliente":
             if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
                 id_c = d_pdf.get("id_cot", 1)
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+                fecha_doc = d_pdf.get("fecha_hora_doc", datetime.now().strftime("%d/%m/%Y %I:%M:%S %p"))
                 
-                st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada para entrega en: {dest_pdf}.")
+                st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada el **{fecha_doc}** para entrega en: {dest_pdf}.")
                 
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
@@ -1436,7 +1443,8 @@ elif st.session_state["rol"] == "cliente":
                     pe_lb=d_pdf.get("peso_lb", 0),
                     pe_kg=d_pdf.get("peso_kg", 0),
                     vol_m3=d_pdf.get("vol_m3", 0),
-                    destino_entrega=dest_pdf
+                    destino_entrega=dest_pdf,
+                    fecha_emision=fecha_doc
                 )
                 
                 pdf_conf = generar_pdf_confirmacion_cotizacion(
@@ -1455,7 +1463,8 @@ elif st.session_state["rol"] == "cliente":
                     total_usd=d_pdf.get("total_usd", 0),
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
                     id_cot=id_c,
-                    destino_entrega=dest_pdf
+                    destino_entrega=dest_pdf,
+                    fecha_emision=fecha_doc
                 )
                 
                 c_doc1, c_doc2 = st.columns(2)
@@ -1464,7 +1473,7 @@ elif st.session_state["rol"] == "cliente":
                 with c_doc2:
                     st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
                 
-                texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
+                texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                 url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
                 st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
             else:
@@ -1504,12 +1513,14 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
         st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
         
+        f_etiqueta_actual = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
         pdf_bytes = generar_pdf_etiqueta_proveedor(
             casillero=casillero,
             nombre=nombre_completo,
             telefono=tel_cli,
             ciudad=ciu_cli,
-            destino_entrega=st.session_state["modalidad_envio_seleccionada"]
+            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+            fecha_emision=f_etiqueta_actual
         )
         st.download_button("📄 Descargar Etiqueta para Proveedor (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
         
@@ -1518,6 +1529,7 @@ elif st.session_state["rol"] == "cliente":
         <div class="china-address-box" style="margin-top:10px;">
 <strong>CLIENT CODE / CASILLERO:</strong> {casillero}<br>
 <strong>DESTINATION / ENTREGA:</strong> {destino_pantalla.upper()}, HONDURAS<br>
+<strong>FECHA DE EMISIÓN:</strong> {f_etiqueta_actual}<br>
 <strong>ATTN:</strong> CHILAT / {casillero}<br>
 <strong>ADDRESS:</strong> CHILAT Logistics Warehouse, District B, Port Area, Guangzhou<br>
 <strong>ADDRESS (中文):</strong> 广东省广州市白云区集运仓 / 转 {casillero}
