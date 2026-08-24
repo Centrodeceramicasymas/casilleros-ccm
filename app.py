@@ -338,7 +338,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 5. ESTILOS CSS ESTILO APLICACIÓN MÓVIL EXACTA
+# 5. ESTILOS CSS REFORZADOS (TEXTO DE BOTONES 100% VISIBLE)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -438,7 +438,7 @@ st.markdown("""
         font-weight: 700;
     }
 
-    /* BANNER PUBLICITARIO VIVE LIGERO */
+    /* BANNER VIVE LIGERO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
         border-radius: 16px;
@@ -470,7 +470,7 @@ st.markdown("""
         color: #cbd5e1;
     }
 
-    /* TARJETAS DE PRODUCTOS EN CUADRÍCULA */
+    /* TARJETAS DE PRODUCTOS */
     .app-section-title {
         font-size: 1.05rem;
         font-weight: 800;
@@ -524,26 +524,45 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* INPUTS */
-    div[data-baseweb="input"], div[data-baseweb="select"] > div {
-        background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 10px !important;
-        overflow: hidden !important;
-        padding: 2px 6px !important;
-    }
-    div[data-baseweb="input"] input {
-        color: #0f172a !important;
-        font-size: 0.9rem !important;
-    }
-
-    /* BOTONES */
+    /* FORZAR VISIBILIDAD DE BOTONES PRIMARIOS Y SECUNDARIOS */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         padding: 10px 14px !important;
         font-size: 0.9rem !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.3px !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    /* BOTÓN PRIMARIO (SELECCIONADO / ACCIÓN PRINCIPAL) */
+    div.stButton > button[kind="primary"], div.stDownloadButton > button {
+        background-color: #004ac1 !important;
+        color: #ffffff !important;
+        border: 1px solid #004ac1 !important;
+        box-shadow: 0 3px 10px rgba(0, 74, 193, 0.3) !important;
+    }
+    div.stButton > button[kind="primary"] * {
+        color: #ffffff !important;
+    }
+
+    /* BOTÓN SECUNDARIO (NO SELECCIONADO / VISIBLE CON TEXTO OSCURO CLARO) */
+    div.stButton > button[kind="secondary"] {
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        border: 1.5px solid #cbd5e1 !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.04) !important;
+    }
+    div.stButton > button[kind="secondary"] * {
+        color: #1e293b !important;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background-color: #f1f5f9 !important;
+        border-color: #94a3b8 !important;
+        color: #004ac1 !important;
+    }
+    div.stButton > button[kind="secondary"]:hover * {
+        color: #004ac1 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -553,7 +572,7 @@ st.markdown("""
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
-        st.markdown(f"""
+        st.markdown("""
         <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 0 0 25px 25px;">
             <div class="app-header-row">
                 <div>
@@ -720,7 +739,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 7. PORTAL DEL CLIENTE (INTERFAZ VISUAL IDÉNTICA A LA CAPTURA)
+# 7. PORTAL DEL CLIENTE (INTERFAZ VISUAL MÓVIL EXACTA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -728,7 +747,7 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
-    # --- 1. HEADER AZUL SUPERIOR (IDÉNTICO A LA CAPTURA) ---
+    # --- 1. HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -785,18 +804,18 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 4. SECCIÓN INTERACTIVA: SUB-PESTAÑAS DE TRABAJO ---
+    # --- 4. BOTONES DE ACCIÓN (CON TEXTO Y CONTRASTE LEGIBLE) ---
     col_t1, col_t2, col_t3 = st.columns(3)
     with col_t1:
-        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary"):
+        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="btn_cot_tab"):
             st.session_state["sub_tab_inicio"] = "Cotizador"
             st.rerun()
     with col_t2:
-        if st.button("📦 Mis Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary"):
+        if st.button("📦 Mis Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="btn_env_tab"):
             st.session_state["sub_tab_inicio"] = "Mis Envíos"
             st.rerun()
     with col_t3:
-        if st.button("🏷️ Etiqueta China", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary"):
+        if st.button("🏷️ Ficha China", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="btn_eti_tab"):
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.rerun()
 
@@ -866,7 +885,10 @@ elif st.session_state["rol"] == "cliente":
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with get_db() as conn:
                 cur = conn.cursor()
-                cur.execute("INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
+                cur.execute("""
+                    INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy))
                 id_generado = cur.lastrowid
             
             st.session_state["ultima_cot_id"] = id_generado
@@ -888,7 +910,7 @@ elif st.session_state["rol"] == "cliente":
             with c_doc1:
                 st.download_button("📥 PDF Fabricante", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
             with c_doc2:
-                st.download_button(f"📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
+                st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
             
             texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get('total_usd',0):.2f} USD."
             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
@@ -917,7 +939,7 @@ elif st.session_state["rol"] == "cliente":
             st.info("No tienes paquetes registrados en travesía.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # SUB-PESTAÑA 3: ETIQUETA CHINA
+    # SUB-PESTAÑA 3: FICHA CHINA
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
@@ -934,7 +956,7 @@ elif st.session_state["rol"] == "cliente":
         """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 5. PRODUCTOS RECOMENDADOS (IDÉNTICO A LA SECCIÓN INFERIOR DE LA CAPTURA) ---
+    # --- 5. PRODUCTOS RECOMENDADOS ---
     st.markdown('<div class="app-section-title">También podría interesarte</div>', unsafe_allow_html=True)
     
     col_p1, col_p2, col_p3 = st.columns(3)
