@@ -525,7 +525,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFORZADOS (TEXTO DE BOTONES 100% VISIBLE)
+# 6. ESTILOS CSS REFINADOS: BOTONES HOMOGÉNEOS Y ELEGANTES
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -548,6 +548,7 @@ st.markdown("""
         margin: 0 auto !important;
     }
 
+    /* HEADER AZUL SUPERIOR */
     .app-header-blue {
         background-color: #004ac1;
         padding: 18px 16px 14px 16px;
@@ -609,6 +610,7 @@ st.markdown("""
         padding-top: 4px;
     }
 
+    /* BANNER PUBLICITARIO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
         border-radius: 16px;
@@ -628,6 +630,7 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
+    /* TARJETAS CONTENEDORAS */
     .card-box {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -646,6 +649,7 @@ st.markdown("""
         color: #ffffff;
     }
 
+    /* INPUTS */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
@@ -657,38 +661,54 @@ st.markdown("""
         font-size: 0.9rem !important;
     }
 
+    /* BOTONES HOMOGÉNEOS Y ELEGANTES */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
-        border-radius: 10px !important;
-        padding: 10px 14px !important;
-        font-size: 0.9rem !important;
-        font-weight: 800 !important;
-        transition: all 0.2s ease-in-out !important;
+        height: 48px !important;
+        min-height: 48px !important;
+        max-height: 48px !important;
+        border-radius: 12px !important;
+        padding: 0 8px !important;
+        font-size: 0.86rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.2px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
 
+    /* BOTÓN PRIMARIO (ACTIVO) */
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
-        background-color: #004ac1 !important;
+        background: linear-gradient(135deg, #004ac1, #00368c) !important;
         color: #ffffff !important;
         border: 1px solid #004ac1 !important;
-        box-shadow: 0 3px 10px rgba(0, 74, 193, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(0, 74, 193, 0.28) !important;
     }
     div.stButton > button[kind="primary"] * {
         color: #ffffff !important;
     }
 
+    /* BOTÓN SECUNDARIO (ELEGANCIA SOFT WHITE / SLATE) */
     div.stButton > button[kind="secondary"] {
-        background-color: #ffffff !important;
+        background: #ffffff !important;
         color: #1e293b !important;
-        border: 1.5px solid #cbd5e1 !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.04) !important;
+        border: 1.5px solid #e2e8f0 !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
     }
     div.stButton > button[kind="secondary"] * {
         color: #1e293b !important;
     }
     div.stButton > button[kind="secondary"]:hover {
-        background-color: #f1f5f9 !important;
-        border-color: #94a3b8 !important;
+        background-color: #f8fafc !important;
+        border-color: #004ac1 !important;
         color: #004ac1 !important;
+        box-shadow: 0 4px 10px rgba(0, 74, 193, 0.12) !important;
+        transform: translateY(-1px);
     }
     div.stButton > button[kind="secondary"]:hover * {
         color: #004ac1 !important;
@@ -868,7 +888,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA CON BARRA SUPERIOR INTEGRADA)
+# 8. PORTAL DEL CLIENTE (LÍNEA SUPERIOR CON BOTONES HOMOGÉNEOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -909,8 +929,8 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- BARRA SUPERIOR CON BOTONES DIRECTOS (REEMPLAZANDO LA LÍNEA ANTERIOR) ---
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
+    # --- BARRA SUPERIOR CON BOTONES UNIFORMES Y ELEGANTES ---
+    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
     with col_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
@@ -928,7 +948,7 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.rerun()
 
-    st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
     # --- BANNER PROMOCIONAL ---
     st.markdown(f"""
@@ -1133,7 +1153,7 @@ elif st.session_state["rol"] == "cliente":
 
     # --- BARRA INFERIOR DE NAVEGACIÓN ---
     st.markdown("<hr style='margin:20px 0 10px 0; border:0.5px solid #e2e8f0;'>", unsafe_allow_html=True)
-    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
+    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5, gap="small")
     with c_nav1:
         if st.button("🏠\nInicio", key="bnav1"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
@@ -1144,7 +1164,7 @@ elif st.session_state["rol"] == "cliente":
             st.rerun()
     with c_nav3:
         url_wa = "https://wa.me/50495771099"
-        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:transparent; color:#004ac1; border:none; width:100%; font-size:0.75rem; font-weight:bold; cursor:pointer;">🆘<br>Ayuda</button></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#ffffff; color:#004ac1; border:1.5px solid #e2e8f0; border-radius:12px; height:48px; width:100%; font-size:0.75rem; font-weight:800; cursor:pointer;">🆘<br>Ayuda</button></a>', unsafe_allow_html=True)
     with c_nav4:
         if st.button("📐\nCotizar", key="bnav4"):
             st.session_state["sub_tab_inicio"] = "Cotizador"
