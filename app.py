@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL FLUIDO
+# 6. ESTILOS CSS REFINADOS CON CONTENEDOR ESTRICTO DE SCROLL
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -541,6 +541,7 @@ st.markdown("""
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
         margin: 0 auto !important;
+        overflow-x: hidden !important;
     }
 
     /* HEADER AZUL SUPERIOR */
@@ -551,6 +552,8 @@ st.markdown("""
         color: #ffffff;
         margin: -1rem -0.8rem 1rem -0.8rem;
         box-shadow: 0 4px 14px rgba(0, 74, 193, 0.25);
+        max-width: 100vw;
+        box-sizing: border-box;
     }
     .app-header-row {
         display: flex;
@@ -620,21 +623,23 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DE DESPLAZAMIENTO HORIZONTAL PERFECTO */
+    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO (SOLO SE MUEVE ESTA ZONA) */
     .horizontal-scroll-container {
         display: flex;
         overflow-x: auto;
         gap: 8px;
-        padding: 4px 2px 8px 2px;
+        padding: 4px 0 8px 0;
         margin-bottom: 8px;
         width: 100%;
+        max-width: 100%;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: thin;
         scrollbar-color: rgba(255,255,255,0.4) transparent;
+        box-sizing: border-box;
     }
     .horizontal-scroll-container::-webkit-scrollbar {
-        height: 5px;
+        height: 4px;
     }
     .horizontal-scroll-container::-webkit-scrollbar-thumb {
         background-color: rgba(255,255,255,0.4);
@@ -728,7 +733,7 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* ANULAR GRID ESTÁTICO DE STREAMLIT PARA PERMITIR SCROLL HORIZONTAL */
+    /* FORZAR FILA HORIZONTAL AISLADA */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -740,7 +745,7 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] > div {
         flex: 0 0 auto !important;
         width: auto !important;
-        min-width: 120px !important;
+        min-width: 110px !important;
     }
 
     /* BOTONES UNIFORMES Y ESTÉTICOS */
@@ -751,7 +756,7 @@ st.markdown("""
         max-height: 44px !important;
         border-radius: 10px !important;
         padding: 0 10px !important;
-        font-size: 0.82rem !important;
+        font-size: 0.80rem !important;
         font-weight: 700 !important;
         display: flex !important;
         align-items: center !important;
@@ -1030,7 +1035,7 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- CONTENEDOR DESLIZABLE HORIZONTAL FLUIDO PARA LOS BOTONES ---
+    # --- CONTENEDOR DE SCROLL HORIZONTAL AISLADO PARA LOS BOTONES ---
     st.markdown('<div class="horizontal-scroll-container">', unsafe_allow_html=True)
     c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
     with c_nav_c:
