@@ -64,9 +64,6 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-if "menu_lateral_estado" not in st.session_state:
-    st.session_state["menu_lateral_estado"] = False
-
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -970,7 +967,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (MENÚ DESPLEGABLE LADO IZQUIERDO CON BOTÓN EN PARTE AZUL)
+# 8. PORTAL DEL CLIENTE (MENÚ LATERAL IZQUIERDO ESTILO PSKCLOUD)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1016,7 +1013,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- BARRA LATERAL IZQUIERDA (SIDEBAR ESTILO PSKCLOUD) ---
+    # --- MENÚ LATERAL IZQUIERDO (SIDEBAR ESTILO PSKCLOUD) ---
     with st.sidebar:
         st.markdown("### ☁️ **CCM CLOUD**")
         st.caption("SISTEMA DE GESTIÓN 3.0")
@@ -1049,19 +1046,10 @@ elif st.session_state["rol"] == "cliente":
         if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
             logout()
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN DE MENÚ ☰ EN LA PARTE IZQUIERDA ---
+    # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
-    """, unsafe_allow_html=True)
-
-    # BOTÓN DE MENÚ INTEGRADO ARRIBA A LA IZQUIERDA EN LA ZONA AZUL
-    col_menu_btn, col_logo_top = st.columns([3, 1])
-    with col_menu_btn:
-        if st.button("☰ Menú Principal", type="primary", key="btn_menu_izq_header"):
-            st.toast("💡 Deslice el panel lateral izquierdo para ver el menú de navegación.")
-    
-    st.markdown(f"""
-        <div class="app-header-row" style="margin-top: 10px;">
+        <div class="app-header-row">
             <div>
                 <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
                 <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
