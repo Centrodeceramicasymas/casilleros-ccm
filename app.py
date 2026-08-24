@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL AISLADO
+# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL ESTRICTO
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -623,7 +623,7 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* CONTENEDOR DE SCROLL HORIZONTAL AISLADO */
+    /* CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO Y AISLADO */
     .horizontal-scroll-wrapper {
         width: 100%;
         overflow-x: auto;
@@ -642,7 +642,7 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* FORZAR FILA HORIZONTAL DE BOTONES EN UNA SOLA LÍNEA */
+    /* FORZAR FILA HORIZONTAL ESTRICTA EN CUALQUIER DISPOSITIVO */
     .horizontal-scroll-wrapper div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
