@@ -944,7 +944,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESGLOSE COMPLETO DE METROS CÚBICOS)
+# 8. PORTAL DEL CLIENTE (UNIDADES DINÁMICAS DE MEDIDA Y PESO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1150,7 +1150,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (DESGLOSE COMPLETO DE CBM Y FT3)
+    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES DE MEDIDA Y PESO)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1174,14 +1174,44 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
+        # SELECTORES DE UNIDADES DE MEDIDA Y PESO
+        c_u1, c_u2 = st.columns(2)
+        with c_u1:
+            unidad_medida = st.selectbox("Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida")
+        with c_u2:
+            unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
+
+        st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+
         if "Paquetería Menor" in tipo_carga:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0, key="in_al_menor")
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0, key="in_an_menor")
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0, key="in_la_menor")
+            with c1: al_input = st.number_input(f"Alto ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=30.0, step=1.0, key="in_al_menor")
+            with c2: an_input = st.number_input(f"Ancho ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=30.0, step=1.0, key="in_an_menor")
+            with c3: la_input = st.number_input(f"Largo ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=40.0, step=1.0, key="in_la_menor")
             with c4: 
-                pe_lb = st.number_input("Peso (lb)", min_value=0.5, max_value=99.9, value=4.0, step=0.5, key="in_pe_menor")
-                pe_kg = pe_lb / 2.20462
+                pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=4.0, step=0.5, key="in_pe_menor")
+
+            # CONVERSIÓN A CENTÍMETROS
+            if "Pulgadas" in unidad_medida:
+                al_val = al_input * 2.54
+                an_val = an_input * 2.54
+                la_val = la_input * 2.54
+            elif "Metros" in unidad_medida:
+                al_val = al_input * 100.0
+                an_val = an_input * 100.0
+                la_val = la_input * 100.0
+            else:
+                al_val = al_input
+                an_val = an_input
+                la_val = la_input
+
+            # CONVERSIÓN A LIBRAS Y KG
+            if "Kilogramos" in unidad_peso:
+                pe_lb = pe_input * 2.20462
+                pe_kg = pe_input
+            else:
+                pe_lb = pe_input
+                pe_kg = pe_input / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
             vol_ft3_val = vol_m3_val * 35.3147
@@ -1207,12 +1237,33 @@ elif st.session_state["rol"] == "cliente":
 
         else:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_val = st.number_input("Alto (cm)", min_value=1.0, value=120.0, step=1.0, key="in_al_com")
-            with c2: an_val = st.number_input("Ancho (cm)", min_value=1.0, value=120.0, step=1.0, key="in_an_com")
-            with c3: la_val = st.number_input("Largo (cm)", min_value=1.0, value=120.0, step=1.0, key="in_la_com")
+            with c1: al_input = st.number_input(f"Alto ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_al_com")
+            with c2: an_input = st.number_input(f"Ancho ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_an_com")
+            with c3: la_input = st.number_input(f"Largo ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_la_com")
             with c4: 
-                pe_lb = st.number_input("Peso (lb)", min_value=100.0, value=500.0, step=10.0, key="in_pe_com")
-                pe_kg = pe_lb / 2.20462
+                pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=500.0, step=10.0, key="in_pe_com")
+
+            # CONVERSIÓN A CENTÍMETROS
+            if "Pulgadas" in unidad_medida:
+                al_val = al_input * 2.54
+                an_val = an_input * 2.54
+                la_val = la_input * 2.54
+            elif "Metros" in unidad_medida:
+                al_val = al_input * 100.0
+                an_val = an_input * 100.0
+                la_val = la_input * 100.0
+            else:
+                al_val = al_input
+                an_val = an_input
+                la_val = la_input
+
+            # CONVERSIÓN A LIBRAS Y KG
+            if "Kilogramos" in unidad_peso:
+                pe_lb = pe_input * 2.20462
+                pe_kg = pe_input
+            else:
+                pe_lb = pe_input
+                pe_kg = pe_input / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
             vol_ft3_val = vol_m3_val * 35.3147
@@ -1298,7 +1349,7 @@ elif st.session_state["rol"] == "cliente":
                     vol_ft3=d_pdf.get("vol_ft3", 0),
                     total_usd=d_pdf.get("total_usd", 0),
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                    id_cot=id_cot if 'id_cot' in locals() else id_c,
+                    id_cot=id_c,
                     destino_entrega=dest_pdf
                 )
                 
