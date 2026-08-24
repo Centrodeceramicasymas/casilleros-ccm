@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS
+# 6. ESTILOS CSS REFINADOS CON CONTENEDOR DESLIZABLE (SCROLL HORIZONTAL)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -620,6 +620,19 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
+    /* CONTENEDOR DESLIZABLE HORIZONTAL PARA NAVEGACIÓN SUPERIOR */
+    .scrollable-nav {
+        display: flex;
+        overflow-x: auto;
+        gap: 8px;
+        padding-bottom: 4px;
+        margin-bottom: 10px;
+        scrollbar-width: none; /* Firefox */
+    }
+    .scrollable-nav::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
+    }
+
     /* BANNER PUBLICITARIO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
@@ -707,50 +720,23 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* FORZAR GRID HORIZONTAL EN MÓVIL */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 6px !important;
-        align-items: stretch !important;
-        width: 100% !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0px !important;
-        min-width: 0 !important;
-        width: 100% !important;
-    }
-
-    /* BOTONES HOMOGÉNEOS Y ELEGANTES */
+    /* BOTONES ADAPTADOS AL SCROLL HORIZONTAL */
     div.stButton > button, div.stDownloadButton > button {
-        width: 100% !important;
-        height: 48px !important;
-        min-height: 48px !important;
-        max-height: 48px !important;
-        border-radius: 12px !important;
-        padding: 0 4px !important;
-        font-size: 0.78rem !important;
+        width: auto !important;
+        min-width: 110px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        border-radius: 10px !important;
+        padding: 0 12px !important;
+        font-size: 0.82rem !important;
         font-weight: 700 !important;
-        letter-spacing: 0px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         text-align: center !important;
         white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-
-    @media (min-width: 600px) {
-        div.stButton > button, div.stDownloadButton > button {
-            font-size: 0.86rem !important;
-            padding: 0 8px !important;
-        }
-        div[data-testid="stHorizontalBlock"] {
-            gap: 10px !important;
-        }
     }
 
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
@@ -1022,35 +1008,37 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- BARRA DE NAVEGACIÓN SUPERIOR UNIFICADA (MIS COTIZACIONES + CATÁLOGO + COTIZADOR + ENVÍOS + FICHAS) ---
-    col_nav_c, col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(5, gap="small")
-    with col_nav_c:
+    # --- CONTENEDOR DESLIZABLE HORIZONTAL PARA LOS BOTONES EN LA ESQUINA INFERIOR IZQUIERDA ---
+    st.markdown('<div class="scrollable-nav">', unsafe_allow_html=True)
+    c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
+    with c_nav_c:
         if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
             st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
             st.rerun()
-    with col_nav1:
+    with c_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
             st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
-    with col_nav2:
+    with c_nav2:
         if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
             st.session_state["sub_tab_inicio"] = "Cotizador"
             st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
-    with col_nav3:
+    with c_nav3:
         if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
             st.session_state["sub_tab_inicio"] = "Mis Envíos"
             st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
-    with col_nav4:
+    with c_nav4:
         if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("""
-        <div class="app-search-bar" style="margin-top: 14px;">
+        <div class="app-search-bar" style="margin-top: 10px;">
             <span>🔍</span>
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
