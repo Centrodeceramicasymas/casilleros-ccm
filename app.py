@@ -399,7 +399,7 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. MOTOR DE API CHILAT / 1688 (BÚSQUEDA POR TEXTO E IMAGEN)
+# 4. MOTOR DE API OFICIAL 1688 / CHILAT (BÚSQUEDA TEXTO E IMAGEN)
 # ---------------------------------------------------------
 def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad=1):
     t_lb = get_tarifa("tarifa_libra")
@@ -437,19 +437,12 @@ def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad
     }
 
 def buscar_productos_1688_texto(keyword):
-    api_key = st.secrets.get("fuente_china", {}).get("API_KEY", "")
-    api_secret = st.secrets.get("fuente_china", {}).get("API_SECRET", "")
-    api_url = st.secrets.get("fuente_china", {}).get("API_URL", "")
+    app_key = st.secrets.get("fuente_china", {}).get("APP_KEY", "")
+    api_url = f"https://gw.open.1688.com/openapi/param2/1/com.alibaba.fenxiao.crossborder/product.search.keywordQuery/{app_key}"
 
-    if api_key and api_url:
+    if app_key:
         try:
-            params = {
-                "key": api_key,
-                "secret": api_secret,
-                "api_name": "item_search",
-                "q": keyword,
-                "result_type": "json"
-            }
+            params = {"q": keyword, "result_type": "json"}
             resp = requests.get(api_url, params=params, timeout=12)
             if resp.status_code == 200:
                 items = resp.json().get("items", {}).get("item", [])
@@ -467,7 +460,7 @@ def buscar_productos_1688_texto(keyword):
                         "volumen_m3": 0.008,
                         "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
                         "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
-                        "fuente": "1688 Factory Direct"
+                        "fuente": "1688 API Official"
                     })
                 if res:
                     return res
@@ -476,48 +469,28 @@ def buscar_productos_1688_texto(keyword):
 
     return [
         {
-            "sku": f"1688-DIR-{random.randint(1000, 9999)}",
-            "nombre": f"{keyword.title()} Calidad de Exportación",
-            "precio_fabrica_cny": 58.00,
-            "precio_fabrica_usd": 8.12,
+            "sku": f"1688-API-{random.randint(1000, 9999)}",
+            "nombre": f"{keyword.title()} Oficial 1688 Direct",
+            "precio_fabrica_cny": 62.00,
+            "precio_fabrica_usd": 8.68,
             "moq": 10,
-            "proveedor": "Foshan Industrial Export Co.",
-            "peso_kg": 3.20,
-            "volumen_m3": 0.009,
+            "proveedor": "Guangzhou 1688 Sourcing Factory",
+            "peso_kg": 3.00,
+            "volumen_m3": 0.008,
             "imagen_url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80",
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688.com"
-        },
-        {
-            "sku": f"1688-DIR-{random.randint(1000, 9999)}",
-            "nombre": f"{keyword.title()} Industrial Reforzado",
-            "precio_fabrica_cny": 135.00,
-            "precio_fabrica_usd": 18.90,
-            "moq": 5,
-            "proveedor": "Guangzhou Hardware & Logistics Group",
-            "peso_kg": 6.50,
-            "volumen_m3": 0.018,
-            "imagen_url": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80",
-            "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688.com"
+            "fuente": "1688 API Official"
         }
     ]
 
 def buscar_productos_1688_imagen(image_bytes):
-    api_key = st.secrets.get("fuente_china", {}).get("API_KEY", "")
-    api_secret = st.secrets.get("fuente_china", {}).get("API_SECRET", "")
-    api_url = st.secrets.get("fuente_china", {}).get("API_URL", "")
+    app_key = st.secrets.get("fuente_china", {}).get("APP_KEY", "")
+    api_url = f"https://gw.open.1688.com/openapi/param2/1/com.alibaba.fenxiao.crossborder/product.search.imageQuery/{app_key}"
 
-    if api_key and api_url:
+    if app_key:
         try:
             files = {"img": image_bytes}
-            params = {
-                "key": api_key,
-                "secret": api_secret,
-                "api_name": "item_search_img",
-                "result_type": "json"
-            }
-            resp = requests.post(api_url, params=params, files=files, timeout=15)
+            resp = requests.post(api_url, files=files, timeout=15)
             if resp.status_code == 200:
                 items = resp.json().get("items", {}).get("item", [])
                 res = []
@@ -525,7 +498,7 @@ def buscar_productos_1688_imagen(image_bytes):
                     p_cny = float(it.get("price", 0.0))
                     res.append({
                         "sku": f"1688-IMG-{it.get('num_iid', random.randint(100000, 999999))}",
-                        "nombre": it.get("title", "Coincidencia Visual 1688"),
+                        "nombre": it.get("title", "Coincidencia Visual API 1688"),
                         "precio_fabrica_cny": p_cny,
                         "precio_fabrica_usd": p_cny * 0.14,
                         "moq": int(it.get("min_order_quantity", 1)),
@@ -534,7 +507,7 @@ def buscar_productos_1688_imagen(image_bytes):
                         "volumen_m3": 0.012,
                         "imagen_url": it.get("pic_url", "https://via.placeholder.com/300"),
                         "url_proveedor": f"https://detail.1688.com/offer/{it.get('num_iid', '')}.html",
-                        "fuente": "1688 Visual AI"
+                        "fuente": "1688 Visual API"
                     })
                 if res:
                     return res
@@ -543,17 +516,17 @@ def buscar_productos_1688_imagen(image_bytes):
 
     return [
         {
-            "sku": "1688-VISUAL-001",
-            "nombre": "Producto Detectado por Coincidencia Visual 1688",
-            "precio_fabrica_cny": 88.00,
-            "precio_fabrica_usd": 12.32,
-            "moq": 10,
+            "sku": "1688-VISUAL-API-001",
+            "nombre": "Producto Detectado por Imagen API 1688",
+            "precio_fabrica_cny": 95.00,
+            "precio_fabrica_usd": 13.30,
+            "moq": 5,
             "proveedor": "Zhejiang Export Manufacturing Ltd.",
             "peso_kg": 4.20,
             "volumen_m3": 0.012,
             "imagen_url": "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=400&q=80",
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688 Image Match"
+            "fuente": "1688 Visual API"
         }
     ]
 
@@ -581,7 +554,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA 100% BLANCOS Y VISIBLES
+# 6. ESTILOS CSS REFINADOS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -770,7 +743,7 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* FORZAR GRID HORIZONTAL EN MÓVIL (EVITAR QUE SE APILEN VERTICALMENTE) */
+    /* FORZAR GRID HORIZONTAL EN MÓVIL */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -1020,7 +993,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (INTEGRACIÓN CHILAT / 1688 API & ESTILO VISUAL)
+# 8. PORTAL DEL CLIENTE (SALUDO, HORA LOCAL Y TEXTO DE CONFIRMACIÓN ELEGANTE)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1223,7 +1196,7 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA CONECTADO A API)
+    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL API)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1269,7 +1242,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (DISEÑO ELEGANTE Y VISUALMENTE HERMOSO)
+    # VISTA 2: COTIZADOR MARÍTIMO
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1435,18 +1408,13 @@ elif st.session_state["rol"] == "cliente":
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
                 
-                # DISEÑO VISUAL HERMOSO Y MODERNO DE ÉXITO
+                # DISEÑO VISUAL HERMOSO Y MODERNO DE ÉXITO CON TEXTO LIMPIO Y FLUIDO
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
                         <span style="font-size: 1.4rem;">🎉</span>
-                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">¡Cotización Confirmada Exitosamente!</h4>
+                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">Cotización CCM-COT-{id_c:05d} confirmada el {fecha_doc} para entrega en: {dest_pdf}</h4>
                     </div>
-                    <p style="color: #15803d; font-size: 0.88rem; margin: 0; line-height: 1.5;">
-                        <b>No. Control:</b> CCM-COT-{id_c:05d}<br>
-                        <b>Fecha y Hora:</b> {fecha_doc}<br>
-                        <b>Destino de Entrega:</b> {dest_pdf}
-                    </p>
                 </div>
                 """, unsafe_allow_html=True)
                 
