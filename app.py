@@ -3,7 +3,7 @@ import sqlite3
 import hashlib
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import io
 import os
 import base64
@@ -12,7 +12,7 @@ import urllib.parse
 import requests
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DEL SISTEMA & DICCIONARIO DE HONDURAS
+# 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
@@ -23,6 +23,12 @@ st.set_page_config(
 
 DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo centro y mas.jpg"
+
+# Zona horaria de Honduras (UTC-6 sin horario de verano)
+ZONA_HONDURAS = timezone(timedelta(hours=-6))
+
+def obtener_tiempo_honduras():
+    return datetime.now(ZONA_HONDURAS)
 
 MUNICIPIOS_HONDURAS = {
     "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
@@ -60,7 +66,7 @@ if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS CON FECHA Y HORA DE EMISIÓN
+# 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     stream_bytes = stream_content.encode('latin-1', 'replace')
@@ -100,7 +106,7 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
-    fecha_txt = fecha_emision if fecha_emision else datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
+    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
 
     stream = f"""BT
 /F1 16 Tf
@@ -163,7 +169,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén", fecha_emision=None):
-    fecha_txt = fecha_emision if fecha_emision else datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
+    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
 
     stream = f"""BT
@@ -970,7 +976,7 @@ if not st.session_state["autenticado"]:
                     d = st.session_state["reg_datos"]
                     n_cod = generar_codigo_casillero_dni(d["dni"])
                     n_pwd = generar_clave_provisional()
-                    f_crea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f_crea = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
 
                     with get_db() as conn:
                         cur = conn.cursor()
@@ -1015,7 +1021,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (SALUDO, FECHA Y HORA LOCAL EN VIVO)
+# 8. PORTAL DEL CLIENTE (SALUDO, HORA LOCAL Y FECHA EXACTA DE HONDURAS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1032,9 +1038,9 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    # LÓGICA DE FECHA Y HORA LOCAL
-    ahora = datetime.now()
-    hora_actual = ahora.hour
+    # LÓGICA DE FECHA Y HORA LOCAL EN HONDURAS (UTC-6)
+    ahora_hn = obtener_tiempo_honduras()
+    hora_actual = ahora_hn.hour
     if 5 <= hora_actual < 12:
         saludo_horario = "Buenos días"
     elif 12 <= hora_actual < 19:
@@ -1042,10 +1048,10 @@ elif st.session_state["rol"] == "cliente":
     else:
         saludo_horario = "Buenas noches"
 
-    dia_nombre = DIAS_SEMANA_ES.get(ahora.weekday(), "")
-    mes_nombre = MESES_ES.get(ahora.month, "")
-    hora_formato = ahora.strftime("%I:%M %p")
-    fecha_hora_texto = f"{dia_nombre}, {ahora.day} {mes_nombre} {ahora.year} &bull; {hora_formato}"
+    dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
+    mes_nombre = MESES_ES.get(ahora_hn.month, "")
+    hora_formato = ahora_hn.strftime("%I:%M %p")
+    fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
     # CARGAR DIRECCIONES CREADAS POR EL CLIENTE
     with get_db() as conn:
@@ -1161,7 +1167,7 @@ elif st.session_state["rol"] == "cliente":
         with c_sv1:
             if st.button("💾 Guardar Dirección", type="primary", key="btn_guardar_nueva_dir"):
                 if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
-                    f_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute("""
@@ -1264,7 +1270,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (DOCUMENTOS CON FECHA Y HORA LOCAL)
+    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES Y METROS CÚBICOS)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1394,8 +1400,8 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
-            f_hoy_sql = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f_hoy_doc = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
+            f_hoy_sql = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+            f_hoy_doc = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
             with get_db() as conn:
                 cur = conn.cursor()
                 cur.execute("""
@@ -1428,7 +1434,7 @@ elif st.session_state["rol"] == "cliente":
             if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
                 id_c = d_pdf.get("id_cot", 1)
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
-                fecha_doc = d_pdf.get("fecha_hora_doc", datetime.now().strftime("%d/%m/%Y %I:%M:%S %p"))
+                fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
                 
                 st.success(f"🎉 Cotización CCM-COT-{id_c:05d} confirmada el **{fecha_doc}** para entrega en: {dest_pdf}.")
                 
@@ -1513,7 +1519,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
         st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
         
-        f_etiqueta_actual = datetime.now().strftime("%d/%m/%Y %I:%M:%S %p")
+        f_etiqueta_actual = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
         pdf_bytes = generar_pdf_etiqueta_proveedor(
             casillero=casillero,
             nombre=nombre_completo,
