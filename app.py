@@ -32,8 +32,11 @@ if "tema_visual" not in st.session_state:
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
+if "seccion_activa" not in st.session_state:
+    st.session_state["seccion_activa"] = "📐 Cotizador Marítimo"
+
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS
+# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     stream_bytes = stream_content.encode('latin-1', 'replace')
@@ -208,7 +211,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. ESTILOS CSS PERSONALIZADOS
+# 3. ESTILOS CSS PROFESIONALES
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -287,41 +290,6 @@ st.markdown(f"""
         background-color: {input_bg} !important;
         border: 1px solid {input_border} !important;
         border-radius: 10px !important;
-    }}
-
-    .logo-container {{
-        text-align: center;
-        margin-top: 1rem;
-        margin-bottom: 1.5rem;
-    }}
-    .logo-image-box {{
-        width: 140px;
-        height: 140px;
-        margin: 0 auto;
-        border-radius: 18px;
-        padding: 8px;
-        background-color: #ffffff;
-        box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }}
-    .logo-image-box img {{
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }}
-    .brand-title {{
-        font-size: 1.25rem;
-        font-weight: 800;
-        letter-spacing: 1px;
-        color: {text_main};
-        margin-top: 12px;
-    }}
-    .brand-subtitle {{
-        font-size: 0.85rem;
-        color: {text_muted};
-        margin-top: 2px;
     }}
 
     .card-box {{
@@ -451,17 +419,17 @@ def render_logo_header():
     if os.path.exists(LOGO_FILENAME):
         with open(LOGO_FILENAME, "rb") as f:
             encoded_img = base64.b64encode(f.read()).decode()
-        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más">'
+        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más" style="max-width:100%; max-height:100%; object-fit:contain;">'
     else:
         img_html = '<div style="font-size:3rem;">🏠</div>'
 
     st.markdown(f"""
-    <div class="logo-container">
-        <div class="logo-image-box">
+    <div style="text-align: center; margin-top: 1rem; margin-bottom: 1.5rem;">
+        <div style="width: 140px; height: 140px; margin: 0 auto; border-radius: 18px; padding: 8px; background-color: #ffffff; box-shadow: 0 6px 18px rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center;">
             {img_html}
         </div>
-        <div class="brand-title">CENTRO DE CERÁMICAS Y MÁS</div>
-        <div class="brand-subtitle">Servicio de Consolidación Marítima China ➔ Honduras</div>
+        <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: 1px; color: {text_main}; margin-top: 12px;">CENTRO DE CERÁMICAS Y MÁS</div>
+        <div style="font-size: 0.85rem; color: {text_muted}; margin-top: 2px;">Servicio de Consolidación Marítima China ➔ Honduras</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -668,7 +636,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (ESTRUCTURA DE 3 PESTAÑAS)
+# 8. PORTAL DEL CLIENTE (CON MENÚ DESPLEGABLE SUPERIOR)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -676,19 +644,53 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "Honduras")
 
+    # BARRA SUPERIOR DE ENCABEZADO
     st.markdown(f"""
-    <div style="background:{input_bg}; padding:1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+    <div style="background:{input_bg}; padding:1rem 1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
         <div>
             <h3 style="margin:0; color:#0052cc;">🏠 CENTRO DE CERÁMICAS Y MÁS &bull; Casillero {casillero}</h3>
-            <div style="font-size:0.85rem; color:{text_muted};">Titular: {nombre_cli}</div>
+            <div style="font-size:0.85rem; color:{text_muted};">Titular: {nombre_cli} &bull; {ciu_cli}</div>
         </div>
         <div style="background:#0052cc; color:white; padding:4px 12px; border-radius:20px; font-weight:bold; font-size:0.8rem;">🟢 Casillero Activo</div>
     </div>
     """, unsafe_allow_html=True)
 
-    tab_cargas, tab_cotizador, tab_direccion = st.tabs(["📦 Mis Envíos", "📐 Cotizador Marítimo", "📍 Etiqueta & Ficha de Envío (PDF)"])
+    # BOTÓN / SELECTOR DESPLEGABLE SUPERIOR DE NAVEGACIÓN
+    col_menu, col_logout = st.columns([4, 1])
+    with col_menu:
+        opciones_navegacion = [
+            "📦 Mis Envíos",
+            "📐 Cotizador Marítimo",
+            "📍 Etiqueta & Ficha de Envío (PDF)"
+        ]
+        
+        idx_default = opciones_navegacion.index(st.session_state["seccion_activa"]) if st.session_state["seccion_activa"] in opciones_navegacion else 1
 
-    with tab_cargas:
+        seccion_seleccionada = st.selectbox(
+            "☰ Menú de Navegación:",
+            opciones_navegacion,
+            index=idx_default,
+            key="sb_navegacion_superior"
+        )
+
+        if seccion_seleccionada != st.session_state["seccion_activa"]:
+            st.session_state["seccion_activa"] = seccion_seleccionada
+            st.rerun()
+
+    with col_logout:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🚪 Cerrar Sesión", type="secondary", key="btn_logout_top"):
+            logout()
+
+    st.markdown("<hr style='margin: 10px 0 20px 0; border: 0.5px solid #26354a;'>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # VISTA 1: MIS ENVÍOS
+    # -----------------------------------------------------
+    if st.session_state["seccion_activa"] == "📦 Mis Envíos":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("### 📦 Mis Envíos & Paquetes en Travesía")
+        
         with get_db() as conn:
             c = conn.cursor()
             c.execute("SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?", (casillero,))
@@ -697,7 +699,7 @@ elif st.session_state["rol"] == "cliente":
         if paquetes:
             for p in paquetes:
                 st.markdown(f"""
-                <div class="card-box">
+                <div style="background:{'#161e2e' if is_dark else '#f8fafc'}; border:1px solid {input_border}; border-radius:10px; padding:15px; margin-bottom:10px;">
                     <b>Tracking:</b> {p[0]} | <b>Contenedor:</b> {p[2]}<br>
                     <b>Estado:</b> <span style="color:#0052cc; font-weight:bold;">{p[3]}</span><br>
                     <small style="color:{text_muted};">Actualizado: {p[4]}</small>
@@ -705,10 +707,14 @@ elif st.session_state["rol"] == "cliente":
                 """, unsafe_allow_html=True)
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab_cotizador:
+    # -----------------------------------------------------
+    # VISTA 2: COTIZADOR MARÍTIMO
+    # -----------------------------------------------------
+    elif st.session_state["seccion_activa"] == "📐 Cotizador Marítimo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+        st.markdown("### 📐 Cotizador Flete Marítimo China ➔ Honduras")
         
         t_lb = get_tarifa("tarifa_libra")       # $3.50
         t_m3 = get_tarifa("tarifa_m3")           # $680.00
@@ -721,7 +727,7 @@ elif st.session_state["rol"] == "cliente":
                 "🚢 Carga Comercial por Metro Cúbico (100 lbs o más / 45 a 390 kg)"
             ],
             index=0,
-            key="sb_tipo_carga"
+            key="sb_tipo_carga_cot"
         )
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
@@ -825,6 +831,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
+        # DESPLIEGUE DE LOS 2 DOCUMENTOS
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
@@ -897,7 +904,10 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab_direccion:
+    # -----------------------------------------------------
+    # VISTA 3: ETIQUETA & FICHA DE ENVÍO
+    # -----------------------------------------------------
+    elif st.session_state["seccion_activa"] == "📍 Etiqueta & Ficha de Envío (PDF)":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("### 🏷️ Etiqueta de Envío Oficial para su Proveedor")
         st.write("Descargue este archivo PDF y envíeselo directamente a su proveedor en Alibaba, 1688 o Made-in-China para que lo pegue en cada caja:")
@@ -908,7 +918,8 @@ elif st.session_state["rol"] == "cliente":
             label="📄 Descargar Etiqueta de Envío en PDF (Para Proveedor)",
             data=pdf_bytes,
             file_name=f"Shipping_Label_{casillero}.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
+            key="btn_dl_dir_tab"
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -934,9 +945,6 @@ NOT accept packages without the Client Code: {casillero} clearly visible."<br>
 ============================================================
         </div>
         """, unsafe_allow_html=True)
-
-        if st.button("🚪 Cerrar Sesión", type="secondary"):
-            logout()
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO
