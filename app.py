@@ -30,8 +30,11 @@ if "vista_actual" not in st.session_state:
 if "sub_tab_inicio" not in st.session_state:
     st.session_state["sub_tab_inicio"] = "Catálogo"
 
+# OPCIÓN PREDETERMINADA FIJA NO ELIMINABLE
+OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
+
 if "modalidad_envio_seleccionada" not in st.session_state:
-    st.session_state["modalidad_envio_seleccionada"] = "Servicio a Domicilio"
+    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON DIRECCIÓN DINÁMICA
@@ -69,7 +72,7 @@ def compilar_pdf_simple(stream_content):
     pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
     return pdf_buffer.getvalue()
 
-def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Servicio a Domicilio"):
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Retirar en Almacén"):
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
@@ -132,7 +135,7 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
 ET"""
     return compilar_pdf_simple(stream)
 
-def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Servicio a Domicilio"):
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén"):
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
 
@@ -685,7 +688,7 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* ETIQUETAS DE TEXTO SOBRE LAS ENTRADAS DE DIMENSIONES */
+    /* ETIQUETAS DE TEXTO */
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stTextArea label, .stRadio label {
         color: #0f172a !important;
         font-weight: 700 !important;
@@ -944,7 +947,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (UNIDADES DINÁMICAS DE MEDIDA Y PESO)
+# 8. PORTAL DEL CLIENTE (DIRECCIÓN PREDETERMINADA FIJA & GESTIÓN DE ELIMINACIÓN)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -952,19 +955,21 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
-    # CARGAR OPCIONES DE ENVÍO
+    # CARGAR DIRECCIONES CREADAS POR EL CLIENTE
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
         direcciones_guardadas = c.fetchall()
 
-    opciones_modalidad = [
-        "📦 Servicio a Domicilio",
-        "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
-    ]
+    # CONSTRUIR LISTA: PREDETERMINADA EN PRIMER LUGAR (NO ELIMINABLE)
+    opciones_modalidad = [OPCION_PREDETERMINADA]
     for d in direcciones_guardadas:
         opciones_modalidad.append(f"📍 {d[1]} - {d[3]}")
     opciones_modalidad.append("➕ Crear Nueva Dirección de Envío")
+
+    # Asegurar que si la dirección actual fue borrada, vuelva a la predeterminada
+    if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
+        st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
@@ -992,9 +997,7 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
-    idx_mod = 0
-    if st.session_state["modalidad_envio_seleccionada"] in opciones_modalidad:
-        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+    idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
 
     mod_elegida = st.selectbox(
         "¿Cómo deseas recibir tu compra?",
@@ -1015,22 +1018,44 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- PANEL PARA CREAR / ADMINISTRAR DIRECCIONES ---
+    # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
     if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
-        st.markdown("#### 📍 Administrar y Crear Direcciones de Envío")
+        st.markdown("#### 📍 Administrar Direcciones de Envío")
         
-        if direcciones_guardadas:
-            st.markdown("**Tus direcciones de envío creadas:**")
-            for dir_item in direcciones_guardadas:
-                st.markdown(f"""
-                <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; padding:8px 12px; margin-bottom:6px; font-size:0.85rem;">
-                    <b>🏷️ {dir_item[1]}</b> &bull; Recibe: {dir_item[2]}<br>
-                    <small style="color:#64748b;">📍 {dir_item[3]} &bull; {dir_item[4]}</small>
-                </div>
-                """, unsafe_allow_html=True)
-            st.markdown("---")
+        # 1. Mostrar dirección fija predeterminada
+        st.markdown(f"""
+        <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
+            <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
+            <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
+        </div>
+        """, unsafe_allow_html=True)
 
+        # 2. Listado de direcciones creadas con botón de eliminar
+        if direcciones_guardadas:
+            st.markdown("<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>", unsafe_allow_html=True)
+            for dir_item in direcciones_guardadas:
+                id_dir, etiq, rec, ciu_d, dir_e = dir_item
+                col_info_d, col_btn_del = st.columns([3.8, 1])
+                with col_info_d:
+                    st.markdown(f"""
+                    <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
+                        <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
+                        <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_btn_del:
+                    if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir}", type="secondary"):
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?", (id_dir, casillero))
+                            conn.commit()
+                        st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                        st.session_state.pop("datos_pdf_confirmado", None)
+                        st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
+                        st.rerun()
+
+        st.markdown("---")
         st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
         c_et1, c_et2 = st.columns(2)
         with c_et1:
@@ -1063,7 +1088,7 @@ elif st.session_state["rol"] == "cliente":
                     st.error("Completa todos los campos obligatorios (*).")
         with c_sv2:
             if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
-                st.session_state["modalidad_envio_seleccionada"] = "📦 Servicio a Domicilio"
+                st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1150,7 +1175,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES DE MEDIDA Y PESO)
+    # VISTA 2: COTIZADOR MARÍTIMO (SELECTOR DE UNIDADES Y METROS CÚBICOS)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1174,7 +1199,6 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
-        # SELECTORES DE UNIDADES DE MEDIDA Y PESO
         c_u1, c_u2 = st.columns(2)
         with c_u1:
             unidad_medida = st.selectbox("Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida")
@@ -1191,7 +1215,6 @@ elif st.session_state["rol"] == "cliente":
             with c4: 
                 pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=4.0, step=0.5, key="in_pe_menor")
 
-            # CONVERSIÓN A CENTÍMETROS
             if "Pulgadas" in unidad_medida:
                 al_val = al_input * 2.54
                 an_val = an_input * 2.54
@@ -1205,7 +1228,6 @@ elif st.session_state["rol"] == "cliente":
                 an_val = an_input
                 la_val = la_input
 
-            # CONVERSIÓN A LIBRAS Y KG
             if "Kilogramos" in unidad_peso:
                 pe_lb = pe_input * 2.20462
                 pe_kg = pe_input
@@ -1243,7 +1265,6 @@ elif st.session_state["rol"] == "cliente":
             with c4: 
                 pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=500.0, step=10.0, key="in_pe_com")
 
-            # CONVERSIÓN A CENTÍMETROS
             if "Pulgadas" in unidad_medida:
                 al_val = al_input * 2.54
                 an_val = an_input * 2.54
@@ -1257,7 +1278,6 @@ elif st.session_state["rol"] == "cliente":
                 an_val = an_input
                 la_val = la_input
 
-            # CONVERSIÓN A LIBRAS Y KG
             if "Kilogramos" in unidad_peso:
                 pe_lb = pe_input * 2.20462
                 pe_kg = pe_input
