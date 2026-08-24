@@ -64,9 +64,6 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-if "ver_panel_cotizaciones" not in st.session_state:
-    st.session_state["ver_panel_cotizaciones"] = False
-
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -513,7 +510,7 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "ver_panel_cotizaciones"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "sub_tab_inicio"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
@@ -1037,9 +1034,6 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    if "ver_panel_cotizaciones" not in st.session_state:
-        st.session_state["ver_panel_cotizaciones"] = False
-
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
@@ -1059,31 +1053,27 @@ elif st.session_state["rol"] == "cliente":
     with st.container(key="nav_scroll"):
         c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
         with c_nav_c:
-            if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
-                st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
+            if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
+                st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
                 st.rerun()
         with c_nav1:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav2:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav3:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav4:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
 
-    # --- SELECCIÓN DE MODALIDAD DE ENTREGA EN LUGAR DEL BUSCADOR (CONDICIONADO AL COTIZADOR) ---
+    # --- SELECTOR DE ENTREGA EN LUGAR DE LA BARRA DE BÚSQUEDA (SOLO VISIBLE EN COTIZADOR) ---
     if st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown("""
         <div class="app-delivery-container">
@@ -1114,8 +1104,10 @@ elif st.session_state["rol"] == "cliente":
 
     st.markdown("</div>", unsafe_allow_html=True)  # Cierre del header azul
 
-    # --- PANEL DESPLEGABLE DE COTIZACIONES REALIZADAS PARA DESCARGAR ---
-    if st.session_state["ver_panel_cotizaciones"]:
+    # -----------------------------------------------------
+    # VISTA 0: MIS COTIZACIONES (HISTORIAL Y DESCARGAS)
+    # -----------------------------------------------------
+    if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF", unsafe_allow_html=True)
         st.caption("Aquí puedes consultar y descargar el comprobante en PDF de cada cotización generada.")
@@ -1155,10 +1147,6 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
             st.info("Aún no has generado ninguna cotización.")
-        
-        if st.button("Cerrar Panel", type="secondary", key="btn_cerrar_cot_panel"):
-            st.session_state["ver_panel_cotizaciones"] = False
-            st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
@@ -1346,7 +1334,7 @@ elif st.session_state["rol"] == "cliente":
             else:
                 al_val = al_input
                 an_val = an_input
-                la_val = al_input
+                la_val = la_input
 
             if "Kilogramos" in unidad_peso:
                 pe_lb = pe_input * 2.20462
