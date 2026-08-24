@@ -34,7 +34,7 @@ if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = "Servicio a Domicilio"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS
+# 2. GENERADORES DE PDF NATIVOS CON DIRECCIÓN DINÁMICA
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     stream_bytes = stream_content.encode('latin-1', 'replace')
@@ -69,10 +69,11 @@ def compilar_pdf_simple(stream_content):
     pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
     return pdf_buffer.getvalue()
 
-def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0):
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Servicio a Domicilio"):
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
+    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
 
     stream = f"""BT
 /F1 16 Tf
@@ -92,7 +93,7 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
 0 -14 Td
 (CONTACT PHONE: {telefono}) Tj
 0 -14 Td
-(FINAL DESTINATION: {ciudad.upper()}, HONDURAS) Tj
+(FINAL DESTINATION / ENTREGA: {destino_clean}, HONDURAS) Tj
 0 -22 Td
 (================================================================) Tj
 /F1 11 Tf
@@ -131,8 +132,10 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
 ET"""
     return compilar_pdf_simple(stream)
 
-def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot):
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Servicio a Domicilio"):
     fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
+
     stream = f"""BT
 /F1 15 Tf
 40 790 Td
@@ -152,7 +155,7 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (================================================================) Tj
 /F1 11 Tf
 0 -16 Td
-(DATOS DEL CLIENTE Y CASILLERO ASIGNADO:) Tj
+(DATOS DEL CLIENTE Y DIRECCION DE ENTREGA SELECCIONADA:) Tj
 /F1 9 Tf
 0 -14 Td
 (CASILLERO INTERNACIONAL : {casillero}) Tj
@@ -161,7 +164,9 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 0 -12 Td
 (TELEFONO / WHATSAPP    : {telefono}) Tj
 0 -12 Td
-(DESTINO FINAL          : {ciudad.upper()}, HONDURAS) Tj
+(MODALIDAD DE ENTREGA   : {destino_clean}) Tj
+0 -12 Td
+(DESTINO BASE REGISTRADO: {ciudad.upper()}, HONDURAS) Tj
 0 -18 Td
 (================================================================) Tj
 /F1 11 Tf
@@ -209,7 +214,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. BASE DE DATOS SQLITE & TABLA DE DIRECCIONES
+# 3. BASE DE DATOS SQLITE & UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -617,7 +622,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
 
-    /* ESTILO MODALIDAD DESPLEGABLE EN EL HEADER */
     .app-delivery-container {
         display: flex;
         align-items: center;
@@ -681,7 +685,7 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* INPUTS ESTÁNDAR */
+    /* INPUTS */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
@@ -714,7 +718,6 @@ st.markdown("""
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
 
-    /* BOTÓN PRIMARIO (ACTIVO) */
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
         background: linear-gradient(135deg, #004ac1, #00368c) !important;
         color: #ffffff !important;
@@ -725,7 +728,6 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* BOTÓN SECUNDARIO (ELEGANCIA SOFT WHITE / SLATE) */
     div.stButton > button[kind="secondary"] {
         background: #ffffff !important;
         color: #1e293b !important;
@@ -920,7 +922,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESPLEGABLE DE ENVÍO & BOTONES SUPERIORES)
+# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & FORMATOS CON DIRECCIÓN)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -928,7 +930,7 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
-    # CARGAR OPCIONES DE ENVÍO DESDE LA BASE DE DATOS
+    # CARGAR OPCIONES DE ENVÍO
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
@@ -990,7 +992,7 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- FORMULARIO Y LISTADO SI ELIGE 'CREAR NUEVA DIRECCIÓN' ---
+    # --- PANEL PARA CREAR / ADMINISTRAR DIRECCIONES ---
     if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar y Crear Direcciones de Envío")
@@ -1009,18 +1011,18 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
         c_et1, c_et2 = st.columns(2)
         with c_et1:
-            etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Oficina San Pedro, Taller Central")
+            etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Sucursal 2, Taller")
             receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_cli)
         with c_et2:
             tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
             dep_dir_in = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"], key="sb_dep_nueva_dir")
         
         ciu_dir_in = st.text_input("Municipio / Ciudad *", placeholder="Ej: San Juan, San Pedro Sula, Tegucigalpa")
-        dir_exacta_in = st.text_area("Dirección exacta y puntos de referencia *", placeholder="Barrio, calle, número de casa, color del portón...")
+        dir_exacta_in = st.text_area("Dirección exacta y referencias *", placeholder="Barrio, calle, número de casa, puntos clave...")
 
         c_sv1, c_sv2 = st.columns(2)
         with c_sv1:
-            if st.button("💾 Guardar Dirección de Envío", type="primary", key="btn_guardar_nueva_dir"):
+            if st.button("💾 Guardar Dirección", type="primary", key="btn_guardar_nueva_dir"):
                 if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
                     f_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     with get_db() as conn:
@@ -1030,18 +1032,18 @@ elif st.session_state["rol"] == "cliente":
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """, (casillero, etiqueta_in, receptor_in, tel_dir_in, dep_dir_in, ciu_dir_in, dir_exacta_in, f_ahora))
                         conn.commit()
-                    st.success(f"✅ Dirección '{etiqueta_in}' guardada exitosamente.")
+                    st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
                     st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
                     st.rerun()
                 else:
-                    st.error("Por favor completa todos los campos obligatorios (*).")
+                    st.error("Completa todos los campos obligatorios (*).")
         with c_sv2:
             if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
                 st.session_state["modalidad_envio_seleccionada"] = "📦 Servicio a Domicilio"
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- BARRA SUPERIOR CON BOTONES UNIFORMES Y ELEGANTES ---
+    # --- BARRA SUPERIOR CON BOTONES HOMOGÉNEOS Y ELEGANTES ---
     col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
     with col_nav1:
         if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
@@ -1109,9 +1111,9 @@ elif st.session_state["rol"] == "cliente":
                     st.markdown(f"**{prod['nombre']}**")
                     st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
                     st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
-                    st.success(f"🇭🇳 **Puesto en Honduras ({st.session_state['modalidad_envio_seleccionada']}):** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
+                    st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*")
                     
-                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Modalidad: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
+                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
                     url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
                     
                     c_b1, c_b2 = st.columns(2)
@@ -1123,12 +1125,15 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO
+    # VISTA 2: COTIZADOR MARÍTIMO (PDFs CON DIRECCIÓN SELECCIONADA)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
         
+        # MUESTRA EL DESTINO SELECCIONADO EN EL HEADER
+        st.info(f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*")
+
         t_lb = get_tarifa("tarifa_libra")       # $3.50
         t_m3 = get_tarifa("tarifa_m3")           # $680.00
         min_usd = get_tarifa("minimo_cobro_usd") # $10.00
@@ -1198,16 +1203,48 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["datos_pdf_confirmado"] = {
                 "tipo_carga": modalidad_pdf, "al": al_val, "an": an_val, "la": la_val,
                 "peso_lb": pe_lb, "peso_kg": pe_kg, "vol_m3": vol_m3_val, "vol_ft3": vol_ft3_val,
-                "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado
+                "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado,
+                "destino_entrega": st.session_state["modalidad_envio_seleccionada"]
             }
-            st.success(f"🎉 Cotización CCM-COT-{id_generado:05d} confirmada.")
+            st.success(f"🎉 Cotización CCM-COT-{id_generado:05d} confirmada para entrega en: {st.session_state['modalidad_envio_seleccionada']}.")
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
+            dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
             
-            pdf_fab = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli, d_pdf.get("al",0), d_pdf.get("an",0), d_pdf.get("la",0), d_pdf.get("peso_lb",0), d_pdf.get("peso_kg",0), d_pdf.get("vol_m3",0))
-            pdf_conf = generar_pdf_confirmacion_cotizacion(casillero, nombre_cli, tel_cli, ciu_cli, d_pdf.get("tipo_carga",""), d_pdf.get("al",0), d_pdf.get("an",0), d_pdf.get("la",0), d_pdf.get("peso_lb",0), d_pdf.get("peso_kg",0), d_pdf.get("vol_m3",0), d_pdf.get("vol_ft3",0), d_pdf.get("total_usd",0), d_pdf.get("detalle_tarifa",""), id_c)
+            pdf_fab = generar_pdf_etiqueta_proveedor(
+                casillero=casillero,
+                nombre=nombre_cli,
+                telefono=tel_cli,
+                ciudad=ciu_cli,
+                al=d_pdf.get("al", 0),
+                an=d_pdf.get("an", 0),
+                la=d_pdf.get("la", 0),
+                pe_lb=d_pdf.get("peso_lb", 0),
+                pe_kg=d_pdf.get("peso_kg", 0),
+                vol_m3=d_pdf.get("vol_m3", 0),
+                destino_entrega=dest_pdf
+            )
+            
+            pdf_conf = generar_pdf_confirmacion_cotizacion(
+                casillero=casillero,
+                nombre=nombre_cli,
+                telefono=tel_cli,
+                ciudad=ciu_cli,
+                tipo_carga=d_pdf.get("tipo_carga", ""),
+                al=d_pdf.get("al", 0),
+                an=d_pdf.get("an", 0),
+                la=d_pdf.get("la", 0),
+                peso_lb=d_pdf.get("peso_lb", 0),
+                peso_kg=d_pdf.get("peso_kg", 0),
+                vol_m3=d_pdf.get("vol_m3", 0),
+                vol_ft3=d_pdf.get("vol_ft3", 0),
+                total_usd=d_pdf.get("total_usd", 0),
+                detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
+                id_cot=id_c,
+                destino_entrega=dest_pdf
+            )
             
             c_doc1, c_doc2 = st.columns(2)
             with c_doc1:
@@ -1215,7 +1252,7 @@ elif st.session_state["rol"] == "cliente":
             with c_doc2:
                 st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
             
-            texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get('total_usd',0):.2f} USD."
+            texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
             st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1245,17 +1282,27 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 4: FICHA CHINA
+    # VISTA 4: FICHA CHINA (PDF CON DIRECCIÓN DINÁMICA)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
-        pdf_bytes = generar_pdf_etiqueta_proveedor(casillero, nombre_cli, tel_cli, ciu_cli)
+        st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
+        
+        pdf_bytes = generar_pdf_etiqueta_proveedor(
+            casillero=casillero,
+            nombre=nombre_cli,
+            telefono=tel_cli,
+            ciudad=ciu_cli,
+            destino_entrega=st.session_state["modalidad_envio_seleccionada"]
+        )
         st.download_button("📄 Descargar Etiqueta para Proveedor (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
         
+        destino_pantalla = str(st.session_state['modalidad_envio_seleccionada']).replace('📍', '').replace('📦', '').replace('🏬', '').strip()
         st.markdown(f"""
         <div class="china-address-box" style="margin-top:10px;">
 <strong>CLIENT CODE / CASILLERO:</strong> {casillero}<br>
+<strong>DESTINATION / ENTREGA:</strong> {destino_pantalla.upper()}, HONDURAS<br>
 <strong>ATTN:</strong> CHILAT / {casillero}<br>
 <strong>ADDRESS:</strong> CHILAT Logistics Warehouse, District B, Port Area, Guangzhou<br>
 <strong>ADDRESS (中文):</strong> 广东省广州市白云区集运仓 / 转 {casillero}
