@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import sqlite3
 import hashlib
 import random
@@ -10,6 +9,9 @@ import os
 import base64
 import math
 import urllib.parse
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA
@@ -209,7 +211,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. DEFINICIÓN DE COLORES & CSS RESPONSIVO
+# 3. DEFINICIÓN DE COLORES & CSS CORREGIDO
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -588,7 +590,7 @@ if not st.session_state["autenticado"]:
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 7.2 VISTA REGISTRO
+    # 7.2 VISTA REGISTRO (CON VALIDACIÓN DE DUPLICADOS Y WHATSAPP)
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
         with col_reg:
@@ -759,7 +761,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (CON INTEGRACIÓN DE CHILAT SHOP)
+# 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -777,12 +779,7 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    tab_cargas, tab_cotizador, tab_chilat, tab_direccion = st.tabs([
-        "📦 Mis Envíos", 
-        "📐 Cotizador Marítimo", 
-        "🛍️ Catálogo Mayorista (Chilat Shop)", 
-        "📍 Etiqueta & Ficha de Envío (PDF)"
-    ])
+    tab_cargas, tab_cotizador, tab_direccion = st.tabs(["📦 Mis Envíos", "📐 Cotizador Marítimo", "📍 Etiqueta & Ficha de Envío (PDF)"])
 
     with tab_cargas:
         with get_db() as conn:
@@ -802,7 +799,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en tránsito en este momento.")
 
-    # ---------------- COTIZADOR CON MEDIDAS EN AMBAS OPCIONES ----------------
+    # ---------------- COTIZADOR CON DIMENSIONES Y CONFIRMACIÓN CORREGIDA ----------------
     with tab_cotizador:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
@@ -819,6 +816,7 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
+        # OPCIÓN 1: PAQUETERÍA MENOR
         if tipo_carga == "No (Menos de 100 lbs - Paquetería)":
             st.caption("Ingrese las dimensiones y peso real del paquete menor (1 a 99 lbs):")
             c1, c2, c3, c4 = st.columns(4)
@@ -854,6 +852,7 @@ elif st.session_state["rol"] == "cliente":
             detalle_pdf = desc
             modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
 
+        # OPCIÓN 2: CARGA COMERCIAL
         else:
             st.caption("Carga comercial: 1 Metro Cúbico (CBM) cubre hasta 390 kg (859.8 lbs). Cada fracción adicional de 390 kg liquida como CBM adicional.")
             c1, c2, c3, c4 = st.columns(4)
@@ -898,7 +897,7 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<hr style='margin: 20px 0; border: 0.5px solid #374151;'>", unsafe_allow_html=True)
         st.markdown("#### ✅ Confirmación de Tarifa & Generación de Documentos")
-        st.caption("Al confirmar, el sistema guardará las dimensiones ingresadas y emitirá los documentos correspondientes:")
+        st.caption("Al confirmar, el sistema guardará las dimensiones ingresadas y emitirá los documentos con todos los datos:")
 
         if st.button("🤝 Estoy de acuerdo con la tarifa y deseo confirmar", type="primary", key="btn_confirmar_tarifa"):
             f_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -926,7 +925,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS (ACCESO SEGURO CON .GET) ----------------
+        # ---------------- SECCIÓN DE LOS 2 DOCUMENTOS CON MEDIDAS (ACCESO SEGURO CON .GET) ----------------
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
@@ -1027,36 +1026,6 @@ elif st.session_state["rol"] == "cliente":
                 </a>
                 """, unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ---------------- NUEVA PESTAÑA: INTEGRACIÓN CHILAT SHOP ----------------
-    with tab_chilat:
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("### 🛍️ Chilat Shop — Plataforma Mayorista en Línea[cite: 1]")
-        st.caption("Explore miles de productos directamente de fábricas en China para importar a Honduras[cite: 1].")
-        
-        # Barra de ayuda e instrucciones para el cliente
-        st.info(f"""
-        📌 **Guía para comprar con tu casillero en Chilat Shop[cite: 1]:**
-        1. Selecciona tus productos en el catálogo de abajo[cite: 1].
-        2. Al momento de pagar, en el campo de **Destinatario / Consignee**, coloca: `CHILAT / {casillero}`.
-        3. En la dirección de entrega en China, selecciona la **Bodega Central en Guangzhou**.
-        4. Cuando el vendedor despache tu pedido, copia el número de guía (tracking) y regístralo con nosotros.
-        """)
-
-        col_btn_ext, _ = st.columns([1.5, 3])
-        with col_btn_ext:
-            st.markdown("""
-            <a href="https://shop.chilat.com/h5?spm=04gm2gSD9tdKXqEww2hSP9uVOqzLESnihWZAYsyuzm8w8.4065.navigation-bottom-home.P" target="_blank" style="text-decoration:none;">
-                <div style="background-color:#0052cc; color:white; padding:10px 16px; border-radius:10px; font-weight:bold; text-align:center; margin-bottom:12px;">
-                    🌐 Abrir Chilat Shop en Pantalla Completa
-                </div>
-            </a>
-            """, unsafe_allow_html=True)
-
-        # Incrustación de la tienda móvil/H5
-        chilat_url = "https://shop.chilat.com/h5?spm=04gm2gSD9tdKXqEww2hSP9uVOqzLESnihWZAYsyuzm8w8.4065.navigation-bottom-home.P"[cite: 1]
-        components.iframe(chilat_url, height=800, scrolling=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_direccion:
