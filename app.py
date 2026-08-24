@@ -32,7 +32,7 @@ def obtener_tiempo_honduras():
 MUNICIPIOS_HONDURAS = {
     "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
     "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
-    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "La Laminí", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
+    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
     "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
     "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
     "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
@@ -399,7 +399,7 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. MOTOR DE CATÁLOGO 1688 Y CÁLCULO PUESTO EN HONDURAS
+# 4. MOTOR DE API CHILAT / 1688 (BÚSQUEDA POR TEXTO E IMAGEN)
 # ---------------------------------------------------------
 def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad=1):
     t_lb = get_tarifa("tarifa_libra")
@@ -1020,7 +1020,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (VISUALIZACIÓN HERMOSA Y ELEGANTE)
+# 8. PORTAL DEL CLIENTE (INTEGRACIÓN CHILAT / 1688 API & ESTILO VISUAL)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1223,24 +1223,24 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
+    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA CONECTADO A API)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct API)")
         
         modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
         
         resultados_1688 = []
         if modo_busq == "🔎 Por Nombre / Palabras":
             kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
-            if st.button("Buscar Productos en China ➔", type="primary") and kw:
-                with st.spinner("Consultando catálogo de 1688..."):
+            if st.button("Consultar API 1688 ➔", type="primary") and kw:
+                with st.spinner("Conectando con la API de 1688 / CHILAT..."):
                     resultados_1688 = buscar_productos_1688_texto(kw)
         else:
             img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-            if img_up and st.button("Escanear Coincidencia Visual ➔", type="primary"):
-                with st.spinner("Buscando por reconocimiento visual..."):
+            if img_up and st.button("Escanear Coincidencia Visual API ➔", type="primary"):
+                with st.spinner("Analizando imagen mediante reconocimiento visual API..."):
                     resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
 
         if resultados_1688:
@@ -1253,7 +1253,7 @@ elif st.session_state["rol"] == "cliente":
                     st.image(prod["imagen_url"], use_container_width=True)
                 with c_det:
                     st.markdown(f"**{prod['nombre']}**")
-                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}` | Fuente: {prod['fuente']}")
                     st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
                     st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*")
                     
