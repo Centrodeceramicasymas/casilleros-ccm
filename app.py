@@ -621,6 +621,84 @@ st.markdown("""
     }
 
     /* HEADER AZUL SUPERIOR */
+    .st-key-cliente_header {
+        background-color: #004ac1 !important;
+        padding: 18px 16px 16px 16px !important;
+        border-radius: 0 0 20px 20px !important;
+        color: #ffffff !important;
+        margin: -1rem -0.8rem 1rem -0.8rem !important;
+        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.25) !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+    }
+
+    .st-key-cliente_header [data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+        margin: 0 !important;
+    }
+
+    .st-key-cliente_header .app-header-info {
+        padding: 0 !important;
+    }
+
+    .st-key-cliente_header .app-greeting-title {
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
+        margin: 0 !important;
+        color: #ffffff !important;
+    }
+
+    .st-key-cliente_header .app-greeting-sub {
+        font-size: 0.8rem !important;
+        color: #bfdbfe !important;
+        margin-top: 2px !important;
+    }
+
+    .st-key-cliente_header .app-header-time {
+        font-size: 0.72rem !important;
+        color: #bfdbfe !important;
+        margin-top: 2px !important;
+        font-weight: 600 !important;
+    }
+
+    .st-key-cliente_header .header-logout-space {
+        height: 2px !important;
+    }
+
+    .st-key-cliente_header div.stButton > button {
+        width: 44px !important;
+        min-width: 44px !important;
+        max-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        margin: 0 0 0 auto !important;
+        padding: 0 !important;
+        border-radius: 12px !important;
+        background: #ffffff !important;
+        color: #004ac1 !important;
+        border: 1px solid rgba(255,255,255,0.85) !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.18) !important;
+        font-size: 1.5rem !important;
+        font-weight: 900 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .st-key-cliente_header div.stButton > button:hover {
+        background: #f1f5f9 !important;
+        color: #dc2626 !important;
+        border-color: #ffffff !important;
+        transform: translateY(-1px) !important;
+    }
+
+    .st-key-cliente_header div.stButton > button:focus {
+        color: #dc2626 !important;
+        border-color: #ffffff !important;
+        box-shadow: 0 0 0 3px rgba(255,255,255,0.28) !important;
+    }
+
     .app-header-blue {
         background-color: #004ac1;
         padding: 18px 16px 16px 16px;
@@ -647,19 +725,6 @@ st.markdown("""
         font-size: 0.8rem;
         color: #bfdbfe;
         margin-top: 2px;
-    }
-    .app-header-logo {
-        background: #ffffff;
-        color: #004ac1;
-        font-size: 1.4rem;
-        font-weight: 900;
-        width: 42px;
-        height: 42px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
     .app-delivery-container {
@@ -1141,18 +1206,23 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR ---
-    st.markdown(f"""
-    <div class="app-header-blue">
-        <div class="app-header-row">
-            <div>
+    # --- HEADER AZUL SUPERIOR CON BOTÓN DE CERRAR SESIÓN ---
+    with st.container(key="cliente_header"):
+        col_header_info, col_header_logout = st.columns([8.5, 1.0], gap="small")
+
+        with col_header_info:
+            st.markdown(f"""
+            <div class="app-header-info">
                 <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
                 <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
-                <div style="font-size:0.72rem; color:#bfdbfe; margin-top:2px; font-weight:600;">🕒 {fecha_hora_texto}</div>
+                <div class="app-header-time">🕒 {fecha_hora_texto}</div>
             </div>
-            <div class="app-header-logo">🏠</div>
-        </div>
-    """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+
+        with col_header_logout:
+            st.markdown('<div class="header-logout-space"></div>', unsafe_allow_html=True)
+            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión"):
+                logout()
 
     # =========================================================
     # MENÚ HORIZONTAL DESLIZABLE
