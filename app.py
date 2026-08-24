@@ -517,7 +517,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS
+# 6. ESTILOS CSS REFINADOS (INCLUYENDO ESTILO DE MENÚ LATERAL IZQUIERDO IDÉNTICO A PSKCLOUD)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -538,6 +538,19 @@ st.markdown("""
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
         margin: 0 auto !important;
+    }
+
+    /* ESTILO SIDEBAR IZQUIERDO IDÉNTICO A PSKCLOUD */
+    [data-testid="stSidebar"] {
+        background-color: #111827 !important;
+        color: #ffffff !important;
+        border-right: 1px solid #1f2937 !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] hr {
+        border-color: #374151 !important;
     }
 
     /* HEADER AZUL SUPERIOR */
@@ -954,7 +967,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (MENÚ LATERAL IZQUIERDO DESLIZANTE)
+# 8. PORTAL DEL CLIENTE (MENÚ LATERAL IZQUIERDO ESTILO PSKCLOUD)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1000,14 +1013,17 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- MENÚ LATERAL IZQUIERDO (SIDEBAR OFICIAL) ---
+    # --- BARRA LATERAL IZQUIERDA (SIDEBAR DESLIZANTE ESTILO PSKCLOUD) ---
     with st.sidebar:
-        st.markdown("### 📂 Menú Principal")
-        st.markdown(f"**Usuario:** {nombre_display}")
-        st.markdown(f"**Casillero:** `{casillero}`")
+        st.markdown("### ☁️ **CCM CLOUD**")
+        st.caption("SISTEMA DE GESTIÓN 3.0")
+        st.markdown("---")
+        st.markdown(f"👤 Hola, **{nombre_display}**")
+        st.markdown(f"🏢 Casillero: `{casillero}`")
         st.markdown("---")
         
-        if st.button("🛍️ Catálogo de Productos", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", use_container_width=True):
+        st.markdown("📂 **MENÚ PRINCIPAL**")
+        if st.button("🛍️ Catálogo 1688", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", use_container_width=True):
             st.session_state["sub_tab_inicio"] = "Catálogo"
             st.rerun()
             
@@ -1019,13 +1035,13 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["sub_tab_inicio"] = "Mis Envíos"
             st.rerun()
             
-        if st.button("🏷️ Ficha / Etiqueta China", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", use_container_width=True):
+        if st.button("🏷️ Ficha / Etiqueta", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", use_container_width=True):
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.rerun()
             
         st.markdown("---")
         url_wa = "https://wa.me/50495771099"
-        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; height:45px; width:100%; font-size:0.85rem; font-weight:bold; cursor:pointer; margin-bottom:8px;">💬 Soporte WhatsApp</button></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:10px; height:42px; width:100%; font-size:0.82rem; font-weight:bold; cursor:pointer; margin-bottom:6px;">💬 Soporte WhatsApp</button></a>', unsafe_allow_html=True)
         
         if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
             logout()
