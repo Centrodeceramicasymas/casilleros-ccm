@@ -513,7 +513,7 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "busqueda_catalogo"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
@@ -583,17 +583,22 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
-    .app-search-bar {
-        background: #ffffff;
-        border-radius: 25px;
-        padding: 10px 16px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: #64748b;
-        font-size: 0.88rem;
-        margin-bottom: 12px;
+    .app-search-wrapper div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        border-radius: 25px !important;
+        border: none !important;
+        padding: 2px 12px !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .app-search-wrapper div[data-baseweb="input"] input {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+    }
+    .app-search-wrapper div[data-baseweb="input"] input::placeholder {
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
     }
 
     .app-delivery-container {
@@ -668,7 +673,6 @@ st.markdown("""
         display: block !important;
     }
 
-    /* CONTENEDOR DE INPUTS Y TEXTAREA OSCURO ELEGANTE */
     div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
         background-color: #1e293b !important;
         border: 1.5px solid #334155 !important;
@@ -957,7 +961,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (SALUDO, HORA LOCAL Y ESTILO ANTERIOR)
+# 8. PORTAL DEL CLIENTE (CONTADOR DE COTIZACIONES EN TIEMPO REAL)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -987,6 +991,12 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
+    # CONSULTAR LA CANTIDAD DE COTIZACIONES GENERADAS POR EL CLIENTE
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
+        total_cotizaciones = c.fetchone()[0]
+
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
@@ -1000,13 +1010,13 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR ORIGINAL ---
+    # --- HEADER AZUL SUPERIOR CON CONTADOR DE COTIZACIONES ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
             <div>
                 <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
-                <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; 21,280 pts</div>
+                <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; 📋 {total_cotizaciones} Cotizaciones generadas</div>
                 <div style="font-size:0.72rem; color:#bfdbfe; margin-top:2px; font-weight:600;">🕒 {fecha_hora_texto}</div>
             </div>
             <div class="app-header-logo">🏠</div>
