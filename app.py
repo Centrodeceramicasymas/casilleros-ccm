@@ -62,10 +62,7 @@ if "sub_tab_inicio" not in st.session_state:
 OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
 
 if "modalidad_envio_seleccionada" not in st.session_state:
-    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
-
-if "busqueda_catalogo" not in st.session_state:
-    st.session_state["busqueda_catalogo"] = ""
+    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERINADA
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
@@ -246,7 +243,7 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
 0 -11 Td
 (El cliente declara estar conforme con la tarifa cotizada y autoriza el) Tj
-0 -10 Td
+0 -10 t_d
 (procesamiento de su carga con Centro de Ceramicas y Mas.) Tj
 ET"""
     return compilar_pdf_simple(stream)
@@ -987,7 +984,7 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
-    # CONSULTAR CANTIDAD REAL DE COTIZACIONES GENERADAS POR EL CLIENTE
+    # CONSULTAR CANTIDAD REAL DE COTIZACIONES DE LA BASE DE DATOS PARA ESTE CASILLERO
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
@@ -1004,7 +1001,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON CANTIDAD DE COTIZACIONES EN VIVO ---
+    # --- HEADER AZUL SUPERIOR CON COTIZACIONES ACTUALIZADAS ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
