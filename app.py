@@ -45,6 +45,9 @@ MUNICIPIOS_HONDURAS = {
     "Yoro": ["Yoro", "Arenal", "El Negrito", "El Progreso", "Jocón", "Morazán", "Olanchito", "Santa Rita", "Sulaco", "Victoria", "Yorito"]
 }
 
+DIAS_SEMANA_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+MESES_ES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
+
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
@@ -1008,7 +1011,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (SALUDO DINÁMICO & PRIMER NOMBRE Y APELLIDO)
+# 8. PORTAL DEL CLIENTE (SALUDO, FECHA Y HORA LOCAL EN VIVO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1025,14 +1028,20 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    # LÓGICA DE SALUDO SEGÚN HORARIO LOCAL
-    hora_actual = datetime.now().hour
+    # LÓGICA DE FECHA Y HORA LOCAL
+    ahora = datetime.now()
+    hora_actual = ahora.hour
     if 5 <= hora_actual < 12:
         saludo_horario = "Buenos días"
     elif 12 <= hora_actual < 19:
         saludo_horario = "Buenas tardes"
     else:
         saludo_horario = "Buenas noches"
+
+    dia_nombre = DIAS_SEMANA_ES.get(ahora.weekday(), "")
+    mes_nombre = MESES_ES.get(ahora.month(), "")
+    hora_formato = ahora.strftime("%I:%M %p")
+    fecha_hora_texto = f"{dia_nombre}, {ahora.day} {mes_nombre} {ahora.year} &bull; {hora_formato}"
 
     # CARGAR DIRECCIONES CREADAS POR EL CLIENTE
     with get_db() as conn:
@@ -1054,7 +1063,8 @@ elif st.session_state["rol"] == "cliente":
         <div class="app-header-row">
             <div>
                 <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
-                <div class="app-greeting-sub">Tienes 21,280 puntos &bull; Casillero {casillero}</div>
+                <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; 21,280 pts</div>
+                <div style="font-size:0.72rem; color:#bfdbfe; margin-top:2px; font-weight:600;">🕒 {fecha_hora_texto}</div>
             </div>
             <div class="app-header-logo">🏠</div>
             <div style="display:flex; align-items:center; gap:12px; font-size:1.25rem;">
