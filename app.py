@@ -569,7 +569,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA EN COLOR BLANCO 100% VISIBLE
+# 6. ESTILOS CSS REFINADOS: ENTRADAS Y TEXTAREA 100% BLANCOS Y VISIBLES
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -726,16 +726,23 @@ st.markdown("""
     }
     
     /* TEXTO ESCRITO EN INPUTS Y TEXTAREA 100% BLANCO */
-    div[data-baseweb="input"] input, div[data-baseweb="textarea"] textarea {
+    div[data-baseweb="input"] input, 
+    div[data-baseweb="textarea"] textarea,
+    div[data-baseweb="input"] input:focus,
+    div[data-baseweb="textarea"] textarea:focus,
+    div[data-baseweb="textarea"] > div,
+    textarea {
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         font-size: 0.92rem !important;
         font-weight: 600 !important;
         background-color: transparent !important;
     }
     
     /* PLACEHOLDER CLARO Y LEGIBLE */
-    div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder {
+    div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder, textarea::placeholder {
         color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
         font-weight: 400 !important;
     }
 
@@ -976,7 +983,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL LIMPIA CON TEXTO BLANCO EN INPUTS)
+# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA Y FUNCIONAL)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
