@@ -1059,9 +1059,6 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    if "ver_panel_cotizaciones" not in st.session_state:
-        st.session_state["ver_panel_cotizaciones"] = False
-
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
@@ -1087,29 +1084,25 @@ elif st.session_state["rol"] == "cliente":
         with c_nav1:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav2:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav3:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
         with c_nav4:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
-                st.session_state["ver_panel_cotizaciones"] = False
                 st.rerun()
 
-    # --- FLECHAS GUÍA PARPADEANTES REACTIVAS ---
-    if st.session_state["sub_tab_inicio"] == "Etiqueta":
-        st.markdown('<div class="swipe-indicator-bar"><span>👈</span><span>Desliza a la izquierda</span><span>◀◀◀</span></div>', unsafe_allow_html=True)
+    # --- FLECHAS GUÍA PARPADEANTES REACTIVAS A LA POSICIÓN ---
+    if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
+        st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="swipe-indicator-bar"><span>▶▶▶</span><span>Desliza a la derecha</span><span>👉</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
 
     # --- SELECTOR DE ENTREGA EN LUGAR DE LA BARRA DE BÚSQUEDA (SOLO VISIBLE EN COTIZADOR) ---
     if st.session_state["sub_tab_inicio"] == "Cotizador":
