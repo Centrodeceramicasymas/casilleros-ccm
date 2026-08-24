@@ -29,6 +29,8 @@ ZONA_HONDURAS = timezone(timedelta(hours=-6))
 def obtener_tiempo_honduras():
     return datetime.now(ZONA_HONDURAS)
 
+OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
+
 MUNICIPIOS_HONDURAS = {
     "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
     "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
@@ -59,10 +61,11 @@ if "vista_actual" not in st.session_state:
 if "sub_tab_inicio" not in st.session_state:
     st.session_state["sub_tab_inicio"] = "Catálogo"
 
-OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
-
 if "modalidad_envio_seleccionada" not in st.session_state:
-    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERINADA
+    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+
+if "busqueda_catalogo" not in st.session_state:
+    st.session_state["busqueda_catalogo"] = ""
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
@@ -243,7 +246,7 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 (DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
 0 -11 Td
 (El cliente declara estar conforme con la tarifa cotizada y autoriza el) Tj
-0 -10 t_d
+0 -10 Td
 (procesamiento de su carga con Centro de Ceramicas y Mas.) Tj
 ET"""
     return compilar_pdf_simple(stream)
@@ -984,7 +987,7 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
-    # CONSULTAR CANTIDAD REAL DE COTIZACIONES DE LA BASE DE DATOS PARA ESTE CASILLERO
+    # CONSULTAR CANTIDAD DE COTIZACIONES DE ESTE CASILLERO EN TIEMPO REAL
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
@@ -1001,7 +1004,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON COTIZACIONES ACTUALIZADAS ---
+    # --- HEADER AZUL SUPERIOR ORIGINAL ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
