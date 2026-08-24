@@ -868,7 +868,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA CON CATÁLOGO 1688)
+# 8. PORTAL DEL CLIENTE (INTERFAZ VISUAL COMPLETA CON BARRA SUPERIOR INTEGRADA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -909,15 +909,26 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- BARRA DE PESTAÑAS SUPERIOR ---
-    st.markdown("""
-    <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:700; color:#475569; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin-bottom:14px; overflow-x:auto;">
-        <span style="color:#004ac1; border-bottom:3px solid #004ac1; padding-bottom:8px;">Comprar |</span>
-        <span>por categoría</span>
-        <span>con tu casillero</span>
-        <span>con tus cotizaciones</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- BARRA SUPERIOR CON BOTONES DIRECTOS (REEMPLAZANDO LA LÍNEA ANTERIOR) ---
+    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
+    with col_nav1:
+        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+            st.session_state["sub_tab_inicio"] = "Catálogo"
+            st.rerun()
+    with col_nav2:
+        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+            st.session_state["sub_tab_inicio"] = "Cotizador"
+            st.rerun()
+    with col_nav3:
+        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+            st.session_state["sub_tab_inicio"] = "Mis Envíos"
+            st.rerun()
+    with col_nav4:
+        if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+            st.session_state["sub_tab_inicio"] = "Etiqueta"
+            st.rerun()
+
+    st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
 
     # --- BANNER PROMOCIONAL ---
     st.markdown(f"""
@@ -933,29 +944,8 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # --- BOTONES DE NAVEGACIÓN PRINCIPALES ---
-    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-    with col_t1:
-        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="btn_cat_tab"):
-            st.session_state["sub_tab_inicio"] = "Catálogo"
-            st.rerun()
-    with col_t2:
-        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="btn_cot_tab"):
-            st.session_state["sub_tab_inicio"] = "Cotizador"
-            st.rerun()
-    with col_t3:
-        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="btn_env_tab"):
-            st.session_state["sub_tab_inicio"] = "Mis Envíos"
-            st.rerun()
-    with col_t4:
-        if st.button("🏷️ Ficha", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="btn_eti_tab"):
-            st.session_state["sub_tab_inicio"] = "Etiqueta"
-            st.rerun()
-
-    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-
     # -----------------------------------------------------
-    # SUB-PESTAÑA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
+    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1001,7 +991,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # SUB-PESTAÑA 2: COTIZADOR MARÍTIMO
+    # VISTA 2: COTIZADOR MARÍTIMO
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1099,7 +1089,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # SUB-PESTAÑA 3: MIS ENVÍOS
+    # VISTA 3: MIS ENVÍOS
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1123,7 +1113,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # SUB-PESTAÑA 4: FICHA CHINA
+    # VISTA 4: FICHA CHINA
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
