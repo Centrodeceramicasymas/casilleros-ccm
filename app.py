@@ -1519,7 +1519,7 @@ elif st.session_state["rol"] == "cliente":
                     vol_ft3=d_pdf.get("vol_ft3", 0),
                     total_usd=d_pdf.get("total_usd", 0),
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                    id_cot=id_cot,
+                    id_cot=id_c,
                     destino_entrega=dest_pdf,
                     fecha_emision=fecha_doc
                 )
