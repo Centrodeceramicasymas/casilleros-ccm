@@ -520,7 +520,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL ESTRICTO Y FORZADO
+# 6. ESTILOS CSS REFINADOS CON SCROLL HORIZONTAL FORZADO
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -643,20 +643,14 @@ st.markdown("""
         border-radius: 10px !important;
     }
 
-    /* FORZAR FILA HORIZONTAL ESTRICTA EN CUALQUIER TAMAÑO DE PANTALLA */
-    .horizontal-scroll-wrapper [data-testid="stHorizontalBlock"] {
+    /* FORZAR FILA HORIZONTAL ESTRICTA EN CUALQUIER TAMAÑO DE PANTALLA MEDIANTE HTML PURO */
+    .horizontal-flex-row {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 8px !important;
         align-items: center !important;
         width: max-content !important;
-    }
-    .horizontal-scroll-wrapper [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 auto !important;
-        width: 130px !important;
-        min-width: 130px !important;
-        max-width: 130px !important;
     }
 
     /* BANNER PUBLICITARIO */
@@ -748,7 +742,9 @@ st.markdown("""
 
     /* BOTONES UNIFORMES Y ESTÉTICOS */
     div.stButton > button, div.stDownloadButton > button {
-        width: 100% !important;
+        width: 125px !important;
+        min-width: 125px !important;
+        max-width: 125px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
@@ -1033,8 +1029,8 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # --- CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO Y AISLADO ---
-    st.markdown('<div class="horizontal-scroll-wrapper">', unsafe_allow_html=True)
+    # --- CONTENEDOR DE SCROLL HORIZONTAL ESTRICTO Y FORZADO MEDIANTE HTML ---
+    st.markdown('<div class="horizontal-scroll-wrapper"><div class="horizontal-flex-row">', unsafe_allow_html=True)
     c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
     with c_nav_c:
         if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
@@ -1060,7 +1056,7 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["sub_tab_inicio"] = "Etiqueta"
             st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
     st.markdown("""
         <div class="app-search-bar" style="margin-top: 10px;">
