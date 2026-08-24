@@ -30,6 +30,9 @@ if "vista_actual" not in st.session_state:
 if "sub_tab_inicio" not in st.session_state:
     st.session_state["sub_tab_inicio"] = "Catálogo"
 
+if "modalidad_envio_seleccionada" not in st.session_state:
+    st.session_state["modalidad_envio_seleccionada"] = "Servicio a Domicilio"
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS
 # ---------------------------------------------------------
@@ -206,7 +209,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. BASE DE DATOS SQLITE & UTILIDADES
+# 3. BASE DE DATOS SQLITE & TABLA DE DIRECCIONES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -234,6 +237,19 @@ def init_db():
                 password_hash TEXT NOT NULL,
                 rol TEXT NOT NULL,
                 activo INTEGER DEFAULT 1,
+                fecha_creacion TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS direcciones_entrega (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_casillero TEXT NOT NULL,
+                etiqueta TEXT NOT NULL,
+                receptor_nombre TEXT NOT NULL,
+                telefono TEXT NOT NULL,
+                departamento TEXT NOT NULL,
+                ciudad TEXT NOT NULL,
+                direccion_exacta TEXT NOT NULL,
                 fecha_creacion TEXT NOT NULL
             )
         """)
@@ -518,14 +534,14 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: BOTONES HOMOGÉNEOS Y ELEGANTES
+# 6. ESTILOS CSS REFINADOS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -601,13 +617,29 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
 
-    .app-delivery-row {
+    /* ESTILO MODALIDAD DESPLEGABLE EN EL HEADER */
+    .app-delivery-container {
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        gap: 8px;
         color: #ffffff;
-        font-size: 0.82rem;
-        padding-top: 4px;
+        margin-top: 4px;
+    }
+    .app-delivery-select div[data-baseweb="select"] > div {
+        background-color: rgba(255, 255, 255, 0.18) !important;
+        border: 1px solid rgba(255, 255, 255, 0.35) !important;
+        border-radius: 10px !important;
+        color: #ffffff !important;
+        padding: 0 4px !important;
+        height: 38px !important;
+    }
+    .app-delivery-select div[data-baseweb="select"] span {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 0.82rem !important;
+    }
+    .app-delivery-select svg {
+        fill: #ffffff !important;
     }
 
     /* BANNER PUBLICITARIO */
@@ -649,7 +681,7 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* INPUTS */
+    /* INPUTS ESTÁNDAR */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
@@ -888,13 +920,27 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (LÍNEA SUPERIOR CON BOTONES HOMOGÉNEOS)
+# 8. PORTAL DEL CLIENTE (DESPLEGABLE DE ENVÍO & BOTONES SUPERIORES)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
     nombre_cli = st.session_state["nombre"]
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
+
+    # CARGAR OPCIONES DE ENVÍO DESDE LA BASE DE DATOS
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
+        direcciones_guardadas = c.fetchall()
+
+    opciones_modalidad = [
+        "📦 Servicio a Domicilio",
+        "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
+    ]
+    for d in direcciones_guardadas:
+        opciones_modalidad.append(f"📍 {d[1]} - {d[3]}")
+    opciones_modalidad.append("➕ Crear Nueva Dirección de Envío")
 
     # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
@@ -916,18 +962,84 @@ elif st.session_state["rol"] == "cliente":
             <span>🔍</span>
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
-        <div class="app-delivery-row">
-            <div style="display:flex; align-items:center; gap:8px; font-weight:700;">
-                <span>🏪</span>
-                <span>¿Cómo deseas comprar?</span>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-weight:700;">Servicio a Domicilio ▾</div>
-                <div style="font-size:0.7rem; opacity:0.9;">Centro de Cerámicas y Más</div>
+        <div class="app-delivery-container">
+            <span style="font-size:1.2rem;">🏪</span>
+            <div style="flex:1;">
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
+    idx_mod = 0
+    if st.session_state["modalidad_envio_seleccionada"] in opciones_modalidad:
+        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+
+    mod_elegida = st.selectbox(
+        "¿Cómo deseas recibir tu compra?",
+        opciones_modalidad,
+        index=idx_mod,
+        label_visibility="collapsed",
+        key="sb_modalidad_header"
+    )
+    if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+        st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("""
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # --- FORMULARIO Y LISTADO SI ELIGE 'CREAR NUEVA DIRECCIÓN' ---
+    if st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
+        st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
+        st.markdown("#### 📍 Administrar y Crear Direcciones de Envío")
+        
+        if direcciones_guardadas:
+            st.markdown("**Tus direcciones de envío creadas:**")
+            for dir_item in direcciones_guardadas:
+                st.markdown(f"""
+                <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; padding:8px 12px; margin-bottom:6px; font-size:0.85rem;">
+                    <b>🏷️ {dir_item[1]}</b> &bull; Recibe: {dir_item[2]}<br>
+                    <small style="color:#64748b;">📍 {dir_item[3]} &bull; {dir_item[4]}</small>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("---")
+
+        st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
+        c_et1, c_et2 = st.columns(2)
+        with c_et1:
+            etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Oficina San Pedro, Taller Central")
+            receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_cli)
+        with c_et2:
+            tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
+            dep_dir_in = st.selectbox("Departamento *", ["Intibucá", "Cortés", "Francisco Morazán", "Comayagua", "Copán", "Atlántida", "Choluteca", "Lempira", "Santa Bárbara", "Yoro", "La Paz"], key="sb_dep_nueva_dir")
+        
+        ciu_dir_in = st.text_input("Municipio / Ciudad *", placeholder="Ej: San Juan, San Pedro Sula, Tegucigalpa")
+        dir_exacta_in = st.text_area("Dirección exacta y puntos de referencia *", placeholder="Barrio, calle, número de casa, color del portón...")
+
+        c_sv1, c_sv2 = st.columns(2)
+        with c_sv1:
+            if st.button("💾 Guardar Dirección de Envío", type="primary", key="btn_guardar_nueva_dir"):
+                if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
+                    f_ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("""
+                            INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (casillero, etiqueta_in, receptor_in, tel_dir_in, dep_dir_in, ciu_dir_in, dir_exacta_in, f_ahora))
+                        conn.commit()
+                    st.success(f"✅ Dirección '{etiqueta_in}' guardada exitosamente.")
+                    st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
+                    st.rerun()
+                else:
+                    st.error("Por favor completa todos los campos obligatorios (*).")
+        with c_sv2:
+            if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
+                st.session_state["modalidad_envio_seleccionada"] = "📦 Servicio a Domicilio"
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # --- BARRA SUPERIOR CON BOTONES UNIFORMES Y ELEGANTES ---
     col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
@@ -997,16 +1109,16 @@ elif st.session_state["rol"] == "cliente":
                     st.markdown(f"**{prod['nombre']}**")
                     st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
                     st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
-                    st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
+                    st.success(f"🇭🇳 **Puesto en Honduras ({st.session_state['modalidad_envio_seleccionada']}):** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
                     
-                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Enlace: {prod['url_proveedor']}"
+                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Modalidad: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
                     url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
                     
                     c_b1, c_b2 = st.columns(2)
                     with c_b1:
-                        st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1px solid #cbd5e1; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
+                        st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
                     with c_b2:
-                        st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
+                        st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
                 st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1105,7 +1217,7 @@ elif st.session_state["rol"] == "cliente":
             
             texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} del casillero {casillero}. Total: ${d_pdf.get('total_usd',0):.2f} USD."
             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:10px; font-weight:bold; cursor:pointer; margin-top:6px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
