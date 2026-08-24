@@ -64,8 +64,8 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-if "mostrar_modal_cotizaciones" not in st.session_state:
-    st.session_state["mostrar_modal_cotizaciones"] = False
+if "ver_panel_cotizaciones" not in st.session_state:
+    st.session_state["ver_panel_cotizaciones"] = False
 
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
@@ -957,7 +957,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (HISTORIAL DE COTIZACIONES EN EL HEADER)
+# 8. PORTAL DEL CLIENTE (BOTÓN MIS COTIZACIONES EN LA ESQUINA SUPERIOR IZQUIERDA)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1009,7 +1009,14 @@ elif st.session_state["rol"] == "cliente":
     if "ver_panel_cotizaciones" not in st.session_state:
         st.session_state["ver_panel_cotizaciones"] = False
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN DE HISTORIAL DE COTIZACIONES ---
+    # --- BOTÓN MIS COTIZACIONES EN LA ESQUINA SUPERIOR IZQUIERDA ---
+    col_btn_izq, col_dummy_der = st.columns([1.5, 2.5])
+    with col_btn_izq:
+        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
+            st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
+            st.rerun()
+
+    # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -1018,16 +1025,7 @@ elif st.session_state["rol"] == "cliente":
                 <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
                 <div style="font-size:0.72rem; color:#bfdbfe; margin-top:2px; font-weight:600;">🕒 {fecha_hora_texto}</div>
             </div>
-    """, unsafe_allow_html=True)
-
-    # BOTÓN DE DOCUMENTO / DESCARGA DE COTIZACIONES EN LA ESQUINA SUPERIOR DERECHA
-    col_h1, col_h2 = st.columns([1.5, 1])
-    with col_h2:
-        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
-            st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
-            st.rerun()
-
-    st.markdown("""
+            <div class="app-header-logo">🏠</div>
         </div>
         <div class="app-search-bar">
             <span>🔍</span>
@@ -1076,7 +1074,6 @@ elif st.session_state["rol"] == "cliente":
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Generar PDF individual para cada cotización del historial
                 pdf_historial = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
                     nombre=nombre_completo,
@@ -1525,7 +1522,7 @@ elif st.session_state["rol"] == "cliente":
             nombre=nombre_completo,
             telefono=tel_cli,
             ciudad=ciu_cli,
-            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+        destino_entrega=st.session_state["modalidad_envio_seleccionada"],
             fecha_emision=f_etiqueta_actual
         )
         st.download_button("📄 Descargar Etiqueta para Proveedor (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
