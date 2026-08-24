@@ -64,6 +64,9 @@ OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+if "busqueda_catalogo" not in st.session_state:
+    st.session_state["busqueda_catalogo"] = ""
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -399,7 +402,7 @@ def generar_clave_provisional():
     return ''.join(random.choice(caracteres) for _ in range(8))
 
 # ---------------------------------------------------------
-# 4. MOTOR DE CATÁLOGO 1688 ESTÁNDAR (BÚSQUEDA DINÁMICA POR TEXTO E IMAGEN)
+# 4. MOTOR DE CATÁLOGO 1688 ESTÁNDAR (BÚSQUEDA DINÁMICA)
 # ---------------------------------------------------------
 def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad=1):
     t_lb = get_tarifa("tarifa_libra")
@@ -510,7 +513,7 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "busqueda_catalogo"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
@@ -580,23 +583,17 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
-    /* CONTENEDOR DE BÚSQUEDA INTEGRADO */
-    .app-search-wrapper div[data-baseweb="input"] {
-        background-color: #ffffff !important;
-        border-radius: 25px !important;
-        border: none !important;
-        padding: 2px 12px !important;
+    .app-search-bar {
+        background: #ffffff;
+        border-radius: 25px;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #64748b;
+        font-size: 0.88rem;
+        margin-bottom: 12px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    .app-search-wrapper div[data-baseweb="input"] input {
-        color: #0f172a !important;
-        -webkit-text-fill-color: #0f172a !important;
-        font-size: 0.88rem !important;
-        font-weight: 600 !important;
-    }
-    .app-search-wrapper div[data-baseweb="input"] input::placeholder {
-        color: #64748b !important;
-        -webkit-text-fill-color: #64748b !important;
     }
 
     .app-delivery-container {
@@ -960,7 +957,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (BUSCADOR SUPERIOR INTEGRADO CON API)
+# 8. PORTAL DEL CLIENTE (SALUDO, HORA LOCAL Y ESTILO ANTERIOR)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1003,7 +1000,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON BARRA DE BÚSQUEDA INTEGRADA A LA API ---
+    # --- HEADER AZUL SUPERIOR ORIGINAL ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -1020,26 +1017,11 @@ elif st.session_state["rol"] == "cliente":
                 <span style="cursor:pointer;">🔔</span>
             </div>
         </div>
-    """, unsafe_allow_html=True)
-
-    # BARRA DE BÚSQUEDA INTERACTIVA DIRECTA EN EL HEADER AZUL
-    st.markdown('<div class="app-search-wrapper">', unsafe_allow_html=True)
-    texto_busqueda_header = st.text_input(
-        "Buscar en el catálogo",
-        value=st.session_state["busqueda_catalogo"],
-        placeholder="🔍 Compra tus productos o cotiza fletes...",
-        label_visibility="collapsed",
-        key="input_busqueda_header_api"
-    )
-    if texto_busqueda_header != st.session_state["busqueda_catalogo"]:
-        st.session_state["busqueda_catalogo"] = texto_busqueda_header
-        if texto_busqueda_header.strip():
-            st.session_state["sub_tab_inicio"] = "Catálogo"
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown(f"""
-        <div class="app-delivery-container" style="margin-top: 10px;">
+        <div class="app-search-bar">
+            <span>🔍</span>
+            <span>Compra tus productos o cotiza fletes...</span>
+        </div>
+        <div class="app-delivery-container">
             <span style="font-size:1.2rem;">🏪</span>
             <div style="flex:1;">
     """, unsafe_allow_html=True)
@@ -1175,30 +1157,24 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 (CONECTADO AL BUSCADOR DEL HEADER Y API)
+    # VISTA 1: CATÁLOGO CHINO 1688 (ORIGINAL)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct API)")
-        
-        query_api = st.session_state["busqueda_catalogo"].strip()
+        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
         
         modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
         
         resultados_1688 = []
         if modo_busq == "🔎 Por Nombre / Palabras":
-            if query_api:
-                st.info(f"🔍 Resultados de la API para: **'{query_api}'**")
-                resultados_1688 = buscar_productos_1688_texto(query_api)
-            else:
-                kw = st.text_input("Escribe el producto que buscas:", placeholder="Ej: martillo, porcelanato, grifería...")
-                if st.button("Consultar API 1688 ➔", type="primary") and kw:
-                    st.session_state["busqueda_catalogo"] = kw
-                    st.rerun()
+            kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+            if st.button("Buscar Productos en China ➔", type="primary") and kw:
+                with st.spinner("Consultando catálogo de 1688..."):
+                    resultados_1688 = buscar_productos_1688_texto(kw)
         else:
             img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-            if img_up and st.button("Escanear Coincidencia Visual API ➔", type="primary"):
-                with st.spinner("Analizando imagen mediante reconocimiento visual API..."):
+            if img_up and st.button("Escanear Coincidencia Visual ➔", type="primary"):
+                with st.spinner("Buscando por reconocimiento visual..."):
                     resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
 
         if resultados_1688:
@@ -1211,7 +1187,7 @@ elif st.session_state["rol"] == "cliente":
                     st.image(prod["imagen_url"], use_container_width=True)
                 with c_det:
                     st.markdown(f"**{prod['nombre']}**")
-                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}` | Fuente: {prod['fuente']}")
+                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
                     st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
                     st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*")
                     
@@ -1393,7 +1369,6 @@ elif st.session_state["rol"] == "cliente":
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
                 
-                # DISEÑO VISUAL HERMOSO Y MODERNO DE ÉXITO CON TEXTO LIMPIO Y FLUIDO
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
