@@ -64,9 +64,6 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-if "ver_panel_cotizaciones" not in st.session_state:
-    st.session_state["ver_panel_cotizaciones"] = False
-
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -512,12 +509,6 @@ if "autenticado" not in st.session_state:
         "reg_datos": {}
     })
 
-# ---------------------------------------------------------
-# SESIÓN PERSISTENTE: NO CERRAR AL ACTUALIZAR / F5
-# ---------------------------------------------------------
-# Streamlit reconstruye st.session_state cuando el navegador hace F5.
-# Por eso guardamos el casillero en la URL como identificador persistente
-# y lo restauramos automáticamente desde SQLite.
 def restaurar_sesion_persistente():
     if st.session_state.get("autenticado", False):
         return True
@@ -553,7 +544,6 @@ def restaurar_sesion_persistente():
         st.session_state["telefono"] = user_rec[6]
         st.session_state["ciudad"] = user_rec[7]
 
-        # Recuperar también la última vista si existe en la URL.
         vista_url = params.get("vista", "")
         if isinstance(vista_url, list):
             vista_url = vista_url[0] if vista_url else ""
@@ -570,14 +560,10 @@ def restaurar_sesion_persistente():
         return True
 
     except Exception:
-        # Si existe algún problema leyendo los parámetros, mostramos login
-        # en lugar de romper toda la aplicación.
         return False
 
 restaurar_sesion_persistente()
 
-# Mientras el usuario esté autenticado, mantenemos el casillero en la URL.
-# Así una navegación interna o un F5 no elimina la sesión.
 if st.session_state.get("autenticado", False):
     cas_actual = str(st.session_state.get("casillero", "")).strip()
     if cas_actual:
@@ -596,7 +582,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON MENÚ HORIZONTAL & ANIMACIÓN DE FLECHAS
+# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER METÁLICO Y BRILLANTE
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -661,123 +647,64 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    .st-key-cliente_header .header-logout-space {
-        height: 2px !important;
-    }
-
-    /* BOTÓN DE CERRAR SESIÓN — ESTILO BOTÓN DE APAGADO */
-    .st-key-cliente_header div.stButton > button {
-        width: 50px !important;
-        min-width: 50px !important;
-        max-width: 50px !important;
-        height: 50px !important;
-        min-height: 50px !important;
-        max-height: 50px !important;
+    /* =========================================================
+       BOTÓN DE APAGADO / POWER ROJO BRILLANTE 3D
+       ========================================================= */
+    .st-key-btn_logout_cliente div.stButton > button,
+    div.stButton > button[key="btn_logout_cliente"] {
+        width: 52px !important;
+        min-width: 52px !important;
+        max-width: 52px !important;
+        height: 52px !important;
+        min-height: 52px !important;
+        max-height: 52px !important;
         margin: 0 0 0 auto !important;
         padding: 0 !important;
         border-radius: 50% !important;
-        background: linear-gradient(145deg, #ff3b30, #c81e1e) !important;
+        background: radial-gradient(circle at 35% 30%, #ff4d4d 0%, #d60000 60%, #850000 100%) !important;
         color: #ffffff !important;
-        border: 3px solid rgba(255,255,255,0.92) !important;
-        box-shadow:
-            0 3px 8px rgba(0,0,0,0.28),
-            inset 0 1px 2px rgba(255,255,255,0.35) !important;
-        font-size: 0 !important;
-        line-height: 1 !important;
+        border: 4px solid #d1d5db !important;
+        outline: 1.5px solid #9ca3af !important;
+        box-shadow: 
+            0 4px 10px rgba(0, 0, 0, 0.4),
+            inset 0 3px 6px rgba(255, 255, 255, 0.6),
+            inset 0 -3px 6px rgba(0, 0, 0, 0.5) !important;
+        font-size: 1.45rem !important;
         font-weight: 900 !important;
+        line-height: 1 !important;
         display: flex !important;
-        position: relative !important;
-        overflow: visible !important;
         align-items: center !important;
         justify-content: center !important;
-        transition: all 0.15s ease !important;
+        text-align: center !important;
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        cursor: pointer !important;
     }
 
-    /* ÍCONO DE APAGADO CON CSS PURO: no depende de fuentes ni emojis */
-    .st-key-cliente_header div.stButton > button::before {
-        content: "" !important;
-        position: absolute !important;
-        width: 20px !important;
-        height: 20px !important;
-        border: 3px solid #ffffff !important;
-        border-top-color: transparent !important;
-        border-radius: 50% !important;
-        left: 50% !important;
-        top: 50% !important;
-        transform: translate(-50%, -43%) !important;
-        box-sizing: border-box !important;
-        pointer-events: none !important;
-    }
-
-    .st-key-cliente_header div.stButton > button::after {
-        content: "" !important;
-        position: absolute !important;
-        width: 3px !important;
-        height: 13px !important;
-        background: #ffffff !important;
-        border-radius: 3px !important;
-        left: 50% !important;
-        top: 9px !important;
-        transform: translateX(-50%) !important;
-        box-shadow: 0 0 2px rgba(255,255,255,0.35) !important;
-        pointer-events: none !important;
-    }
-
-    .st-key-cliente_header div.stButton > button p {
-        font-size: 0 !important;
-        line-height: 0 !important;
+    .st-key-btn_logout_cliente div.stButton > button p {
+        font-size: 1.45rem !important;
+        font-weight: 900 !important;
+        color: #ffffff !important;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6) !important;
         margin: 0 !important;
         padding: 0 !important;
+        display: block !important;
     }
 
-    .st-key-cliente_header div.stButton > button:hover {
-        background: linear-gradient(145deg, #ff5148, #b91c1c) !important;
-        color: #ffffff !important;
-        border-color: #ffffff !important;
-        transform: scale(1.06) !important;
-        box-shadow:
-            0 5px 12px rgba(0,0,0,0.32),
-            inset 0 1px 2px rgba(255,255,255,0.4) !important;
+    .st-key-btn_logout_cliente div.stButton > button:hover {
+        background: radial-gradient(circle at 35% 30%, #ff6b6b 0%, #e60000 60%, #990000 100%) !important;
+        border-color: #f3f4f6 !important;
+        transform: scale(1.08) !important;
+        box-shadow: 
+            0 6px 14px rgba(230, 0, 0, 0.45),
+            inset 0 3px 8px rgba(255, 255, 255, 0.75),
+            inset 0 -3px 6px rgba(0, 0, 0, 0.6) !important;
     }
 
-    .st-key-cliente_header div.stButton > button:active {
-        transform: scale(0.96) !important;
-    }
-
-    .st-key-cliente_header div.stButton > button:focus {
-        color: #ffffff !important;
-        border-color: #ffffff !important;
-        box-shadow:
-            0 0 0 3px rgba(255,255,255,0.35),
-            0 3px 8px rgba(0,0,0,0.28) !important;
-    }
-
-    .app-header-blue {
-        background-color: #004ac1;
-        padding: 18px 16px 16px 16px;
-        border-radius: 0 0 20px 20px;
-        color: #ffffff;
-        margin: -1rem -0.8rem 1rem -0.8rem;
-        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.25);
-        max-width: 100vw;
-        box-sizing: border-box;
-    }
-    .app-header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-    }
-    .app-greeting-title {
-        font-size: 1.15rem;
-        font-weight: 800;
-        margin: 0;
-        color: #ffffff;
-    }
-    .app-greeting-sub {
-        font-size: 0.8rem;
-        color: #bfdbfe;
-        margin-top: 2px;
+    .st-key-btn_logout_cliente div.stButton > button:active {
+        transform: scale(0.95) !important;
+        box-shadow: 
+            0 2px 5px rgba(0, 0, 0, 0.5),
+            inset 0 2px 4px rgba(0, 0, 0, 0.6) !important;
     }
 
     .app-delivery-container {
@@ -804,9 +731,7 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
-    /* =========================================================
-       MENÚ HORIZONTAL DESLIZABLE CON EL DEDO
-       ========================================================= */
+    /* MENÚ HORIZONTAL DESLIZABLE CON EL DEDO */
     .st-key-nav_scroll {
         width: 100% !important;
         max-width: 100% !important;
@@ -873,9 +798,7 @@ st.markdown("""
         min-width: 0 !important;
     }
 
-    /* =========================================================
-       ANIMACIÓN DE FLECHITAS GUÍA PARPADEANTES
-       ========================================================= */
+    /* ANIMACIÓN DE FLECHITAS GUÍA PARPADEANTES */
     @keyframes pulseBlink {
         0% { opacity: 0.25; transform: scale(0.95); }
         50% { opacity: 1; transform: scale(1.05); }
@@ -943,7 +866,7 @@ st.markdown("""
         display: block !important;
     }
 
-    /* CONTENEDOR DE INPUTS Y TEXTAREA OSCURO ELEGANTE */
+    /* CONTENEDOR DE INPUTS Y TEXTAREA OSCURO */
     div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
         background-color: #1e293b !important;
         border: 1.5px solid #334155 !important;
@@ -1077,8 +1000,6 @@ if not st.session_state["autenticado"]:
                         st.session_state.pop("datos_pdf_confirmado", None)
                         st.session_state["sub_tab_inicio"] = "Catálogo"
 
-                        # IDENTIFICADOR PERSISTENTE:
-                        # queda en la URL y permite recuperar la sesión después de F5.
                         st.query_params["casillero"] = str(user[1])
                         st.query_params["vista"] = "Catálogo"
                         st.rerun()
@@ -1259,9 +1180,9 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN DE CERRAR SESIÓN ---
+    # --- HEADER AZUL SUPERIOR CON BOTÓN POWER METÁLICO 3D ---
     with st.container(key="cliente_header"):
-        col_header_info, col_header_logout = st.columns([8.5, 1.0], gap="small")
+        col_header_info, col_header_logout = st.columns([8.2, 1.3], gap="small")
 
         with col_header_info:
             st.markdown(f"""
@@ -1273,8 +1194,7 @@ elif st.session_state["rol"] == "cliente":
             """, unsafe_allow_html=True)
 
         with col_header_logout:
-            st.markdown('<div class="header-logout-space"></div>', unsafe_allow_html=True)
-            if st.button(" ", key="btn_logout_cliente", help="Cerrar sesión"):
+            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión segura"):
                 logout()
 
     # =========================================================
@@ -1319,7 +1239,7 @@ elif st.session_state["rol"] == "cliente":
     else:
         st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
 
-    # --- SELECTOR DE ENTREGA EN LUGAR DE LA BARRA DE BÚSQUEDA (SOLO VISIBLE EN COTIZADOR) ---
+    # --- SELECTOR DE ENTREGA (SOLO VISIBLE EN COTIZADOR) ---
     if st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown("""
         <div class="app-delivery-container">
@@ -1347,8 +1267,6 @@ elif st.session_state["rol"] == "cliente":
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)  # Cierre del header azul
 
     # -----------------------------------------------------
     # VISTA 0: MIS COTIZACIONES (HISTORIAL Y DESCARGAS)
@@ -1679,7 +1597,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.rerun()
 
-        # VALIDACIÓN COMPLETA: VISUALIZACIÓN ELEGANTE Y HERMOSA DE LA COTIZACIÓN CONFIRMADA
+        # VALIDACIÓN COMPLETA: VISUALIZACIÓN DE LA COTIZACIÓN CONFIRMADA
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             
