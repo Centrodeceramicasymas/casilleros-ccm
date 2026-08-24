@@ -682,22 +682,52 @@ st.markdown("""
         box-shadow:
             0 3px 8px rgba(0,0,0,0.28),
             inset 0 1px 2px rgba(255,255,255,0.35) !important;
-        font-size: 1.75rem !important;
+        font-size: 0 !important;
         line-height: 1 !important;
         font-weight: 900 !important;
         display: flex !important;
+        position: relative !important;
+        overflow: visible !important;
         align-items: center !important;
         justify-content: center !important;
         transition: all 0.15s ease !important;
     }
 
+    /* ÍCONO DE APAGADO CON CSS PURO: no depende de fuentes ni emojis */
+    .st-key-cliente_header div.stButton > button::before {
+        content: "" !important;
+        position: absolute !important;
+        width: 20px !important;
+        height: 20px !important;
+        border: 3px solid #ffffff !important;
+        border-top-color: transparent !important;
+        border-radius: 50% !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -43%) !important;
+        box-sizing: border-box !important;
+        pointer-events: none !important;
+    }
+
+    .st-key-cliente_header div.stButton > button::after {
+        content: "" !important;
+        position: absolute !important;
+        width: 3px !important;
+        height: 13px !important;
+        background: #ffffff !important;
+        border-radius: 3px !important;
+        left: 50% !important;
+        top: 9px !important;
+        transform: translateX(-50%) !important;
+        box-shadow: 0 0 2px rgba(255,255,255,0.35) !important;
+        pointer-events: none !important;
+    }
+
     .st-key-cliente_header div.stButton > button p {
-        color: #ffffff !important;
-        font-size: 1.75rem !important;
-        line-height: 1 !important;
+        font-size: 0 !important;
+        line-height: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
-        font-weight: 900 !important;
     }
 
     .st-key-cliente_header div.stButton > button:hover {
@@ -1244,7 +1274,7 @@ elif st.session_state["rol"] == "cliente":
 
         with col_header_logout:
             st.markdown('<div class="header-logout-space"></div>', unsafe_allow_html=True)
-            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión"):
+            if st.button(" ", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
     # =========================================================
