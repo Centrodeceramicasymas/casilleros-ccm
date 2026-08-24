@@ -30,12 +30,6 @@ if "vista_actual" not in st.session_state:
 if "sub_tab_inicio" not in st.session_state:
     st.session_state["sub_tab_inicio"] = "Catálogo"
 
-if "busqueda_activa" not in st.session_state:
-    st.session_state["busqueda_activa"] = False
-
-if "resultados_busqueda" not in st.session_state:
-    st.session_state["resultados_busqueda"] = []
-
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS
 # ---------------------------------------------------------
@@ -524,14 +518,14 @@ if "autenticado" not in st.session_state:
     })
 
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "busqueda_activa", "resultados_busqueda"]:
+    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id"]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS
+# 6. ESTILOS CSS REFINADOS: BOTONES HOMOGÉNEOS Y ELEGANTES
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -554,6 +548,7 @@ st.markdown("""
         margin: 0 auto !important;
     }
 
+    /* HEADER AZUL SUPERIOR */
     .app-header-blue {
         background-color: #004ac1;
         padding: 18px 16px 14px 16px;
@@ -593,12 +588,17 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
-    .app-search-wrapper {
+    .app-search-bar {
         background: #ffffff;
-        border-radius: 20px;
-        padding: 10px 14px;
+        border-radius: 25px;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #64748b;
+        font-size: 0.88rem;
         margin-bottom: 12px;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
 
     .app-delivery-row {
@@ -610,6 +610,7 @@ st.markdown("""
         padding-top: 4px;
     }
 
+    /* BANNER PUBLICITARIO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
         border-radius: 16px;
@@ -629,6 +630,7 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
+    /* TARJETAS CONTENEDORAS */
     .card-box {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -647,6 +649,7 @@ st.markdown("""
         color: #ffffff;
     }
 
+    /* INPUTS */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
@@ -658,6 +661,7 @@ st.markdown("""
         font-size: 0.9rem !important;
     }
 
+    /* BOTONES HOMOGÉNEOS Y ELEGANTES */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         height: 48px !important;
@@ -678,6 +682,7 @@ st.markdown("""
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
 
+    /* BOTÓN PRIMARIO (ACTIVO) */
     div.stButton > button[kind="primary"], div.stDownloadButton > button {
         background: linear-gradient(135deg, #004ac1, #00368c) !important;
         color: #ffffff !important;
@@ -688,6 +693,7 @@ st.markdown("""
         color: #ffffff !important;
     }
 
+    /* BOTÓN SECUNDARIO (ELEGANCIA SOFT WHITE / SLATE) */
     div.stButton > button[kind="secondary"] {
         background: #ffffff !important;
         color: #1e293b !important;
@@ -882,7 +888,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (CON BUSCADOR ACTIVO EN CABECERA)
+# 8. PORTAL DEL CLIENTE (LÍNEA SUPERIOR CON BOTONES HOMOGÉNEOS)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -890,7 +896,7 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
-    # --- HEADER AZUL SUPERIOR CON BUSCADOR DINÁMICO POR TEXTO O IMAGEN ---
+    # --- HEADER AZUL SUPERIOR ---
     st.markdown(f"""
     <div class="app-header-blue">
         <div class="app-header-row">
@@ -906,40 +912,10 @@ elif st.session_state["rol"] == "cliente":
                 <span style="cursor:pointer;">🔔</span>
             </div>
         </div>
-    """, unsafe_allow_html=True)
-
-    # BARRA DE BÚSQUEDA INTEGRADA EN EL HEADER AZUL
-    with st.container():
-        st.markdown('<div class="app-search-wrapper">', unsafe_allow_html=True)
-        modo_search = st.radio("Buscar por:", ["🔤 Palabras", "📷 Fotografía / Imagen"], horizontal=True, key="hdr_search_mode", label_visibility="collapsed")
-        
-        if modo_search == "🔤 Palabras":
-            c_inp, c_btn = st.columns([3.5, 1.2])
-            with c_inp:
-                query_txt = st.text_input("Buscar", placeholder="Compra tus productos o cotiza fletes (1688)...", label_visibility="collapsed", key="hdr_kw_in")
-            with c_btn:
-                if st.button("🔍 Buscar", type="primary", key="btn_hdr_search_txt"):
-                    if query_txt:
-                        with st.spinner("Buscando en 1688..."):
-                            st.session_state["resultados_busqueda"] = buscar_productos_1688_texto(query_txt)
-                            st.session_state["busqueda_activa"] = True
-                            st.session_state["sub_tab_inicio"] = "Catálogo"
-                            st.rerun()
-        else:
-            c_file, c_fbtn = st.columns([3.5, 1.2])
-            with c_file:
-                up_file = st.file_uploader("Subir foto", type=["jpg", "png", "jpeg", "webp"], label_visibility="collapsed", key="hdr_img_up")
-            with c_fbtn:
-                if st.button("📷 Escanear", type="primary", key="btn_hdr_search_img"):
-                    if up_file:
-                        with st.spinner("Búsqueda visual IA en 1688..."):
-                            st.session_state["resultados_busqueda"] = buscar_productos_1688_imagen(up_file.getvalue())
-                            st.session_state["busqueda_activa"] = True
-                            st.session_state["sub_tab_inicio"] = "Catálogo"
-                            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown("""
+        <div class="app-search-bar">
+            <span>🔍</span>
+            <span>Compra tus productos o cotiza fletes...</span>
+        </div>
         <div class="app-delivery-row">
             <div style="display:flex; align-items:center; gap:8px; font-weight:700;">
                 <span>🏪</span>
@@ -989,43 +965,49 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688 CON RESULTADOS INTEGRADOS
+    # VISTA 1: CATÁLOGO CHINO 1688 (TEXTO + VISUAL IA)
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
-        st.markdown("#### 🛍️ Catálogo de Fábricas Chinas (1688 Direct)")
+        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
         
-        # Resultados de la barra superior o muestra estándar
-        items_a_mostrar = st.session_state["resultados_busqueda"] if st.session_state["busqueda_activa"] else buscar_productos_1688_texto("porcelanato")
+        modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+        
+        resultados_1688 = []
+        if modo_busq == "🔎 Por Nombre / Palabras":
+            kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+            if st.button("Buscar Productos en China ➔", type="primary") and kw:
+                with st.spinner("Consultando catálogo de 1688..."):
+                    resultados_1688 = buscar_productos_1688_texto(kw)
+        else:
+            img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+            if img_up and st.button("Escanear Coincidencia Visual ➔", type="primary"):
+                with st.spinner("Buscando por reconocimiento visual..."):
+                    resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
 
-        if st.session_state["busqueda_activa"]:
-            if st.button("❌ Limpiar Búsqueda y Ver Destacados", type="secondary"):
-                st.session_state["busqueda_activa"] = False
-                st.session_state["resultados_busqueda"] = []
-                st.rerun()
-
-        st.markdown("---")
-        for prod in items_a_mostrar:
-            calc = calcular_costo_puesto_honduras(prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"])
-            
-            c_img, c_det = st.columns([1, 1.8])
-            with c_img:
-                st.image(prod["imagen_url"], use_container_width=True)
-            with c_det:
-                st.markdown(f"**{prod['nombre']}**")
-                st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
-                st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
-                st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
+        if resultados_1688:
+            st.markdown("---")
+            for prod in resultados_1688:
+                calc = calcular_costo_puesto_honduras(prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"])
                 
-                msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Enlace: {prod['url_proveedor']}"
-                url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
-                
-                c_b1, c_b2 = st.columns(2)
-                with c_b1:
-                    st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1px solid #cbd5e1; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
-                with c_b2:
-                    st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
-            st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+                c_img, c_det = st.columns([1, 1.8])
+                with c_img:
+                    st.image(prod["imagen_url"], use_container_width=True)
+                with c_det:
+                    st.markdown(f"**{prod['nombre']}**")
+                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                    st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
+                    st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Incluye compra + Flete Marítimo + Desaduanaje)*")
+                    
+                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Enlace: {prod['url_proveedor']}"
+                    url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+                    
+                    c_b1, c_b2 = st.columns(2)
+                    with c_b1:
+                        st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1px solid #cbd5e1; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
+                    with c_b2:
+                        st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; padding:8px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
+                st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
@@ -1175,7 +1157,6 @@ elif st.session_state["rol"] == "cliente":
     with c_nav1:
         if st.button("🏠\nInicio", key="bnav1"):
             st.session_state["sub_tab_inicio"] = "Catálogo"
-            st.session_state["busqueda_activa"] = False
             st.rerun()
     with c_nav2:
         if st.button("🛍️\nEnvíos", key="bnav2"):
