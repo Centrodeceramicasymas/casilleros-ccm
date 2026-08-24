@@ -1022,15 +1022,35 @@ elif st.session_state["rol"] == "cliente":
         </div>
     """, unsafe_allow_html=True)
 
-    # BOTÓN "Mis Cotizaciones" UBICADO EN LA ESQUINA INFERIOR IZQUIERDA DEL CUADRO AZUL
-    col_btn_izq, col_dummy_der = st.columns([1.5, 1])
-    with col_btn_izq:
-        if st.button("📄 Mis Cotizaciones", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
+    # --- BARRA DE NAVEGACIÓN SUPERIOR UNIFICADA (MIS COTIZACIONES + CATÁLOGO + COTIZADOR + ENVÍOS + FICHAS) ---
+    col_nav_c, col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(5, gap="small")
+    with col_nav_c:
+        if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["ver_panel_cotizaciones"] else "secondary", key="btn_toggle_cotizaciones"):
             st.session_state["ver_panel_cotizaciones"] = not st.session_state["ver_panel_cotizaciones"]
+            st.rerun()
+    with col_nav1:
+        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+            st.session_state["sub_tab_inicio"] = "Catálogo"
+            st.session_state["ver_panel_cotizaciones"] = False
+            st.rerun()
+    with col_nav2:
+        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+            st.session_state["sub_tab_inicio"] = "Cotizador"
+            st.session_state["ver_panel_cotizaciones"] = False
+            st.rerun()
+    with col_nav3:
+        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+            st.session_state["sub_tab_inicio"] = "Mis Envíos"
+            st.session_state["ver_panel_cotizaciones"] = False
+            st.rerun()
+    with col_nav4:
+        if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+            st.session_state["sub_tab_inicio"] = "Etiqueta"
+            st.session_state["ver_panel_cotizaciones"] = False
             st.rerun()
 
     st.markdown("""
-        <div class="app-search-bar" style="margin-top: 10px;">
+        <div class="app-search-bar" style="margin-top: 14px;">
             <span>🔍</span>
             <span>Compra tus productos o cotiza fletes...</span>
         </div>
@@ -1180,27 +1200,6 @@ elif st.session_state["rol"] == "cliente":
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- BARRA DE NAVEGACIÓN SUPERIOR ---
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4, gap="small")
-    with col_nav1:
-        if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
-            st.session_state["sub_tab_inicio"] = "Catálogo"
-            st.rerun()
-    with col_nav2:
-        if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
-            st.session_state["sub_tab_inicio"] = "Cotizador"
-            st.rerun()
-    with col_nav3:
-        if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
-            st.session_state["sub_tab_inicio"] = "Mis Envíos"
-            st.rerun()
-    with col_nav4:
-        if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
-            st.session_state["sub_tab_inicio"] = "Etiqueta"
-            st.rerun()
-
-    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
     # --- BANNER PROMOCIONAL ---
     st.markdown(f"""
