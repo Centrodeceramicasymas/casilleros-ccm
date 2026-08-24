@@ -17,7 +17,7 @@ from email.mime.multipart import MIMEMultipart
 # 1. CONFIGURACIÓN DEL SISTEMA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Centro de Cerámicas y Más — Casillero China",
+    page_title="Centro de Cerámicas y Más — Cloud Logistics",
     page_icon="🏠",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -36,7 +36,7 @@ if "seccion_activa" not in st.session_state:
     st.session_state["seccion_activa"] = "📐 Cotizador Marítimo"
 
 # ---------------------------------------------------------
-# 2. GENERADORES DE PDF NATIVOS (SIN DEPENDENCIAS EXTERNAS)
+# 2. GENERADORES DE PDF NATIVOS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
     stream_bytes = stream_content.encode('latin-1', 'replace')
@@ -211,7 +211,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 # ---------------------------------------------------------
-# 3. ESTILOS CSS PROFESIONALES
+# 3. ESTILOS CSS CON MODAL PSKLOUD (FONDO FINANCIERO)
 # ---------------------------------------------------------
 is_dark = (st.session_state["tema_visual"] == "Oscuro (Dark)")
 
@@ -238,10 +238,53 @@ st.markdown(f"""
     
     #MainMenu, header, footer {{visibility: hidden;}}
 
+    /* FONDO ESTILO PSKLOUD / CALCULADORA PARA LOGIN */
+    .psk-bg-wallpaper {{
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.82)),
+                    url('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=2000&q=80') center center / cover no-repeat;
+        position: fixed;
+        top: 0; left: 0; width: 100vw; height: 100vh;
+        z-index: 0;
+        pointer-events: none;
+    }}
+
+    /* VENTANA MODAL PSKLOUD */
+    .psk-login-modal {{
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 20px 45px rgba(0,0,0,0.55);
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        margin-top: 1.5rem;
+        position: relative;
+        z-index: 1;
+    }}
+    .psk-login-header {{
+        background: linear-gradient(90deg, #1d4ed8, #2563eb);
+        color: #ffffff;
+        padding: 14px 20px;
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: 0.5px;
+    }}
+    .psk-login-body {{
+        padding: 24px;
+        background: #ffffff;
+    }}
+    .psk-login-footer {{
+        background: #0f172a;
+        color: #94a3b8;
+        font-size: 0.68rem;
+        text-align: center;
+        padding: 14px 18px;
+        line-height: 1.4;
+    }}
+
+    /* INPUTS */
     div[data-baseweb="input"], div[data-baseweb="select"] > div {{
         background-color: {input_bg} !important;
         border: 1px solid {input_border} !important;
-        border-radius: 12px !important;
+        border-radius: 10px !important;
         overflow: hidden !important;
         padding: 4px 6px !important;
     }}
@@ -251,45 +294,25 @@ st.markdown(f"""
         font-size: 0.95rem !important;
     }}
 
-    .stTextInput label, .stSelectbox label, .stTextArea label, .stRadio label {{
-        color: {text_main} !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        margin-bottom: 2px !important;
-    }}
-
+    /* BOTONES */
     div.stButton > button, div.stDownloadButton > button {{
         width: 100% !important;
-        border-radius: 12px !important;
-        padding: 12px 18px !important;
+        border-radius: 8px !important;
+        padding: 11px 18px !important;
         font-size: 0.95rem !important;
         font-weight: 700 !important;
         transition: all 0.2s ease-in-out !important;
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
     }}
 
-    div.stButton > button[kind="primary"], .btn-login-blue div.stButton > button, div.stDownloadButton > button {{
-        background-color: #0052cc !important;
+    .btn-psk-green div.stButton > button {{
+        background-color: #22c55e !important;
         color: #ffffff !important;
         border: none !important;
-        box-shadow: 0 4px 14px rgba(0, 82, 204, 0.4) !important;
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35) !important;
     }}
-    div.stButton > button[kind="primary"]:hover, .btn-login-blue div.stButton > button:hover, div.stDownloadButton > button:hover {{
-        background-color: #0040a8 !important;
+    .btn-psk-green div.stButton > button:hover {{
+        background-color: #16a34a !important;
         transform: translateY(-1px);
-    }}
-
-    div.stButton > button[kind="secondary"], .btn-action-sec div.stButton > button {{
-        background-color: {btn_sec_bg} !important;
-        color: {btn_sec_text} !important;
-        border: 1px solid {btn_sec_border} !important;
-    }}
-
-    .theme-dropdown div[data-baseweb="select"] {{
-        background-color: {input_bg} !important;
-        border: 1px solid {input_border} !important;
-        border-radius: 10px !important;
     }}
 
     .card-box {{
@@ -415,24 +438,6 @@ def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
     return ''.join(random.choice(caracteres) for _ in range(8))
 
-def render_logo_header():
-    if os.path.exists(LOGO_FILENAME):
-        with open(LOGO_FILENAME, "rb") as f:
-            encoded_img = base64.b64encode(f.read()).decode()
-        img_html = f'<img src="data:image/jpeg;base64,{encoded_img}" alt="Centro de Cerámicas y Más" style="max-width:100%; max-height:100%; object-fit:contain;">'
-    else:
-        img_html = '<div style="font-size:3rem;">🏠</div>'
-
-    st.markdown(f"""
-    <div style="text-align: center; margin-top: 1rem; margin-bottom: 1.5rem;">
-        <div style="width: 140px; height: 140px; margin: 0 auto; border-radius: 18px; padding: 8px; background-color: #ffffff; box-shadow: 0 6px 18px rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center;">
-            {img_html}
-        </div>
-        <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: 1px; color: {text_main}; margin-top: 12px;">CENTRO DE CERÁMICAS Y MÁS</div>
-        <div style="font-size: 0.85rem; color: {text_muted}; margin-top: 2px;">Servicio de Consolidación Marítima China ➔ Honduras</div>
-    </div>
-    """, unsafe_allow_html=True)
-
 # ---------------------------------------------------------
 # 5. GESTIÓN DE SESIÓN
 # ---------------------------------------------------------
@@ -457,36 +462,42 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. HEADER CON SELECTOR DE TEMA
-# ---------------------------------------------------------
-col_vacia, col_theme = st.columns([4, 1.3])
-with col_theme:
-    st.markdown('<div class="theme-dropdown">', unsafe_allow_html=True)
-    tema_elegido = st.selectbox(
-        "Tema",
-        ["Oscuro (Dark)", "Blanco (Light)"],
-        index=0 if is_dark else 1,
-        label_visibility="collapsed"
-    )
-    if tema_elegido != st.session_state["tema_visual"]:
-        st.session_state["tema_visual"] = tema_elegido
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# 7. VISTAS PÚBLICAS (LOGIN / REGISTRO / RECUPERACIÓN)
+# 6. PANTALLA DE ACCESO (VENTANA MODAL PSKLOUD IDÉNTICA)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
+    st.markdown('<div class="psk-bg-wallpaper"></div>', unsafe_allow_html=True)
 
     if st.session_state["vista_actual"] == "login":
-        _, col_center, _ = st.columns([1, 1.25, 1])
-        with col_center:
-            render_logo_header()
-            u_ident = st.text_input("Casillero (8 dígitos) o Correo", placeholder="Ej: 13011998 o correo@gmail.com", key="log_cas")
-            u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña de acceso", key="log_pwd")
+        _, col_modal, _ = st.columns([1, 1.45, 1])
+        with col_modal:
+            st.markdown("""
+            <div class="psk-login-modal">
+                <div class="psk-login-header">
+                    Inicio de sesión
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            if st.button("Iniciar sesión", type="primary", key="btn_login_submit"):
+            # Campos del formulario con estructura PSKLOUD
+            col_pin, col_serial = st.columns(2)
+            with col_pin:
+                pin_in = st.text_input("PIN (Sistema)", value="51127", key="pin_in")
+            with col_serial:
+                st.text_input("Serial", value="CCM-HN-2026", disabled=True, key="serial_in")
+
+            emp_in = st.text_input("EMPRESA", value="Centro de Cerámicas y Más", disabled=True, key="emp_in")
+            agencia_in = st.selectbox("AGENCIA", ["Agencia Principal (San Juan, Intibucá)", "Bodega Operativa China (CHILAT Guangzhou)", "Recepción Puerto Cortés"], key="ag_in")
+
+            col_u, col_p = st.columns(2)
+            with col_u:
+                u_ident = st.text_input("USUARIO (Casillero / Correo)", placeholder="Ej: 13011998 o correo@gmail.com", key="log_cas")
+            with col_p:
+                u_pass = st.text_input("CONTRASEÑA", type="password", placeholder="Contraseña", key="log_pwd")
+
+            st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+            
+            st.markdown('<div class="btn-psk-green">', unsafe_allow_html=True)
+            if st.button("➔] INICIAR SESIÓN", type="primary", key="btn_login_submit"):
                 if u_ident and u_pass:
                     p_hash = hash_pwd(u_pass)
                     with get_db() as conn:
@@ -510,15 +521,25 @@ if not st.session_state["autenticado"]:
                     else:
                         st.error("❌ Credenciales inválidas.")
                 else:
-                    st.warning("Ingrese su casillero y contraseña.")
+                    st.warning("Ingrese su usuario (casillero/correo) y contraseña.")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            if st.button("Restablecer contraseña", type="secondary", key="btn_to_reset"):
-                st.session_state["vista_actual"] = "recuperar"
-                st.rerun()
+            c_bot1, c_bot2 = st.columns(2)
+            with c_bot1:
+                if st.button("Restablecer Contraseña", type="secondary", key="btn_to_reset"):
+                    st.session_state["vista_actual"] = "recuperar"
+                    st.rerun()
+            with c_bot2:
+                if st.button("Aperturar Casillero", type="secondary", key="btn_to_register"):
+                    st.session_state["vista_actual"] = "registro"
+                    st.rerun()
 
-            if st.button("Aperturar casillero", type="secondary", key="btn_to_register"):
-                st.session_state["vista_actual"] = "registro"
-                st.rerun()
+            st.markdown("""
+            <div style="background: #0f172a; color: #94a3b8; font-size: 0.68rem; text-align: center; padding: 14px 18px; border-radius: 0 0 12px 12px; margin-top: 15px; line-height: 1.4;">
+                Este software está protegido por la ley de derecho de autor. Todos los derechos morales, intelectuales, de explotación, así como la marca y logotipo son propiedad exclusiva del fabricante.<br>
+                <b>Copyright 1999 - 2026 By Nodgard Seguias / Grupo Premium Soft &bull; Centro de Cerámicas y Más &bull; Versión del sistema: 3.0</b>
+            </div>
+            """, unsafe_allow_html=True)
 
     elif st.session_state["vista_actual"] == "registro":
         _, col_reg, _ = st.columns([1, 1.8, 1])
@@ -636,7 +657,7 @@ if not st.session_state["autenticado"]:
             st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (CON MENÚ DESPLEGABLE SUPERIOR)
+# 7. PORTAL DEL CLIENTE (SISTEMA INTERNO CON MENÚ DESPLEGABLE)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -644,7 +665,7 @@ elif st.session_state["rol"] == "cliente":
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "Honduras")
 
-    # BARRA SUPERIOR DE ENCABEZADO
+    # ENCABEZADO SUPERIOR
     st.markdown(f"""
     <div style="background:{input_bg}; padding:1rem 1.2rem; border-radius:12px; border:1px solid {input_border}; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
         <div>
@@ -655,7 +676,7 @@ elif st.session_state["rol"] == "cliente":
     </div>
     """, unsafe_allow_html=True)
 
-    # BOTÓN / SELECTOR DESPLEGABLE SUPERIOR DE NAVEGACIÓN
+    # MENÚ DESPLEGABLE DE NAVEGACIÓN SUPERIOR
     col_menu, col_logout = st.columns([4, 1])
     with col_menu:
         opciones_navegacion = [
@@ -831,7 +852,6 @@ elif st.session_state["rol"] == "cliente":
             }
             st.success(f"🎉 ¡Tarifa Confirmada con Éxito! Número de Control: **CCM-COT-{id_generado:05d}**")
 
-        # DESPLIEGUE DE LOS 2 DOCUMENTOS
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
@@ -947,7 +967,7 @@ NOT accept packages without the Client Code: {casillero} clearly visible."<br>
         """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 9. PANEL ADMINISTRATIVO
+# 8. PANEL ADMINISTRATIVO
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "admin":
     st.markdown("## 🛠️ Panel Maestro — Administrador")
