@@ -922,7 +922,7 @@ if not st.session_state["autenticado"]:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & FORMATOS CON DIRECCIÓN)
+# 8. PORTAL DEL CLIENTE (DESPLEGABLE DINÁMICO & CONDICIÓN DE RENDERIZADO)
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
     casillero = st.session_state["casillero"]
@@ -1125,7 +1125,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO
+    # VISTA 2: COTIZADOR MARÍTIMO (PDFs CON CONDICIÓN DE RENDERIZADO)
     # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1207,7 +1207,7 @@ elif st.session_state["rol"] == "cliente":
             }
             st.rerun()
 
-        # RENDERIZADO EXCLUSIVO: SOLO APARECE SI SE PULSÓ EL BOTÓN Y EXISTE LA CONFIRMACIÓN
+        # RENDERIZADO EXCLUSIVO CUANDO EL BOTÓN HA SIDO PRESIONADO
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_c = d_pdf.get("id_cot", 1)
