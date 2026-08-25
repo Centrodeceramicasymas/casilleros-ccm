@@ -884,6 +884,56 @@ st.markdown("""
     div.stButton > button[kind="secondary"]:hover * {
         color: #004ac1 !important;
     }
+
+    /* BOTÓN CERRAR SESIÓN: MISMO COLOR, TAMAÑO Y ESPACIADO QUE LOS DEMÁS */
+    .st-key-btn_logout_cliente {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 120px !important;
+        min-width: 120px !important;
+        max-width: 120px !important;
+        flex: 0 0 120px !important;
+    }
+
+    .st-key-btn_logout_cliente div.stButton > button,
+    .st-key-btn_logout_cliente button {
+        width: 120px !important;
+        min-width: 120px !important;
+        max-width: 120px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        margin: 0 !important;
+        padding: 0 8px !important;
+        border-radius: 10px !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+        font-size: 0.76rem !important;
+        font-weight: 700 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+    }
+
+    .st-key-btn_logout_cliente div.stButton > button:hover,
+    .st-key-btn_logout_cliente button:hover {
+        background: #f8fafc !important;
+        background-color: #f8fafc !important;
+        border-color: #004ac1 !important;
+        color: #004ac1 !important;
+        box-shadow: 0 4px 10px rgba(0, 74, 193, 0.12) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    .st-key-btn_logout_cliente button *,
+    .st-key-btn_logout_cliente button:hover * {
+        color: inherit !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
