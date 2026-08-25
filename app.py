@@ -67,10 +67,100 @@ if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
 if "sub_tab_inicio" not in st.session_state:
-    st.session_state["sub_tab_inicio"] = "Catálogo"
+    st.session_state["sub_tab_inicio"] = "Inicio"
+
+if "hub" not in st.session_state:
+    st.session_state["hub"] = None
 
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+
+# Hubs de origen: agregar módulos aquí no cambia la navegación general.
+HUBS = {
+    "china": {
+        "label": "China",
+        "icon": "🇨🇳",
+        "descripcion": "Consolidación marítima, catálogo y flete",
+        "activo": True,
+        "modulos": [
+            {
+                "id": "Mis Cotizaciones",
+                "label": "Mis Cotizaciones",
+                "nav": "📄 Mis Cotiz.",
+                "icon": "📄",
+                "detalle": "Historial y descarga de PDF",
+                "btn_key": "mod_cotizaciones",
+            },
+            {
+                "id": "Catálogo",
+                "label": "Catálogo",
+                "nav": "🛍️ Catálogo",
+                "icon": "🛍️",
+                "detalle": "Fábricas 1688 y costo en Honduras",
+                "btn_key": "mod_catalogo",
+            },
+            {
+                "id": "Cotizador",
+                "label": "Cotizador",
+                "nav": "📐 Cotizador",
+                "icon": "📐",
+                "detalle": "Flete marítimo por libra o CBM",
+                "btn_key": "mod_cotizador",
+            },
+            {
+                "id": "Mis Envíos",
+                "label": "Envíos",
+                "nav": "📦 Envíos",
+                "icon": "📦",
+                "detalle": "Paquetes en tránsito",
+                "btn_key": "mod_envios",
+            },
+            {
+                "id": "Etiqueta",
+                "label": "Fichas",
+                "nav": "🏷️ Fichas",
+                "icon": "🏷️",
+                "detalle": "Etiqueta bodega Guangzhou",
+                "btn_key": "mod_fichas",
+            },
+        ],
+    },
+    "eeuu": {
+        "label": "EE. UU.",
+        "icon": "🇺🇸",
+        "descripcion": "Módulo en preparación para envíos desde Estados Unidos",
+        "activo": False,
+        "modulos": [],
+    },
+    "honduras": {
+        "label": "Honduras",
+        "icon": "🇭🇳",
+        "descripcion": "Módulo en preparación para operaciones locales",
+        "activo": False,
+        "modulos": [],
+    },
+}
+
+MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
+VISTAS_MODULO = set(MODULOS_POR_ID.keys())
+
+
+def ir_a(vista, hub="_omit"):
+    if hub != "_omit":
+        st.session_state["hub"] = hub
+    elif vista in MODULOS_POR_ID:
+        st.session_state["hub"] = MODULOS_POR_ID[vista]
+    st.session_state["sub_tab_inicio"] = vista
+    cas = str(st.session_state.get("casillero", "")).strip()
+    if cas:
+        st.query_params["casillero"] = cas
+    st.query_params["vista"] = vista
+    hub_actual = st.session_state.get("hub")
+    if hub_actual:
+        st.query_params["hub"] = hub_actual
+    elif "hub" in st.query_params:
+        del st.query_params["hub"]
+    st.rerun()
 
 
 # ---------------------------------------------------------
@@ -650,16 +740,23 @@ def restaurar_sesion_persistente():
         vista_url = params.get("vista", "")
         if isinstance(vista_url, list):
             vista_url = vista_url[0] if vista_url else ""
-        vistas_validas = {
-            "Mis Cotizaciones",
-            "Catálogo",
-            "Cotizador",
-            "Mis Envíos",
-            "Etiqueta",
-            "Inicio",
-        }
+        hub_url = params.get("hub", "")
+        if isinstance(hub_url, list):
+            hub_url = hub_url[0] if hub_url else ""
+
+        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras"} | VISTAS_MODULO
         if vista_url in vistas_validas:
             st.session_state["sub_tab_inicio"] = vista_url
+        if hub_url in HUBS:
+            st.session_state["hub"] = hub_url
+        elif vista_url in MODULOS_POR_ID:
+            st.session_state["hub"] = MODULOS_POR_ID[vista_url]
+        elif vista_url == "China":
+            st.session_state["hub"] = "china"
+        elif vista_url == "EE. UU.":
+            st.session_state["hub"] = "eeuu"
+        elif vista_url == "Honduras":
+            st.session_state["hub"] = "honduras"
 
         return True
 
@@ -692,6 +789,7 @@ def logout():
         "ultima_cot_id",
         "modalidad_envio_seleccionada",
         "sub_tab_inicio",
+        "hub",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -1101,6 +1199,32 @@ st.markdown(
         font-size: 0.78rem;
         margin-top: 5px;
     }
+    .hub-menu-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 14px;
+        font-size: 1.02rem;
+        font-weight: 800;
+        color: #0f172a;
+    }
+    .hub-menu-caption {
+        font-size: 0.78rem;
+        color: #64748b;
+        font-weight: 600;
+        margin: -6px 0 12px 0;
+    }
+    .hub-empty-box {
+        background: #f8fafc;
+        border: 1.5px dashed #cbd5e1;
+        border-radius: 14px;
+        padding: 28px 16px;
+        text-align: center;
+        color: #64748b;
+        margin-top: 8px;
+    }
     .china-address-box {
         background-color: #0f172a;
         border: 2px dashed #0052cc;
@@ -1238,6 +1362,33 @@ st.markdown(
         color: #004ac1 !important;
         fill: #004ac1 !important;
     }
+
+    .st-key-hub_china div.stButton > button,
+    .st-key-hub_eeuu div.stButton > button,
+    .st-key-hub_honduras div.stButton > button {
+        height: 72px !important;
+        min-height: 72px !important;
+        max-height: 72px !important;
+        font-size: 1.05rem !important;
+        border-radius: 14px !important;
+        justify-content: flex-start !important;
+        padding: 0 16px !important;
+        white-space: normal !important;
+    }
+    .st-key-mod_cotizaciones div.stButton > button,
+    .st-key-mod_catalogo div.stButton > button,
+    .st-key-mod_cotizador div.stButton > button,
+    .st-key-mod_envios div.stButton > button,
+    .st-key-mod_fichas div.stButton > button {
+        height: 78px !important;
+        min-height: 78px !important;
+        max-height: 78px !important;
+        font-size: 0.86rem !important;
+        border-radius: 14px !important;
+        white-space: normal !important;
+        line-height: 1.25 !important;
+        padding: 8px 10px !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -1292,6 +1443,7 @@ if not st.session_state["autenticado"]:
                         st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
                         st.session_state["sub_tab_inicio"] = "Inicio"
+                        st.session_state["hub"] = None
 
                         st.query_params["casillero"] = str(user[1])
                         st.query_params["vista"] = "Inicio"
@@ -1531,88 +1683,50 @@ elif st.session_state["rol"] == "cliente":
         )
 
         with st.container(key="nav_scroll"):
-            c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
+            hub_activo = st.session_state.get("hub")
+            china_mods = HUBS["china"]["modulos"]
+            mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
 
-            with c_nav_p:
+            if mostrar_subnav_china:
+                nav_cols = st.columns(2 + len(china_mods), gap="small")
+            else:
+                nav_cols = st.columns(2, gap="small")
+
+            with nav_cols[0]:
                 if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
                     logout()
 
-            with c_nav_c:
+            with nav_cols[1]:
+                en_inicio = st.session_state["sub_tab_inicio"] == "Inicio"
                 if st.button(
                     "🏠 Inicio",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary",
+                    type="primary" if en_inicio else "secondary",
                     key="btn_inicio_cliente",
                 ):
-                    st.session_state["sub_tab_inicio"] = "Inicio"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Inicio"
-                    st.rerun()
+                    ir_a("Inicio", hub=None)
 
-            with c_nav1:
-                if st.button(
-                    "📄 Mis Cotiz.",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary",
-                    key="btn_toggle_cotizaciones",
-                ):
-                    st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Mis Cotizaciones"
-                    st.rerun()
+            if mostrar_subnav_china:
+                for idx, modulo in enumerate(china_mods):
+                    with nav_cols[2 + idx]:
+                        activo = st.session_state["sub_tab_inicio"] == modulo["id"]
+                        if st.button(
+                            modulo["nav"],
+                            type="primary" if activo else "secondary",
+                            key=f"nav_{modulo['btn_key']}",
+                        ):
+                            ir_a(modulo["id"], hub="china")
 
-            with c_nav2:
-                if st.button(
-                    "🛍️ Catálogo",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary",
-                    key="nav_top_cat",
-                ):
-                    st.session_state["sub_tab_inicio"] = "Catálogo"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Catálogo"
-                    st.rerun()
-
-            with c_nav3:
-                if st.button(
-                    "📐 Cotizador",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary",
-                    key="nav_top_cot",
-                ):
-                    st.session_state["sub_tab_inicio"] = "Cotizador"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Cotizador"
-                    st.rerun()
-
-            with c_nav4:
-                if st.button(
-                    "📦 Envíos",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary",
-                    key="nav_top_env",
-                ):
-                    st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Mis Envíos"
-                    st.rerun()
-
-            with c_nav5:
-                if st.button(
-                    "🏷️ Fichas",
-                    type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary",
-                    key="nav_top_eti",
-                ):
-                    st.session_state["sub_tab_inicio"] = "Etiqueta"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Etiqueta"
-                    st.rerun()
-
-        if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
-            st.markdown(
-                '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>',
-                unsafe_allow_html=True,
-            )
+        if mostrar_subnav_china:
+            if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
+                st.markdown(
+                    '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>',
+                    unsafe_allow_html=True,
+                )
 
         if st.session_state["sub_tab_inicio"] == "Cotizador":
             st.markdown(
@@ -1649,16 +1763,57 @@ elif st.session_state["rol"] == "cliente":
             )
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
-        st.markdown(
-            '<div class="card-box inicio-placeholder">'
-            '<div class="inicio-placeholder-head"><span>🏠</span><span>Inicio</span></div>'
-            '<div class="inicio-placeholder-body">'
-            '<div class="inicio-placeholder-plus">＋</div>'
-            '<div class="inicio-placeholder-title">Espacio disponible para agregar información</div>'
-            '<div class="inicio-placeholder-sub">Esta sección queda en blanco para colocar contenido posteriormente.</div>'
-            "</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("#### 🏠 Inicio")
+        st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+
+        hub_sel = st.session_state.get("hub")
+        for hub_id, hub in HUBS.items():
+            etiqueta = f"{hub['icon']}  {hub['label']}"
+            seleccionado = hub_sel == hub_id
+            if st.button(
+                etiqueta,
+                type="primary" if seleccionado else "secondary",
+                key=f"hub_{hub_id}",
+                use_container_width=True,
+            ):
+                if hub_id == "china":
+                    ir_a("Inicio", hub="china")
+                else:
+                    ir_a("Inicio", hub=hub_id)
+
+        if hub_sel == "china":
+            st.markdown("##### Módulos de China")
+            st.caption("Consolidación marítima China ➔ Honduras")
+            mods = HUBS["china"]["modulos"]
+            for fila in range(0, len(mods), 2):
+                cols_mod = st.columns(2, gap="small")
+                for offset, col in enumerate(cols_mod):
+                    if fila + offset >= len(mods):
+                        break
+                    modulo = mods[fila + offset]
+                    with col:
+                        texto = f"{modulo['icon']} {modulo['label']}"
+                        if st.button(
+                            texto,
+                            type="secondary",
+                            key=modulo["btn_key"],
+                            use_container_width=True,
+                            help=modulo["detalle"],
+                        ):
+                            ir_a(modulo["id"], hub="china")
+                        st.caption(modulo["detalle"])
+
+        elif hub_sel in ("eeuu", "honduras"):
+            hub_vacio = HUBS[hub_sel]
+            st.markdown(
+                f'<div class="hub-empty-box">'
+                f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
+                f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
+                f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
+                f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
@@ -1813,8 +1968,9 @@ elif st.session_state["rol"] == "cliente":
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown(
-        f"""
+    if st.session_state.get("hub") == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO:
+        st.markdown(
+            f"""
     <div class="app-banner-card">
         <div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>
         <div style="font-size:1.1rem; font-weight:800; line-height:1.3; margin-bottom:6px;">
@@ -1826,8 +1982,8 @@ elif st.session_state["rol"] == "cliente":
         </div>
     </div>
     """,
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
