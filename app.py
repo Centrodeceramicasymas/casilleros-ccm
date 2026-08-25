@@ -166,6 +166,13 @@ HUBS = {
                 "icon": "📄",
                 "detalle": "Historial y descarga de PDF",
                 "btn_key": "mod_cotizaciones",
+                "icon_svg": (
+                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#004ac1" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<path d="M7 3.5h7.2L19 8.3V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5H7z"/>'
+                    '<path d="M14 3.5V9h5.2"/>'
+                    '<path d="M9 13h6M9 16.5h4.5"/>'
+                    "</svg>"
+                ),
             },
             {
                 "id": "Catálogo",
@@ -174,6 +181,12 @@ HUBS = {
                 "icon": "🛍️",
                 "detalle": "Fábricas 1688 y costo en Honduras",
                 "btn_key": "mod_catalogo",
+                "icon_svg": (
+                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#004ac1" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<path d="M5.5 8.5h13l-1.05 11.2a1.6 1.6 0 0 1-1.6 1.45H8.15a1.6 1.6 0 0 1-1.6-1.45L5.5 8.5z"/>'
+                    '<path d="M9 8.5V7.2A3 3 0 0 1 12 4.2 3 3 0 0 1 15 7.2v1.3"/>'
+                    "</svg>"
+                ),
             },
             {
                 "id": "Cotizador",
@@ -182,6 +195,15 @@ HUBS = {
                 "icon": "📐",
                 "detalle": "Flete marítimo por libra o CBM",
                 "btn_key": "mod_cotizador",
+                "icon_svg": (
+                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#004ac1" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<rect x="5.4" y="3.4" width="13.2" height="17.2" rx="2.2"/>'
+                    '<rect x="8" y="6.2" width="8" height="3.1" rx="0.6"/>'
+                    '<path d="M8.4 12.6h2.2M11.9 12.6h2.2M15.4 12.6h.2"/>'
+                    '<path d="M8.4 15.8h2.2M11.9 15.8h2.2M15.4 15.8h.2"/>'
+                    '<path d="M8.4 19h2.2M11.9 19h2.2"/>'
+                    "</svg>"
+                ),
             },
             {
                 "id": "Mis Envíos",
@@ -190,6 +212,13 @@ HUBS = {
                 "icon": "📦",
                 "detalle": "Paquetes en tránsito",
                 "btn_key": "mod_envios",
+                "icon_svg": (
+                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#004ac1" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<path d="M3.6 8.2 12 4.4l8.4 3.8L12 12z"/>'
+                    '<path d="M3.6 8.2v7.4L12 19.6l8.4-4V8.2"/>'
+                    '<path d="M12 12v7.6M8.2 10.2l7.6 3.4"/>'
+                    "</svg>"
+                ),
             },
             {
                 "id": "Etiqueta",
@@ -198,6 +227,12 @@ HUBS = {
                 "icon": "🏷️",
                 "detalle": "Etiqueta bodega Guangzhou",
                 "btn_key": "mod_fichas",
+                "icon_svg": (
+                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#004ac1" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                    '<path d="M3.6 4.4h8.4l8.2 8.2a2 2 0 0 1 0 2.8l-5.2 5.2a2 2 0 0 1-2.8 0L4 12.8V5.8A1.4 1.4 0 0 1 5.4 4.4z"/>'
+                    '<circle cx="8.2" cy="9" r="1.15"/>'
+                    "</svg>"
+                ),
             },
         ],
     },
@@ -2522,57 +2557,105 @@ st.markdown(
         border: 1.5px solid #cbd5e1 !important;
     }
 
-    .st-key-china_modulos button,
-    .st-key-china_modulos [data-testid^="stBaseButton"],
-    .st-key-china_modulos div.stButton > button,
-    .st-key-mod_cotizaciones button,
-    .st-key-mod_catalogo button,
-    .st-key-mod_cotizador button,
-    .st-key-mod_envios button,
-    .st-key-mod_fichas button {
-        height: 64px !important;
-        min-height: 64px !important;
-        max-height: 72px !important;
-        font-size: 0.92rem !important;
-        font-weight: 800 !important;
-        border-radius: 14px !important;
-        white-space: normal !important;
-        line-height: 1.25 !important;
-        padding: 10px 12px !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-        -webkit-text-fill-color: #0f172a !important;
-        border: 1.5px solid #cbd5e1 !important;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
+    .ccm-acciones-titulo {
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 10px 0 8px 0;
+        letter-spacing: -0.01em;
     }
-
-    .st-key-china_modulos button *,
-    .st-key-china_modulos [data-testid^="stBaseButton"] *,
-    .st-key-mod_cotizaciones button *,
-    .st-key-mod_catalogo button *,
-    .st-key-mod_cotizador button *,
-    .st-key-mod_envios button *,
-    .st-key-mod_fichas button * {
-        color: #0f172a !important;
-        -webkit-text-fill-color: #0f172a !important;
-        fill: #0f172a !important;
+    .st-key-china_modulos [data-testid="stHorizontalBlock"] {
+        gap: 0.2rem !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        padding: 2px 0 8px 0 !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
     }
-
-    .st-key-china_modulos button:hover,
-    .st-key-china_modulos [data-testid^="stBaseButton"]:hover {
-        background: #f8fafc !important;
-        border-color: #004ac1 !important;
-        color: #004ac1 !important;
+    .st-key-china_modulos [data-testid="stHorizontalBlock"]::-webkit-scrollbar {
+        display: none;
     }
-
-    .mod-detalle {
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: #64748b;
+    .st-key-china_modulos [data-testid="stColumn"] {
+        position: relative;
+        min-width: 64px;
+        flex: 1 1 0 !important;
+        padding: 0 2px !important;
+    }
+    .ccm-action {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        min-height: 96px;
+        padding: 4px 0 2px 0;
+        pointer-events: none;
+    }
+    .ccm-action-circle {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 1px solid #e8eef5;
+        box-shadow: 0 3px 10px rgba(15, 23, 42, 0.07);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .ccm-action-circle svg {
+        width: 24px;
+        height: 24px;
+        stroke: #004ac1;
+        fill: none;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .ccm-action-label {
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.2;
         text-align: center;
-        margin: 4px 0 12px 0;
-        line-height: 1.3;
+        max-width: 4.9rem;
+        letter-spacing: -0.01em;
+    }
+    .st-key-china_modulos .stButton {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        margin: 0 !important;
+    }
+    .st-key-china_modulos .stButton button,
+    .st-key-china_modulos [data-testid^="stBaseButton"],
+    .st-key-china_modulos div.stButton > button {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 96px !important;
+        max-height: none !important;
+        opacity: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        cursor: pointer !important;
+    }
+    .st-key-china_modulos [data-testid="stColumn"]:has(button:hover) .ccm-action-circle,
+    .st-key-china_modulos [data-testid="stColumn"]:has(button:focus-visible) .ccm-action-circle {
+        border-color: #004ac1;
+        box-shadow: 0 6px 16px rgba(0, 74, 193, 0.16);
+        transform: translateY(-1px);
+    }
+    .st-key-china_modulos [data-testid="stColumn"]:has(button:hover) .ccm-action-label {
+        color: #004ac1;
+    }
+    @media (max-width: 380px) {
+        .ccm-action-circle { width: 50px; height: 50px; }
+        .ccm-action-circle svg { width: 22px; height: 22px; }
+        .ccm-action-label { font-size: 0.62rem; max-width: 4.4rem; }
+        .st-key-china_modulos [data-testid="stColumn"] { min-width: 56px; }
     }
 </style>
 """,
@@ -3040,26 +3123,28 @@ elif st.session_state["rol"] == "cliente":
                 )
             else:
                 st.caption("Hay cotizaciones consolidadas. Envíos y Fichas están habilitados en este casillero.")
+            st.markdown('<div class="ccm-acciones-titulo">Menú de acciones</div>', unsafe_allow_html=True)
             with st.container(key="china_modulos"):
-                for fila in range(0, len(mods), 2):
-                    cols_mod = st.columns(2, gap="small")
-                    for offset, col in enumerate(cols_mod):
-                        if fila + offset >= len(mods):
-                            break
-                        modulo = mods[fila + offset]
+                if mods:
+                    cols_mod = st.columns(len(mods), gap="small")
+                    for col, modulo in zip(cols_mod, mods):
                         with col:
-                            texto = f"{modulo['icon']}  {modulo['label']}"
+                            st.html(
+                                f'<div class="ccm-action" style="display:flex;flex-direction:column;align-items:center;gap:8px;min-height:96px;padding:4px 0 2px;">'
+                                f'<div class="ccm-action-circle" style="width:56px;height:56px;border-radius:50%;background:#ffffff;border:1px solid #e8eef5;box-shadow:0 3px 10px rgba(15,23,42,0.07);display:flex;align-items:center;justify-content:center;">'
+                                f'{modulo["icon_svg"]}'
+                                f"</div>"
+                                f'<div class="ccm-action-label" style="font-size:0.68rem;font-weight:700;color:#0f172a;line-height:1.2;text-align:center;max-width:4.9rem;">{modulo["label"]}</div>'
+                                f"</div>"
+                            )
                             if st.button(
-                                texto,
+                                modulo["label"],
                                 type="secondary",
                                 key=modulo["btn_key"],
+                                help=modulo["detalle"],
                                 use_container_width=True,
                             ):
                                 ir_a(modulo["id"], hub="china")
-                            st.markdown(
-                                f'<div class="mod-detalle">{modulo["detalle"]}</div>',
-                                unsafe_allow_html=True,
-                            )
         elif hub_sel in HUBS:
             hub_vacio = HUBS[hub_sel]
             st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
