@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import hashlib
 import math
+import os
 import random
 import string
 from datetime import datetime, timezone, timedelta
@@ -91,6 +92,18 @@ def texto_vigencia_cotizacion(fecha_raw, ahora=None):
 
 
 def leer_config_moneda(clave, valor_default):
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT valor FROM config_sistema WHERE clave = ?", (clave,))
+            row = cur.fetchone()
+            if row and row[0] not in (None, ""):
+                try:
+                    return float(row[0])
+                except ValueError:
+                    return row[0]
+    except Exception:
+        pass
     try:
         seccion = st.secrets.get("moneda", {})
         if clave in seccion:
@@ -208,6 +221,19 @@ MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in h
 VISTAS_MODULO = set(MODULOS_POR_ID.keys())
 MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo")
 MODULOS_CHINA_BLOQUEADOS = ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+ROLES_ADMIN = ("admin", "superadmin")
+DNI_SUPERADMIN = "1301199800990"
+NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
+CORREO_SUPERADMIN = "domingo.ardon@ccm.hn"
+CLAVE_INICIAL_SUPERADMIN = "1301"
+HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
+MODULO_PERMISO_COL = {
+    "Cotizador": "mod_cotizador",
+    "Catálogo": "mod_catalogo",
+    "Mis Cotizaciones": "mod_cotizaciones",
+    "Mis Envíos": "mod_envios",
+    "Etiqueta": "mod_fichas",
+}
 
 
 def _limpiar_cotizacion_vencida_en_sesion(ahora):
@@ -254,20 +280,28 @@ def china_seguimiento_habilitado():
 
 def modulos_china_visibles():
     mods = HUBS["china"]["modulos"]
+    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
     if china_seguimiento_habilitado():
-        return mods
-    por_id = {m["id"]: m for m in mods}
-    return [por_id[mid] for mid in MODULOS_CHINA_INICIAL if mid in por_id]
+        return permitidos
+    iniciales = set(MODULOS_CHINA_INICIAL)
+    return [m for m in permitidos if m["id"] in iniciales]
 
 
 def ir_a(vista, hub="_omit"):
-    if vista in MODULOS_CHINA_BLOQUEADOS and not china_seguimiento_habilitado():
-        vista = "Cotizador"
-        hub = "china"
+    if vista in VISTAS_MODULO and not usuario_puede_modulo(vista):
+        vista = "Inicio"
+        hub = None
+    elif vista in MODULOS_CHINA_BLOQUEADOS and not china_seguimiento_habilitado():
+        vista = "Cotizador" if usuario_puede_modulo("Cotizador") else "Inicio"
+        hub = "china" if vista == "Cotizador" else None
     if hub != "_omit":
         st.session_state["hub"] = hub
     elif vista in MODULOS_POR_ID:
         st.session_state["hub"] = MODULOS_POR_ID[vista]
+    if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
+        st.session_state["hub"] = None
+        if vista != "Inicio":
+            vista = "Inicio"
     st.session_state["sub_tab_inicio"] = vista
     cas = formatear_casillero(st.session_state.get("casillero", ""))
     if cas:
@@ -629,6 +663,39 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
+        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('divisor_peso_volumetrico', 390.00)")
+        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('umbral_minimo_lb', 3.00)")
+        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('umbral_paqueteria_lb', 99.00)")
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS permisos_usuario (
+                codigo_casillero TEXT PRIMARY KEY,
+                hub_china INTEGER NOT NULL DEFAULT 1,
+                hub_eeuu INTEGER NOT NULL DEFAULT 0,
+                hub_honduras INTEGER NOT NULL DEFAULT 0,
+                mod_cotizador INTEGER NOT NULL DEFAULT 1,
+                mod_catalogo INTEGER NOT NULL DEFAULT 1,
+                mod_cotizaciones INTEGER NOT NULL DEFAULT 1,
+                mod_envios INTEGER NOT NULL DEFAULT 1,
+                mod_fichas INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS config_sistema (
+                clave TEXT PRIMARY KEY,
+                valor TEXT NOT NULL,
+                descripcion TEXT
+            )
+            """
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO config_sistema (clave, valor, descripcion) VALUES ('TASA_USD_HNL', '24.85', 'Tasa USD a lempira')"
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO config_sistema (clave, valor, descripcion) VALUES ('COMISION_CCM_PORCENTAJE', '0.10', 'Comisión CCM sobre FOB')"
+        )
 
         admin_pass = hash_pwd("admin123")
         c.execute(
@@ -654,7 +721,7 @@ def init_db():
                 telefono_principal, departamento, ciudad, direccion_exacta,
                 rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
             ) VALUES (
-                'CCM-13011998', 'María Elena López', '1301199800990', 'cliente@ccm.hn',
+                'CCM-15011985', 'María Elena López', '1501198500990', 'cliente@ccm.hn',
                 '+504 9577-1099', 'Intibucá', 'San Juan', 'Barrio El Centro, frente al parque',
                 'Cerámica & Acabados', 'Retiro en Bodega Central (San Juan, Intibucá)',
                 ?, 'cliente', 1, '2026-08-22 00:00:00'
@@ -662,10 +729,25 @@ def init_db():
             """,
             (demo_pass,),
         )
+        super_pass = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
+        c.execute(
+            """
+            INSERT OR IGNORE INTO usuarios (
+                codigo_casillero, nombre_completo, dni, correo_principal,
+                telefono_principal, departamento, ciudad, direccion_exacta,
+                password_hash, rol, activo, fecha_creacion
+            ) VALUES (
+                'CCM-13011998', 'Domingo Heriberto Ardon', '1301199800990', 'domingo.ardon@ccm.hn',
+                '+504 9577-1099', 'Intibucá', 'San Juan', 'Oficina Central CCM',
+                ?, 'superadmin', 1, '2026-08-22 00:00:00'
+            )
+            """,
+            (super_pass,),
+        )
         c.execute(
             """
             INSERT OR IGNORE INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
-            VALUES ('CN-GZ-88421', 'CCM-13011998', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
+            VALUES ('CN-GZ-88421', 'CCM-15011985', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
             """
         )
 
@@ -684,7 +766,33 @@ def get_tarifa(clave):
 def set_tarifa(clave, valor):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
+        c.execute(
+            "INSERT INTO config_maritima (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (clave, valor),
+        )
+
+
+def get_config_sistema(clave, valor_default=""):
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT valor FROM config_sistema WHERE clave = ?", (clave,))
+            row = c.fetchone()
+            return row[0] if row else valor_default
+    except Exception:
+        return valor_default
+
+
+def set_config_sistema(clave, valor, descripcion=""):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO config_sistema (clave, valor, descripcion) VALUES (?, ?, ?)
+            ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, descripcion = COALESCE(excluded.descripcion, config_sistema.descripcion)
+            """,
+            (clave, str(valor), descripcion),
+        )
 
 
 PREFIJO_CASILLERO = "CCM-"
@@ -734,6 +842,256 @@ def coincidencias_casillero(valor):
     return vistos
 
 
+def es_rol_admin(rol=None):
+    return (rol if rol is not None else st.session_state.get("rol")) in ROLES_ADMIN
+
+
+def es_superadmin(rol=None):
+    return (rol if rol is not None else st.session_state.get("rol")) == "superadmin"
+
+
+def permisos_default(rol="cliente"):
+    if rol in ROLES_ADMIN:
+        return {
+            "hub_china": 1,
+            "hub_eeuu": 1,
+            "hub_honduras": 1,
+            "mod_cotizador": 1,
+            "mod_catalogo": 1,
+            "mod_cotizaciones": 1,
+            "mod_envios": 1,
+            "mod_fichas": 1,
+        }
+    return {
+        "hub_china": 1,
+        "hub_eeuu": 0,
+        "hub_honduras": 0,
+        "mod_cotizador": 1,
+        "mod_catalogo": 1,
+        "mod_cotizaciones": 1,
+        "mod_envios": 1,
+        "mod_fichas": 1,
+    }
+
+
+def asegurar_permisos_casillero(casillero, rol="cliente"):
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return
+    vals = permisos_default(rol)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT OR IGNORE INTO permisos_usuario (
+                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cas,
+                vals["hub_china"],
+                vals["hub_eeuu"],
+                vals["hub_honduras"],
+                vals["mod_cotizador"],
+                vals["mod_catalogo"],
+                vals["mod_cotizaciones"],
+                vals["mod_envios"],
+                vals["mod_fichas"],
+            ),
+        )
+
+
+def permisos_de(casillero=None):
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
+    base = permisos_default(st.session_state.get("rol", "cliente"))
+    if not cas:
+        return base
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT hub_china, hub_eeuu, hub_honduras, mod_cotizador, mod_catalogo,
+                       mod_cotizaciones, mod_envios, mod_fichas
+                FROM permisos_usuario WHERE codigo_casillero = ?
+                """,
+                (cas,),
+            )
+            row = c.fetchone()
+        if not row:
+            asegurar_permisos_casillero(cas, st.session_state.get("rol", "cliente"))
+            return permisos_default(st.session_state.get("rol", "cliente"))
+        claves = (
+            "hub_china",
+            "hub_eeuu",
+            "hub_honduras",
+            "mod_cotizador",
+            "mod_catalogo",
+            "mod_cotizaciones",
+            "mod_envios",
+            "mod_fichas",
+        )
+        return dict(zip(claves, [int(v or 0) for v in row]))
+    except Exception:
+        return base
+
+
+def usuario_puede_hub(hub_id, casillero=None):
+    col = HUB_PERMISO_COL.get(hub_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
+
+
+def usuario_puede_modulo(mod_id, casillero=None):
+    col = MODULO_PERMISO_COL.get(mod_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
+
+
+def guardar_permisos(casillero, datos):
+    cas = formatear_casillero(casillero)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO permisos_usuario (
+                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(codigo_casillero) DO UPDATE SET
+                hub_china = excluded.hub_china,
+                hub_eeuu = excluded.hub_eeuu,
+                hub_honduras = excluded.hub_honduras,
+                mod_cotizador = excluded.mod_cotizador,
+                mod_catalogo = excluded.mod_catalogo,
+                mod_cotizaciones = excluded.mod_cotizaciones,
+                mod_envios = excluded.mod_envios,
+                mod_fichas = excluded.mod_fichas
+            """,
+            (
+                cas,
+                int(datos.get("hub_china", 0)),
+                int(datos.get("hub_eeuu", 0)),
+                int(datos.get("hub_honduras", 0)),
+                int(datos.get("mod_cotizador", 0)),
+                int(datos.get("mod_catalogo", 0)),
+                int(datos.get("mod_cotizaciones", 0)),
+                int(datos.get("mod_envios", 0)),
+                int(datos.get("mod_fichas", 0)),
+            ),
+        )
+
+
+def _migrar_casillero_tablas(conn, origen, destino):
+    for tabla in ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo", "permisos_usuario"):
+        try:
+            conn.execute(
+                f"UPDATE {tabla} SET codigo_casillero = ? WHERE codigo_casillero = ?",
+                (destino, origen),
+            )
+        except sqlite3.IntegrityError:
+            if tabla == "permisos_usuario":
+                conn.execute("DELETE FROM permisos_usuario WHERE codigo_casillero = ?", (origen,))
+
+
+def asegurar_superadmin():
+    cas_root = generar_codigo_casillero_dni(DNI_SUPERADMIN)
+    hash_root = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, codigo_casillero, correo_principal, rol FROM usuarios WHERE dni = ? OR codigo_casillero = ?",
+            (DNI_SUPERADMIN, cas_root),
+        )
+        ocupantes = c.fetchall()
+        for uid, cas_old, correo, rol in ocupantes:
+            if rol == "superadmin" or correo == CORREO_SUPERADMIN:
+                continue
+            nuevo_dni = "1501198500990"
+            nuevo_cas = generar_codigo_casillero_dni(nuevo_dni)
+            c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo_cas, uid))
+            if c.fetchone():
+                nuevo_cas = f"CCM-1501{str(uid).zfill(4)}"
+            _migrar_casillero_tablas(conn, cas_old, nuevo_cas)
+            c.execute(
+                "UPDATE usuarios SET dni = ?, codigo_casillero = ? WHERE id = ?",
+                (nuevo_dni, nuevo_cas, uid),
+            )
+
+        c.execute(
+            "SELECT id FROM usuarios WHERE rol = 'superadmin' OR correo_principal = ? OR dni = ?",
+            (CORREO_SUPERADMIN, DNI_SUPERADMIN),
+        )
+        existente = c.fetchone()
+        if existente:
+            c.execute(
+                """
+                UPDATE usuarios SET nombre_completo = ?, dni = ?, codigo_casillero = ?,
+                    correo_principal = ?, password_hash = ?, rol = 'superadmin', activo = 1
+                WHERE id = ?
+                """,
+                (NOMBRE_SUPERADMIN, DNI_SUPERADMIN, cas_root, CORREO_SUPERADMIN, hash_root, existente[0]),
+            )
+        else:
+            c.execute(
+                """
+                INSERT INTO usuarios (
+                    codigo_casillero, nombre_completo, dni, correo_principal,
+                    telefono_principal, departamento, ciudad, direccion_exacta,
+                    password_hash, rol, activo, fecha_creacion
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'superadmin', 1, ?)
+                """,
+                (
+                    cas_root,
+                    NOMBRE_SUPERADMIN,
+                    DNI_SUPERADMIN,
+                    CORREO_SUPERADMIN,
+                    "+504 9577-1099",
+                    "Intibucá",
+                    "San Juan",
+                    "Oficina Central CCM",
+                    hash_root,
+                    obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+        c.execute("SELECT codigo_casillero, rol FROM usuarios")
+        cuentas = c.fetchall()
+        for cas, rol in cuentas:
+            vals = permisos_default(rol)
+            c.execute(
+                """
+                INSERT OR IGNORE INTO permisos_usuario (
+                    codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                    mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cas,
+                    vals["hub_china"],
+                    vals["hub_eeuu"],
+                    vals["hub_honduras"],
+                    vals["mod_cotizador"],
+                    vals["mod_catalogo"],
+                    vals["mod_cotizaciones"],
+                    vals["mod_envios"],
+                    vals["mod_fichas"],
+                ),
+            )
+            if rol in ROLES_ADMIN:
+                c.execute(
+                    """
+                    UPDATE permisos_usuario SET hub_china=1, hub_eeuu=1, hub_honduras=1,
+                        mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+                    WHERE codigo_casillero = ?
+                    """,
+                    (cas,),
+                )
+        conn.commit()
+
+
 def migrar_prefijo_casillero():
     tablas_hijas = ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo")
     with get_db() as conn:
@@ -746,11 +1104,7 @@ def migrar_prefijo_casillero():
                 continue
             c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo, uid))
             destino_existe = c.fetchone() is not None
-            for tabla in tablas_hijas:
-                c.execute(
-                    f"UPDATE {tabla} SET codigo_casillero = ? WHERE codigo_casillero = ?",
-                    (nuevo, codigo),
-                )
+            _migrar_casillero_tablas(conn, codigo, nuevo)
             if destino_existe:
                 continue
             c.execute("UPDATE usuarios SET codigo_casillero = ? WHERE id = ?", (nuevo, uid))
@@ -758,6 +1112,7 @@ def migrar_prefijo_casillero():
 
 
 migrar_prefijo_casillero()
+asegurar_superadmin()
 
 
 def generar_clave_provisional():
@@ -828,7 +1183,7 @@ def limites_dimensiones(unidad_medida, comercial=False):
 
 def limites_peso(unidad_peso, paqueteria):
     if paqueteria:
-        max_lb = PESO_MAX_PAQUETERIA_LB
+        max_lb = float(get_tarifa("umbral_paqueteria_lb") or PESO_MAX_PAQUETERIA_LB)
         default_lb = 4.0
         min_lb = 0.5
         step_lb = 0.5
@@ -899,12 +1254,16 @@ def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad
     peso_total_lb = peso_total_kg * 2.20462
     vol_total_m3 = vol_m3 * cantidad
 
-    if peso_total_lb <= 3.0:
+    umbral_min = float(get_tarifa("umbral_minimo_lb") or 3.0)
+    umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
+    divisor = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
+
+    if peso_total_lb <= umbral_min:
         flete_usd = min_usd
-    elif peso_total_lb <= 99.0:
+    elif peso_total_lb <= umbral_paq:
         flete_usd = peso_total_lb * t_lb
     else:
-        vol_peso = peso_total_kg / 390.0
+        vol_peso = peso_total_kg / divisor
         cbm_facturable = max(vol_total_m3, vol_peso)
         flete_usd = cbm_facturable * t_m3
 
@@ -2075,7 +2434,7 @@ if not st.session_state["autenticado"]:
 
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
         u_ident = st.text_input(
-            "Número de casillero o correo",
+            "Casillero, DNI o correo",
             placeholder="Ej: CCM-13011998 o correo@gmail.com",
             key="log_cas",
         )
@@ -2093,9 +2452,9 @@ if not st.session_state["autenticado"]:
                         f"""
                         SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad
                         FROM usuarios
-                        WHERE (correo_principal = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
+                        WHERE (correo_principal = ? OR dni = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
                         """,
-                        (u_ident, *claves, p_hash),
+                        (u_ident, u_ident, *claves, p_hash),
                     )
                     user = c.fetchone()
 
@@ -2290,6 +2649,7 @@ if not st.session_state["autenticado"]:
                                 ),
                             )
                             conn.commit()
+                            asegurar_permisos_casillero(n_cod, "cliente")
                             st.session_state["reg_exito"] = {
                                 "nombre": d["nom"],
                                 "correo": d["cor"],
@@ -2328,6 +2688,20 @@ if not st.session_state["autenticado"]:
 # 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
+    if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
+        st.session_state["hub"] = None
+        st.session_state["sub_tab_inicio"] = "Inicio"
+        st.query_params["vista"] = "Inicio"
+        if "hub" in st.query_params:
+            del st.query_params["hub"]
+        st.rerun()
+    if st.session_state.get("sub_tab_inicio") in VISTAS_MODULO and not usuario_puede_modulo(
+        st.session_state["sub_tab_inicio"]
+    ):
+        st.session_state["sub_tab_inicio"] = "Inicio"
+        st.session_state["hub"] = None
+        st.query_params["vista"] = "Inicio"
+        st.rerun()
     if (
         st.session_state.get("sub_tab_inicio") in MODULOS_CHINA_BLOQUEADOS
         and not china_seguimiento_habilitado()
@@ -2473,7 +2847,12 @@ elif st.session_state["rol"] == "cliente":
         if not hub_sel:
             st.markdown("#### 🏠 Inicio")
             st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+            visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
+            if not visibles_hub:
+                st.info("Su cuenta no tiene hubs habilitados. Contacte al administrador.")
             for hub_id, hub in HUBS.items():
+                if not usuario_puede_hub(hub_id):
+                    continue
                 if st.button(
                     f"{hub['icon']}  {hub['label']}",
                     type="secondary",
@@ -2758,11 +3137,14 @@ elif st.session_state["rol"] == "cliente":
         t_lb = get_tarifa("tarifa_libra")
         t_m3 = get_tarifa("tarifa_m3")
         min_usd = get_tarifa("minimo_cobro_usd")
+        umbral_min = float(get_tarifa("umbral_minimo_lb") or 3.0)
+        umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
+        divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
 
         tipo_carga = st.selectbox(
             "Modalidad de Importación:",
             [
-                "📦 Paquetería Menor (1 a 99 lbs)",
+                f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
                 "🚢 Carga Comercial por CBM (hasta contenedor 40')",
             ],
             index=0,
@@ -2790,7 +3172,7 @@ elif st.session_state["rol"] == "cliente":
             f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
             f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
             f"({peso_max_contenedor_hn_lb():,.0f} lb)."
-            + (" En paquetería menor el peso no puede superar 99 lb." if es_paqueteria else "")
+            + (f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb." if es_paqueteria else "")
         )
 
         st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
@@ -2862,9 +3244,9 @@ elif st.session_state["rol"] == "cliente":
         vol_ft3_val = vol_m3_val * 35.3147
 
         if es_paqueteria:
-            if pe_lb <= 3.0:
+            if pe_lb <= umbral_min:
                 tot = min_usd
-                desc = f"Tarifa Mínima Base (1 a 3 lbs): ${min_usd:.2f} USD"
+                desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
             else:
                 tot = pe_lb * t_lb
                 desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
@@ -2878,11 +3260,11 @@ elif st.session_state["rol"] == "cliente":
             with m3:
                 st.metric("Total Estimado", f"${tot:.2f} USD")
 
-            modalidad_pdf = "Paquetería Menor (1 a 99 lbs)"
+            modalidad_pdf = f"Paquetería Menor (1 a {umbral_paq:.0f} lbs)"
             detalle_pdf = desc
 
         else:
-            vol_m3_peso = pe_kg / 390.0
+            vol_m3_peso = pe_kg / divisor_vol
             cbm_facturable = max(vol_m3_val, vol_m3_peso)
             tot = cbm_facturable * t_m3
 
@@ -3094,37 +3476,221 @@ elif st.session_state["rol"] == "cliente":
         )
 
 # ---------------------------------------------------------
-# 9. PANEL ADMINISTRATIVO
+# 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
 # ---------------------------------------------------------
-elif st.session_state["rol"] == "admin":
-    st.markdown("## 🛠️ Panel Maestro — Administrador")
-    tab_u, tab_p, tab_t = st.tabs(["👥 Directorio de Clientes", "📦 Registrar Paquetes", "⚙️ Tarifas"])
+elif es_rol_admin():
+    root = es_superadmin()
+    st.markdown(
+        """
+        <style>
+            :root { --app-max-width: 920px; }
+            .block-container { max-width: 920px !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    titulo = "Panel de Superadministrador" if root else "Panel Administrativo"
+    st.markdown(
+        f"""
+        <div class="app-header-blue" style="margin-bottom:12px;">
+            <div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>
+            <h3 class="app-greeting-title">{titulo}</h3>
+            <div class="app-greeting-sub">{st.session_state.get("nombre", "")} • {st.session_state.get("usuario", "")}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_u, tab_p, tab_t, tab_s = st.tabs(
+        ["👥 Usuarios y permisos", "📦 Paquetes", "⚙️ Tarifas y fórmulas", "🗄️ Sistema"]
+    )
 
     with tab_u:
         with get_db() as conn:
             c = conn.cursor()
-            c.execute(
-                "SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal, ciudad FROM usuarios WHERE rol = 'cliente'"
-            )
-            filas = c.fetchall()
-            if filas:
-                st.dataframe(
-                    {
-                        "Casillero": [formatear_casillero(r[0]) for r in filas],
-                        "Nombre": [r[1] for r in filas],
-                        "Correo": [r[2] for r in filas],
-                        "Teléfono": [r[3] for r in filas],
-                        "Ciudad": [r[4] for r in filas],
-                    },
-                    use_container_width=True,
-                    hide_index=True,
+            if root:
+                c.execute(
+                    """
+                    SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
+                           departamento, ciudad, direccion_exacta, rol, activo
+                    FROM usuarios ORDER BY rol DESC, nombre_completo
+                    """
                 )
             else:
-                st.info("Aún no hay clientes registrados.")
+                c.execute(
+                    """
+                    SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
+                           departamento, ciudad, direccion_exacta, rol, activo
+                    FROM usuarios WHERE rol = 'cliente' ORDER BY nombre_completo
+                    """
+                )
+            filas = c.fetchall()
+
+        if filas:
+            st.dataframe(
+                {
+                    "Casillero": [formatear_casillero(r[1]) for r in filas],
+                    "Nombre": [r[2] for r in filas],
+                    "DNI": [r[3] for r in filas],
+                    "Correo": [r[4] for r in filas],
+                    "Teléfono": [r[5] for r in filas],
+                    "Rol": [r[9] for r in filas],
+                    "Activo": ["Sí" if r[10] else "No" for r in filas],
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No hay cuentas para mostrar.")
+
+        etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
+        if etiquetas:
+            elegido = st.selectbox("Cuenta a gestionar", etiquetas, key="admin_sel_user")
+            idx = etiquetas.index(elegido)
+            u = filas[idx]
+            uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = u
+            perm = permisos_de(cas_u)
+
+            st.markdown("#### Perfil y casillero")
+            n_nom = st.text_input("Nombre completo", value=nom_u, key=f"adm_nom_{cas_u}")
+            n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
+            n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
+            n_tel = st.text_input("Teléfono", value=tel_u, key=f"adm_tel_{cas_u}")
+            n_dep = st.selectbox(
+                "Departamento",
+                list(MUNICIPIOS_HONDURAS.keys()),
+                index=list(MUNICIPIOS_HONDURAS.keys()).index(dep_u) if dep_u in MUNICIPIOS_HONDURAS else 0,
+                key=f"adm_dep_{cas_u}",
+            )
+            munis = MUNICIPIOS_HONDURAS[n_dep]
+            n_ciu = st.selectbox(
+                "Ciudad",
+                munis,
+                index=munis.index(ciu_u) if ciu_u in munis else 0,
+                key=f"adm_ciu_{cas_u}",
+            )
+            n_dir = st.text_area("Dirección", value=dir_u or "", key=f"adm_dir_{cas_u}")
+            n_cas = st.text_input("Casillero", value=formatear_casillero(cas_u), key=f"adm_cas_{cas_u}")
+            n_act = st.checkbox("Cuenta activa", value=bool(act_u), key=f"adm_act_{cas_u}")
+            roles_disp = ["cliente", "admin"]
+            if root:
+                roles_disp = ["cliente", "admin", "superadmin"]
+            n_rol = st.selectbox(
+                "Rol",
+                roles_disp,
+                index=roles_disp.index(rol_u) if rol_u in roles_disp else 0,
+                key=f"adm_rol_{cas_u}",
+                disabled=(rol_u == "superadmin" and not root),
+            )
+
+            st.markdown("#### Hubs y módulos (impacto inmediato en el cliente)")
+            p_china = st.checkbox("Hub China", value=bool(perm.get("hub_china")), key=f"adm_h_cn_{cas_u}")
+            p_eeuu = st.checkbox("Hub EE. UU.", value=bool(perm.get("hub_eeuu")), key=f"adm_h_us_{cas_u}")
+            p_hn = st.checkbox("Hub Honduras", value=bool(perm.get("hub_honduras")), key=f"adm_h_hn_{cas_u}")
+            p_cot = st.checkbox("Módulo Cotizador", value=bool(perm.get("mod_cotizador")), key=f"adm_m_cot_{cas_u}")
+            p_cat = st.checkbox("Módulo Catálogo", value=bool(perm.get("mod_catalogo")), key=f"adm_m_cat_{cas_u}")
+            p_hist = st.checkbox("Módulo Mis Cotizaciones", value=bool(perm.get("mod_cotizaciones")), key=f"adm_m_hist_{cas_u}")
+            p_env = st.checkbox("Módulo Envíos", value=bool(perm.get("mod_envios")), key=f"adm_m_env_{cas_u}")
+            p_fic = st.checkbox("Módulo Fichas", value=bool(perm.get("mod_fichas")), key=f"adm_m_fic_{cas_u}")
+
+            if st.button("Guardar perfil y permisos", type="primary", key="adm_save_user"):
+                nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
+                if rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
+                    st.error("Solo el superadministrador puede alterar la cuenta raíz.")
+                else:
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        if nuevo_cas != formatear_casillero(cas_u):
+                            _migrar_casillero_tablas(conn, cas_u, nuevo_cas)
+                        cur.execute(
+                            """
+                            UPDATE usuarios SET nombre_completo=?, dni=?, correo_principal=?, telefono_principal=?,
+                                departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
+                            WHERE id=?
+                            """,
+                            (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, 1 if n_act else 0, uid),
+                        )
+                    guardar_permisos(
+                        nuevo_cas,
+                        {
+                            "hub_china": p_china,
+                            "hub_eeuu": p_eeuu,
+                            "hub_honduras": p_hn,
+                            "mod_cotizador": p_cot,
+                            "mod_catalogo": p_cat,
+                            "mod_cotizaciones": p_hist,
+                            "mod_envios": p_env,
+                            "mod_fichas": p_fic,
+                        },
+                    )
+                    st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
+                    st.rerun()
+
+            nueva_clave = st.text_input("Nueva contraseña (opcional)", type="password", key=f"adm_new_pwd_{cas_u}")
+            if st.button("Restablecer credenciales", key="adm_reset_pwd"):
+                clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
+                with get_db() as conn:
+                    conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(clave), uid))
+                st.success(f"Contraseña actualizada (hash SHA-256). Clave temporal: **{clave}**")
+
+            if rol_u != "superadmin" and st.button("Eliminar cuenta", key="adm_del_user"):
+                with get_db() as conn:
+                    cur = conn.cursor()
+                    for tabla in ("permisos_usuario", "direcciones_entrega", "carrito_catalogo", "cotizaciones", "paquetes"):
+                        cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
+                    cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
+                st.success("Cuenta eliminada.")
+                st.rerun()
+
+        with st.expander("➕ Crear cuenta"):
+            c_nom = st.text_input("Nombre *", key="new_nom")
+            c_dni = st.text_input("DNI *", key="new_dni")
+            c_cor = st.text_input("Correo *", key="new_cor")
+            c_tel = st.text_input("Teléfono *", key="new_tel")
+            c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
+            c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
+            c_dir = st.text_input("Dirección", key="new_dir")
+            c_pwd = st.text_input("Contraseña inicial", type="password", key="new_pwd")
+            c_rol = st.selectbox("Rol", ["cliente", "admin"] if root else ["cliente"], key="new_rol")
+            if st.button("Crear usuario", type="primary", key="adm_create_user"):
+                if not (c_nom and c_dni and c_cor and c_tel):
+                    st.warning("Complete los campos obligatorios.")
+                else:
+                    n_cod = generar_codigo_casillero_dni(c_dni)
+                    n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
+                    try:
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            cur.execute(
+                                """
+                                INSERT INTO usuarios (
+                                    codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
+                                    departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                                """,
+                                (
+                                    n_cod,
+                                    c_nom,
+                                    c_dni,
+                                    c_cor,
+                                    c_tel,
+                                    c_dep,
+                                    c_ciu,
+                                    c_dir or "San Juan, Intibucá",
+                                    hash_pwd(n_pwd),
+                                    c_rol,
+                                    obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
+                                ),
+                            )
+                        asegurar_permisos_casillero(n_cod, c_rol)
+                        st.success(f"Cuenta creada. Casillero `{n_cod}` • Contraseña `{n_pwd}`")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Ya existe un casillero o correo con esos datos.")
 
     with tab_p:
         t_in = st.text_input("Tracking de China")
-        c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-13011998 o DNI del cliente")
+        c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-15011985 o DNI del cliente")
         d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
         cont_in = st.text_input("ID de contenedor", placeholder="Ej: CCM-CNT-014")
         e_in = st.selectbox(
@@ -3161,15 +3727,76 @@ elif st.session_state["rol"] == "admin":
                 st.warning("Ingrese tracking y casillero.")
 
     with tab_t:
-        st.markdown("#### Tarifas marítimas vigentes")
-        n_lb = st.number_input("Tarifa por libra (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra")), step=0.05)
-        n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3")), step=1.0)
-        n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd")), step=0.50)
-        if st.button("Guardar tarifas", type="primary"):
+        st.markdown("#### Tarifas y constantes del cotizador")
+        n_lb = st.number_input("Tarifa por libra (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
+        n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
+        n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd") or 10), step=0.50)
+        n_umin = st.number_input("Umbral tarifa mínima (lb)", min_value=0.1, value=float(get_tarifa("umbral_minimo_lb") or 3), step=0.5)
+        n_upaq = st.number_input("Tope paquetería (lb)", min_value=1.0, value=float(get_tarifa("umbral_paqueteria_lb") or 99), step=1.0)
+        n_div = st.number_input("Divisor peso volumétrico (kg/CBM)", min_value=1.0, value=float(get_tarifa("divisor_peso_volumetrico") or 390), step=1.0)
+        n_tasa = st.number_input("Tasa USD/HNL", min_value=0.01, value=float(leer_config_moneda("TASA_USD_HNL", 24.85)), step=0.01)
+        n_com = st.number_input("Comisión CCM (0-1)", min_value=0.0, max_value=1.0, value=float(leer_config_moneda("COMISION_CCM_PORCENTAJE", 0.10)), step=0.01)
+        if st.button("Guardar tarifas y fórmulas", type="primary"):
             set_tarifa("tarifa_libra", n_lb)
             set_tarifa("tarifa_m3", n_m3)
             set_tarifa("minimo_cobro_usd", n_min)
-            st.success("Tarifas actualizadas.")
+            set_tarifa("umbral_minimo_lb", n_umin)
+            set_tarifa("umbral_paqueteria_lb", n_upaq)
+            set_tarifa("divisor_peso_volumetrico", n_div)
+            set_config_sistema("TASA_USD_HNL", n_tasa, "Tasa USD a lempira")
+            set_config_sistema("COMISION_CCM_PORCENTAJE", n_com, "Comisión CCM sobre FOB")
+            st.success("Parámetros globales actualizados.")
 
-    if st.button("Cerrar Sesión Admin", type="secondary"):
+    with tab_s:
+        st.markdown("#### Mantenimiento de base de datos")
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            tablas = [r[0] for r in c.fetchall()]
+            conteos = {}
+            for t in tablas:
+                c.execute(f"SELECT COUNT(*) FROM {t}")
+                conteos[t] = c.fetchone()[0]
+        st.dataframe(
+            {"Tabla": list(conteos.keys()), "Registros": list(conteos.values())},
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("#### Variables de entorno y configuración")
+        env_keys = sorted(k for k in os.environ if k.startswith(("STREAMLIT_", "CCM_")) or k in ("PORT", "HOSTNAME", "HOME"))
+        if env_keys:
+            st.dataframe(
+                {"Variable": env_keys, "Valor": [os.environ.get(k, "") for k in env_keys]},
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("No hay variables STREAMLIT_/CCM_ en el entorno del proceso.")
+
+        with get_db() as conn:
+            filas_cfg = conn.execute("SELECT clave, valor, descripcion FROM config_sistema ORDER BY clave").fetchall()
+        st.markdown("##### config_sistema (prioridad sobre secrets.toml)")
+        for clave, valor, desc in filas_cfg:
+            nv = st.text_input(f"{clave}", value=str(valor), help=desc or "", key=f"sys_{clave}")
+            if nv != str(valor) and st.button(f"Guardar {clave}", key=f"save_sys_{clave}"):
+                set_config_sistema(clave, nv, desc or "")
+                st.success(f"{clave} actualizado.")
+                st.rerun()
+
+        nclave = st.text_input("Nueva clave de sistema", key="sys_new_k")
+        nvalor = st.text_input("Valor", key="sys_new_v")
+        ndesc = st.text_input("Descripción", key="sys_new_d")
+        if st.button("Agregar variable de sistema", key="sys_add"):
+            if nclave:
+                set_config_sistema(nclave, nvalor, ndesc)
+                st.success("Variable agregada.")
+                st.rerun()
+
+    if st.button("Cerrar sesión", type="secondary", key="btn_logout_admin"):
+        logout()
+
+else:
+    st.error("Rol no reconocido. Inicie sesión de nuevo.")
+    if st.button("Volver al login"):
         logout()
