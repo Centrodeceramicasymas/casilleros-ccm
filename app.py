@@ -1191,7 +1191,11 @@ st.markdown(
     }
     .st-key-delivery_select {
         background: transparent !important;
-        margin: 0 !important;
+        margin: 0 0 14px 0 !important;
+        padding: 0 !important;
+    }
+    .st-key-delivery_select [data-testid="stWidgetLabel"] {
+        margin-bottom: 4px !important;
     }
     .st-key-delivery_select div[data-baseweb="select"] > div,
     .app-delivery-select div[data-baseweb="select"] > div {
@@ -1344,38 +1348,44 @@ st.markdown(
     .app-banner-card {
         background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
         border: 1px solid #bfdbfe;
-        border-radius: 16px;
-        padding: 18px;
+        border-radius: 14px;
+        padding: 14px 16px;
         color: #0f172a;
-        margin-top: 0.5rem;
-        margin-bottom: 1.2rem;
+        margin: 0.35rem auto 1rem auto;
+        max-width: 34rem;
+        width: 100%;
+        box-sizing: border-box;
+        text-align: center;
         box-shadow: 0 4px 12px rgba(0, 74, 193, 0.08);
     }
     .app-banner-title {
-        font-size: 1.1rem;
+        font-size: clamp(0.92rem, 3.6cqi, 1.08rem);
         font-weight: 800;
-        line-height: 1.3;
-        margin-bottom: 6px;
+        line-height: 1.35;
+        margin: 0 auto 6px auto;
         color: #0f172a;
+        max-width: 28rem;
     }
     .app-banner-accent {
         color: #004ac1;
     }
     .app-banner-sub {
-        font-size: 0.78rem;
+        font-size: clamp(0.78rem, 3cqi, 0.88rem);
         color: #475569;
         font-weight: 500;
         line-height: 1.45;
+        margin: 0 auto;
+        max-width: 28rem;
     }
     .app-banner-tag {
         background: #ec4899;
         color: #ffffff;
         font-size: 0.72rem;
         font-weight: 800;
-        padding: 3px 8px;
+        padding: 3px 10px;
         border-radius: 6px;
         display: inline-block;
-        margin-bottom: 8px;
+        margin: 0 auto 8px auto;
     }
 
     .card-box {
@@ -2036,20 +2046,20 @@ elif st.session_state["rol"] == "cliente":
                     unsafe_allow_html=True,
                 )
 
-        if st.session_state["sub_tab_inicio"] == "Cotizador":
-            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-            with st.container(key="delivery_select"):
-                mod_elegida = st.selectbox(
-                    "🏪 ¿Cómo deseas recibir tu compra?",
-                    opciones_modalidad,
-                    index=idx_mod,
-                    label_visibility="visible",
-                    key="sb_modalidad_header",
-                )
-            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-                st.session_state.pop("datos_pdf_confirmado", None)
-                st.rerun()
+    if st.session_state["sub_tab_inicio"] == "Cotizador":
+        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+        with st.container(key="delivery_select"):
+            mod_elegida = st.selectbox(
+                "🏪 ¿Cómo deseas recibir tu compra?",
+                opciones_modalidad,
+                index=idx_mod,
+                label_visibility="visible",
+                key="sb_modalidad_header",
+            )
+        if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+            st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+            st.session_state.pop("datos_pdf_confirmado", None)
+            st.rerun()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
