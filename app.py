@@ -582,7 +582,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON BOTONES UNIFORMES
+# 6. ESTILOS CSS REFINADOS CON BOTONES UNIFORMES Y HOMOGÉNEOS
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -699,21 +699,21 @@ st.markdown("""
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 115px !important;
-        width: 115px !important;
-        min-width: 115px !important;
-        max-width: 115px !important;
+        flex: 0 0 120px !important;
+        width: 120px !important;
+        min-width: 120px !important;
+        max-width: 120px !important;
     }
 
-    /* BOTONES DE LA BARRA DE NAVEGACIÓN */
+    /* BOTONES DE LA BARRA DE NAVEGACIÓN — UNIFORMES Y CON TEXTO NEGRO */
     .st-key-nav_scroll div.stButton > button {
-        width: 115px !important;
-        min-width: 115px !important;
+        width: 120px !important;
+        min-width: 120px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
         border-radius: 10px !important;
-        padding: 0 6px !important;
+        padding: 0 8px !important;
         font-size: 0.76rem !important;
         font-weight: 700 !important;
         white-space: nowrap !important;
@@ -837,7 +837,7 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* BOTONES GENERALES */
+    /* BOTONES UNIFORMES Y ESTÉTICOS EN BLANCO CON TEXTO EN NEGRO */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         height: 44px !important;
@@ -867,12 +867,12 @@ st.markdown("""
 
     div.stButton > button[kind="secondary"] {
         background: #ffffff !important;
-        color: #1e293b !important;
-        border: 1.5px solid #e2e8f0 !important;
+        color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
     }
     div.stButton > button[kind="secondary"] * {
-        color: #1e293b !important;
+        color: #0f172a !important;
     }
     div.stButton > button[kind="secondary"]:hover {
         background-color: #f8fafc !important;
