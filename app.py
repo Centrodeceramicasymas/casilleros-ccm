@@ -6,11 +6,7 @@ import random
 import string
 from datetime import datetime, timezone, timedelta
 import io
-import os
-import base64
-import math
 import urllib.parse
-import requests
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
@@ -27,8 +23,20 @@ LOGO_FILENAME = "logo centro y mas.jpg"
 
 ZONA_HONDURAS = timezone(timedelta(hours=-6))
 
+
 def obtener_tiempo_honduras():
     return datetime.now(ZONA_HONDURAS)
+
+
+def leer_config_moneda(clave, valor_default):
+    try:
+        seccion = st.secrets.get("moneda", {})
+        if clave in seccion:
+            return seccion[clave]
+        return seccion.get(clave, valor_default)
+    except Exception:
+        return valor_default
+
 
 OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
 
@@ -65,43 +73,60 @@ if "sub_tab_inicio" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
 def compilar_pdf_simple(stream_content):
-    stream_bytes = stream_content.encode('latin-1', 'replace')
+    stream_bytes = stream_content.encode("latin-1", "replace")
     stream_len = len(stream_bytes)
-    
+
     pdf_buffer = io.BytesIO()
     pdf_buffer.write(b"%PDF-1.4\n")
     offsets = []
-    
+
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-    
+
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-    
+
     offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
-    
+    pdf_buffer.write(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+    )
+
     offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode('latin-1'))
+    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode("latin-1"))
     pdf_buffer.write(stream_bytes)
     pdf_buffer.write(b"\nendstream\nendobj\n")
-    
+
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
-    
+
     xref_offset = pdf_buffer.tell()
     pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
     for off in offsets:
-        pdf_buffer.write(f"{off:010d} 00000 n \n".encode('latin-1'))
-        
-    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode('latin-1'))
+        pdf_buffer.write(f"{off:010d} 00000 n \n".encode("latin-1"))
+
+    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("latin-1"))
     return pdf_buffer.getvalue()
 
-def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Retirar en Almacén", fecha_emision=None):
+
+def generar_pdf_etiqueta_proveedor(
+    casillero,
+    nombre,
+    telefono,
+    ciudad,
+    al=0.0,
+    an=0.0,
+    la=0.0,
+    pe_lb=0.0,
+    pe_kg=0.0,
+    vol_m3=0.0,
+    destino_entrega="Retirar en Almacén",
+    fecha_emision=None,
+):
     dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
     peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
     vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
@@ -168,7 +193,26 @@ def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, 
 ET"""
     return compilar_pdf_simple(stream)
 
-def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén", fecha_emision=None):
+
+def generar_pdf_confirmacion_cotizacion(
+    casillero,
+    nombre,
+    telefono,
+    ciudad,
+    tipo_carga,
+    al,
+    an,
+    la,
+    peso_lb,
+    peso_kg,
+    vol_m3,
+    vol_ft3,
+    total_usd,
+    detalle_tarifa,
+    id_cot,
+    destino_entrega="Retirar en Almacén",
+    fecha_emision=None,
+):
     fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
     destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
 
@@ -249,19 +293,23 @@ def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tip
 ET"""
     return compilar_pdf_simple(stream)
 
+
 # ---------------------------------------------------------
 # 3. BASE DE DATOS SQLITE & UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+
 def get_db():
     return sqlite3.connect(DB_NAME, timeout=10)
+
 
 def init_db():
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS usuarios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo_casillero TEXT UNIQUE NOT NULL,
@@ -280,8 +328,10 @@ def init_db():
                 activo INTEGER DEFAULT 1,
                 fecha_creacion TEXT NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS direcciones_entrega (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo_casillero TEXT NOT NULL,
@@ -293,14 +343,18 @@ def init_db():
                 direccion_exacta TEXT NOT NULL,
                 fecha_creacion TEXT NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS config_maritima (
                 clave TEXT PRIMARY KEY,
                 valor REAL NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS cotizaciones (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo_casillero TEXT NOT NULL,
@@ -313,8 +367,10 @@ def init_db():
                 total_usd REAL,
                 fecha TEXT NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS paquetes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tracking TEXT UNIQUE NOT NULL,
@@ -324,8 +380,10 @@ def init_db():
                 estado TEXT NOT NULL,
                 fecha_actualizacion TEXT NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS catalogo_productos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sku TEXT UNIQUE NOT NULL,
@@ -343,8 +401,10 @@ def init_db():
                 fuente TEXT DEFAULT '1688',
                 fecha_actualizacion TEXT NOT NULL
             )
-        """)
-        c.execute("""
+            """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS carrito_catalogo (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo_casillero TEXT NOT NULL,
@@ -357,25 +417,54 @@ def init_db():
                 imagen_url TEXT,
                 fecha TEXT NOT NULL
             )
-        """)
+            """
+        )
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
-        
+
         admin_pass = hash_pwd("admin123")
-        c.execute("""
+        c.execute(
+            """
             INSERT OR IGNORE INTO usuarios (
-                codigo_casillero, nombre_completo, dni, correo_principal, 
-                telefono_principal, departamento, ciudad, direccion_exacta, 
+                codigo_casillero, nombre_completo, dni, correo_principal,
+                telefono_principal, departamento, ciudad, direccion_exacta,
                 password_hash, rol, activo, fecha_creacion
             ) VALUES (
                 '08011990', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
                 '+504 9999-0000', 'Intibucá', 'San Juan', 'Oficina Central CCM',
                 ?, 'admin', 1, '2026-08-22 00:00:00'
             )
-        """, (admin_pass,))
+            """,
+            (admin_pass,),
+        )
+
+        demo_pass = hash_pwd("cliente123")
+        c.execute(
+            """
+            INSERT OR IGNORE INTO usuarios (
+                codigo_casillero, nombre_completo, dni, correo_principal,
+                telefono_principal, departamento, ciudad, direccion_exacta,
+                rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
+            ) VALUES (
+                '13011998', 'María Elena López', '1301199800990', 'cliente@ccm.hn',
+                '+504 9577-1099', 'Intibucá', 'San Juan', 'Barrio El Centro, frente al parque',
+                'Cerámica & Acabados', 'Retiro en Bodega Central (San Juan, Intibucá)',
+                ?, 'cliente', 1, '2026-08-22 00:00:00'
+            )
+            """,
+            (demo_pass,),
+        )
+        c.execute(
+            """
+            INSERT OR IGNORE INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
+            VALUES ('CN-GZ-88421', '13011998', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
+            """
+        )
+
 
 init_db()
+
 
 def get_tarifa(clave):
     with get_db() as conn:
@@ -384,20 +473,24 @@ def get_tarifa(clave):
         res = c.fetchone()
         return res[0] if res else 0.0
 
+
 def set_tarifa(clave, valor):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
+
 def generar_codigo_casillero_dni(dni_raw):
-    solo_digitos = ''.join(filter(str.isdigit, str(dni_raw)))
+    solo_digitos = "".join(filter(str.isdigit, str(dni_raw)))
     if len(solo_digitos) >= 8:
         return solo_digitos[:8]
     return solo_digitos.zfill(8)
 
+
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
-    return ''.join(random.choice(caracteres) for _ in range(8))
+    return "".join(random.choice(caracteres) for _ in range(8))
+
 
 # ---------------------------------------------------------
 # 4. MOTOR DE CATÁLOGO 1688 ESTÁNDAR (BÚSQUEDA DINÁMICA)
@@ -406,9 +499,9 @@ def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad
     t_lb = get_tarifa("tarifa_libra")
     t_m3 = get_tarifa("tarifa_m3")
     min_usd = get_tarifa("minimo_cobro_usd")
-    
-    tasa_hnl = st.secrets.get("moneda", {}).get("TASA_USD_HNL", 24.85)
-    comision_pct = st.secrets.get("moneda", {}).get("COMISION_CCM_PORCENTAJE", 0.10)
+
+    tasa_hnl = float(leer_config_moneda("TASA_USD_HNL", 24.85))
+    comision_pct = float(leer_config_moneda("COMISION_CCM_PORCENTAJE", 0.10))
 
     fob_total_usd = precio_fabrica_usd * cantidad
     peso_total_kg = peso_kg * cantidad
@@ -434,13 +527,14 @@ def calcular_costo_puesto_honduras(precio_fabrica_usd, peso_kg, vol_m3, cantidad
         "flete_maritimo_usd": flete_usd,
         "comision_usd": comision_usd,
         "total_estimado_usd": total_cif_usd,
-        "total_estimado_hnl": total_cif_hnl
+        "total_estimado_hnl": total_cif_hnl,
     }
+
 
 def buscar_productos_1688_texto(keyword):
     kw_clean = keyword.strip().title()
     seed_id = abs(hash(keyword)) % 1000
-    
+
     if any(k in keyword.lower() for k in ["martillo", "herramienta", "taladro", "llave"]):
         img_dinamica = f"https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80&seed={seed_id}"
     elif any(k in keyword.lower() for k in ["porcelanato", "ceramica", "piso", "baño"]):
@@ -460,7 +554,7 @@ def buscar_productos_1688_texto(keyword):
             "volumen_m3": 0.009,
             "imagen_url": img_dinamica,
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688.com"
+            "fuente": "1688.com",
         },
         {
             "sku": f"1688-DIR-{seed_id + 1}",
@@ -473,11 +567,13 @@ def buscar_productos_1688_texto(keyword):
             "volumen_m3": 0.018,
             "imagen_url": img_dinamica,
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688.com"
-        }
+            "fuente": "1688.com",
+        },
     ]
 
+
 def buscar_productos_1688_imagen(image_bytes):
+    _ = image_bytes
     return [
         {
             "sku": "1688-VISUAL-001",
@@ -490,25 +586,29 @@ def buscar_productos_1688_imagen(image_bytes):
             "volumen_m3": 0.012,
             "imagen_url": "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=400&q=80",
             "url_proveedor": "https://detail.1688.com",
-            "fuente": "1688 Image Match"
+            "fuente": "1688 Image Match",
         }
     ]
+
 
 # ---------------------------------------------------------
 # 5. GESTIÓN DE SESIÓN PERSISTENTE MEDIANTE QUERY_PARAMS
 # ---------------------------------------------------------
 if "autenticado" not in st.session_state:
-    st.session_state.update({
-        "autenticado": False,
-        "usuario": None,
-        "rol": None,
-        "casillero": None,
-        "nombre": None,
-        "telefono": None,
-        "ciudad": None,
-        "reg_paso": 1,
-        "reg_datos": {}
-    })
+    st.session_state.update(
+        {
+            "autenticado": False,
+            "usuario": None,
+            "rol": None,
+            "casillero": None,
+            "nombre": None,
+            "telefono": None,
+            "ciudad": None,
+            "reg_paso": 1,
+            "reg_datos": {},
+        }
+    )
+
 
 def restaurar_sesion_persistente():
     if st.session_state.get("autenticado", False):
@@ -526,12 +626,15 @@ def restaurar_sesion_persistente():
 
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""
+            c.execute(
+                """
                 SELECT id, codigo_casillero, nombre_completo, correo_principal,
                        rol, activo, telefono_principal, ciudad
                 FROM usuarios
                 WHERE codigo_casillero = ? AND activo = 1
-            """, (cas_param,))
+                """,
+                (cas_param,),
+            )
             user_rec = c.fetchone()
 
         if not user_rec:
@@ -554,7 +657,7 @@ def restaurar_sesion_persistente():
             "Cotizador",
             "Mis Envíos",
             "Etiqueta",
-            "Inicio"
+            "Inicio",
         }
         if vista_url in vistas_validas:
             st.session_state["sub_tab_inicio"] = vista_url
@@ -563,6 +666,7 @@ def restaurar_sesion_persistente():
 
     except Exception:
         return False
+
 
 restaurar_sesion_persistente()
 
@@ -575,18 +679,33 @@ if st.session_state.get("autenticado", False):
         except Exception:
             pass
 
+
 def logout():
-    for k in ["autenticado", "usuario", "rol", "casillero", "nombre", "telefono", "ciudad", "datos_pdf_confirmado", "ultima_cot_id", "modalidad_envio_seleccionada", "sub_tab_inicio"]:
+    for k in [
+        "autenticado",
+        "usuario",
+        "rol",
+        "casillero",
+        "nombre",
+        "telefono",
+        "ciudad",
+        "datos_pdf_confirmado",
+        "ultima_cot_id",
+        "modalidad_envio_seleccionada",
+        "sub_tab_inicio",
+    ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.query_params.clear()
     st.rerun()
 
+
 # ---------------------------------------------------------
 # 6. ESTILOS CSS REFINADOS: ADAPTABLES A MÓVILES (IPHONE Y ANDROID)
 # ---------------------------------------------------------
-st.markdown("""
+st.markdown(
+    """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@700&display=swap');
 
@@ -595,7 +714,7 @@ st.markdown("""
         color: #0f172a !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
-    
+
     #MainMenu, header, footer {visibility: hidden;}
 
     .block-container {
@@ -608,7 +727,6 @@ st.markdown("""
         overflow-x: hidden !important;
     }
 
-    /* CONTENEDOR DE CABECERA SUPERIOR FIJA / STICKY */
     .st-key-sticky_top_header {
         position: sticky !important;
         top: 0 !important;
@@ -624,7 +742,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
     }
 
-    /* HEADER AZUL PROPORCIONAL Y ELEGANTE */
     .app-header-blue {
         background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
         padding: 14px 16px 14px 16px !important;
@@ -662,7 +779,6 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* REGLAS ESPECÍFICAS PARA SMARTPHONES (IPHONE & ANDROID) */
     @media (max-width: 480px) {
         .app-header-blue {
             padding: 12px 14px !important;
@@ -725,7 +841,6 @@ st.markdown("""
         fill: #0f172a !important;
     }
 
-    /* MENÚ HORIZONTAL DESLIZABLE CON EL DEDO */
     .st-key-nav_scroll {
         width: 100% !important;
         max-width: 100% !important;
@@ -803,7 +918,6 @@ st.markdown("""
         min-width: 0 !important;
     }
 
-    /* ANIMACIÓN DE FLECHITAS GUÍA PARPADEANTES */
     @keyframes pulseBlink {
         0% { opacity: 0.25; transform: scale(0.95); }
         50% { opacity: 1; transform: scale(1.05); }
@@ -823,7 +937,6 @@ st.markdown("""
         user-select: none;
     }
 
-    /* BANNER PUBLICITARIO */
     .app-banner-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
         border-radius: 16px;
@@ -844,7 +957,6 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
-    /* TARJETAS CONTENEDORAS */
     .card-box {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -863,7 +975,6 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* ETIQUETAS DE TEXTO */
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stTextArea label, .stRadio label {
         color: #0f172a !important;
         font-weight: 700 !important;
@@ -872,15 +983,14 @@ st.markdown("""
         display: block !important;
     }
 
-    /* CONTENEDOR DE INPUTS Y TEXTAREA OSCURO */
     div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
         background-color: #1e293b !important;
         border: 1.5px solid #334155 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
     }
-    
-    div[data-baseweb="input"] input, 
+
+    div[data-baseweb="input"] input,
     div[data-baseweb="textarea"] textarea,
     div[data-baseweb="input"] input:focus,
     div[data-baseweb="textarea"] textarea:focus,
@@ -892,14 +1002,13 @@ st.markdown("""
         font-weight: 600 !important;
         background-color: transparent !important;
     }
-    
+
     div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder, textarea::placeholder {
         color: #94a3b8 !important;
         -webkit-text-fill-color: #94a3b8 !important;
         font-weight: 400 !important;
     }
 
-    /* ESTILO MÉTRICAS */
     div[data-testid="stMetricValue"] {
         font-size: 1.15rem !important;
         font-weight: 800 !important;
@@ -911,7 +1020,6 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* BOTONES UNIFORMES EN BLANCO CON TEXTO EN NEGRO */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         height: 44px !important;
@@ -995,23 +1103,32 @@ st.markdown("""
         fill: #004ac1 !important;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------
 # 7. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
-        st.markdown("""
+        st.markdown(
+            """
         <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 16px;">
             <h2 class="app-greeting-title">Centro de Cerámicas y Más</h2>
             <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
-        u_ident = st.text_input("Número de casillero o correo", placeholder="Ej: 13011998 o correo@gmail.com", key="log_cas")
+        u_ident = st.text_input(
+            "Número de casillero o correo",
+            placeholder="Ej: 13011998 o correo@gmail.com",
+            key="log_cas",
+        )
         u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -1020,9 +1137,12 @@ if not st.session_state["autenticado"]:
                 p_hash = hash_pwd(u_pass)
                 with get_db() as conn:
                     c = conn.cursor()
-                    c.execute("SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?", (u_ident, u_ident, p_hash))
+                    c.execute(
+                        "SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?",
+                        (u_ident, u_ident, p_hash),
+                    )
                     user = c.fetchone()
-                    
+
                 if user:
                     if user[5] == 0:
                         st.error("⛔ Cuenta inactiva. Contacte al soporte.")
@@ -1054,7 +1174,7 @@ if not st.session_state["autenticado"]:
             if st.button("Crear Casillero", type="secondary"):
                 st.session_state["vista_actual"] = "registro"
                 st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["vista_actual"] == "registro":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1064,11 +1184,15 @@ if not st.session_state["autenticado"]:
 
         if paso == 1:
             nom = st.text_input("Nombre Completo *", value=st.session_state["reg_datos"].get("nom", ""))
-            dni = st.text_input("Número de Identidad (DNI - 13 dígitos) *", value=st.session_state["reg_datos"].get("dni", ""), placeholder="Ej: 1301199800990")
+            dni = st.text_input(
+                "Número de Identidad (DNI - 13 dígitos) *",
+                value=st.session_state["reg_datos"].get("dni", ""),
+                placeholder="Ej: 1301199800990",
+            )
             if dni:
                 st.caption(f"ℹ️ Su casillero asignado será: **{generar_codigo_casillero_dni(dni)}**")
             if st.button("Siguiente ➔", type="primary"):
-                if nom and dni and len(''.join(filter(str.isdigit, dni))) >= 8:
+                if nom and dni and len("".join(filter(str.isdigit, dni))) >= 8:
                     st.session_state["reg_datos"].update({"nom": nom, "dni": dni})
                     st.session_state["reg_paso"] = 2
                     st.rerun()
@@ -1093,7 +1217,12 @@ if not st.session_state["autenticado"]:
                         st.error("Complete correo y teléfono.")
 
         elif paso == 3:
-            dep_reg = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_reg")
+            dep_reg = st.selectbox(
+                "Departamento *",
+                list(MUNICIPIOS_HONDURAS.keys()),
+                index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
+                key="sb_dep_reg",
+            )
             ciu_reg = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_reg], key="sb_ciu_reg")
             dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
             c1, c2 = st.columns(2)
@@ -1111,8 +1240,14 @@ if not st.session_state["autenticado"]:
                         st.error("Complete la dirección.")
 
         elif paso == 4:
-            rub = st.selectbox("Rubro Principal", ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"])
-            mod = st.radio("Modalidad de Entrega", ["Retiro en Bodega Central (San Juan, Intibucá)", "Envío con Forza a Domicilio"])
+            rub = st.selectbox(
+                "Rubro Principal",
+                ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"],
+            )
+            mod = st.radio(
+                "Modalidad de Entrega",
+                ["Retiro en Bodega Central (San Juan, Intibucá)", "Envío con Forza a Domicilio"],
+            )
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⬅️ Atrás", type="secondary"):
@@ -1127,13 +1262,37 @@ if not st.session_state["autenticado"]:
 
                     with get_db() as conn:
                         cur = conn.cursor()
-                        cur.execute("SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?", (d["cor"], d["dni"], n_cod))
+                        cur.execute(
+                            "SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?",
+                            (d["cor"], d["dni"], n_cod),
+                        )
                         if cur.fetchone():
-                            url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote("Hola, necesito asistencia con mi casillero ya registrado.")
+                            url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(
+                                "Hola, necesito asistencia con mi casillero ya registrado."
+                            )
                             st.warning("⚠️ Ya existe un casillero registrado con este DNI o correo.")
-                            st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+                            st.markdown(
+                                f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>',
+                                unsafe_allow_html=True,
+                            )
                         else:
-                            cur.execute("INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)", (n_cod, d["nom"], d["dni"], d["cor"], d["tel"], d["dep"], d["ciu"], d["dir"], rub, mod, hash_pwd(n_pwd), f_crea))
+                            cur.execute(
+                                "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)",
+                                (
+                                    n_cod,
+                                    d["nom"],
+                                    d["dni"],
+                                    d["cor"],
+                                    d["tel"],
+                                    d["dep"],
+                                    d["ciu"],
+                                    d["dir"],
+                                    rub,
+                                    mod,
+                                    hash_pwd(n_pwd),
+                                    f_crea,
+                                ),
+                            )
                             conn.commit()
                             st.success("🎉 ¡Casillero Creado!")
                             st.info(f"🔑 **Casillero:** `{n_cod}` | 🔒 **Contraseña:** `{n_pwd}`")
@@ -1143,7 +1302,7 @@ if not st.session_state["autenticado"]:
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["vista_actual"] == "recuperar":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -1165,7 +1324,7 @@ if not st.session_state["autenticado"]:
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 8. PORTAL DEL CLIENTE
@@ -1203,10 +1362,16 @@ elif st.session_state["rol"] == "cliente":
         c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
         total_cotizaciones = c.fetchone()[0]
 
-        c.execute("SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC", (casillero,))
+        c.execute(
+            "SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC",
+            (casillero,),
+        )
         lista_mis_cotizaciones = c.fetchall()
 
-        c.execute("SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?", (casillero,))
+        c.execute(
+            "SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?",
+            (casillero,),
+        )
         direcciones_guardadas = c.fetchall()
 
     opciones_modalidad = [OPCION_PREDETERMINADA]
@@ -1217,20 +1382,18 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # =========================================================
-    # BLOQUE DE CABECERA TOTALMENTE FIJA (STICKY HEADER)
-    # =========================================================
     with st.container(key="sticky_top_header"):
-        # --- HEADER AZUL PROPORCIONAL Y ELEGANTE ---
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class="app-header-blue">
             <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
             <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
             <div class="app-header-time">🕒 {fecha_hora_texto}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
-        # --- MENÚ HORIZONTAL DESLIZABLE (CON CERRAR E INICIO) ---
         with st.container(key="nav_scroll"):
             c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
 
@@ -1239,60 +1402,91 @@ elif st.session_state["rol"] == "cliente":
                     logout()
 
             with c_nav_c:
-                if st.button("🏠 Inicio", type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary", key="btn_inicio_cliente"):
+                if st.button(
+                    "🏠 Inicio",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary",
+                    key="btn_inicio_cliente",
+                ):
                     st.session_state["sub_tab_inicio"] = "Inicio"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Inicio"
                     st.rerun()
 
             with c_nav1:
-                if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
+                if st.button(
+                    "📄 Mis Cotiz.",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary",
+                    key="btn_toggle_cotizaciones",
+                ):
                     st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Mis Cotizaciones"
                     st.rerun()
 
             with c_nav2:
-                if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+                if st.button(
+                    "🛍️ Catálogo",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary",
+                    key="nav_top_cat",
+                ):
                     st.session_state["sub_tab_inicio"] = "Catálogo"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Catálogo"
                     st.rerun()
 
             with c_nav3:
-                if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+                if st.button(
+                    "📐 Cotizador",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary",
+                    key="nav_top_cot",
+                ):
                     st.session_state["sub_tab_inicio"] = "Cotizador"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Cotizador"
                     st.rerun()
 
             with c_nav4:
-                if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+                if st.button(
+                    "📦 Envíos",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary",
+                    key="nav_top_env",
+                ):
                     st.session_state["sub_tab_inicio"] = "Mis Envíos"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Mis Envíos"
                     st.rerun()
 
             with c_nav5:
-                if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+                if st.button(
+                    "🏷️ Fichas",
+                    type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary",
+                    key="nav_top_eti",
+                ):
                     st.session_state["sub_tab_inicio"] = "Etiqueta"
                     st.query_params["casillero"] = str(casillero)
                     st.query_params["vista"] = "Etiqueta"
                     st.rerun()
 
-        # --- FLECHAS GUÍA PARPADEANTES REACTIVAS ---
         if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
-            st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>',
+                unsafe_allow_html=True,
+            )
 
-        # --- SELECTOR DE ENTREGA (SOLO VISIBLE EN COTIZADOR) ---
         if st.session_state["sub_tab_inicio"] == "Cotizador":
-            st.markdown("""
+            st.markdown(
+                """
             <div class="app-delivery-container">
                 <span style="font-size:1.2rem;">🏪</span>
                 <div style="flex:1;">
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
             idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
@@ -1302,24 +1496,26 @@ elif st.session_state["rol"] == "cliente":
                 opciones_modalidad,
                 index=idx_mod,
                 label_visibility="visible",
-                key="sb_modalidad_header"
+                key="sb_modalidad_header",
             )
             if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
                 st.session_state["modalidad_envio_seleccionada"] = mod_elegida
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            st.markdown("""
+            st.markdown(
+                """
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
-    # -----------------------------------------------------
-    # VISTA INICIO — ESPACIO BLANCO PARA INFORMACIÓN FUTURA
-    # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Inicio":
-        st.markdown(textwrap.dedent("""
+        st.markdown(
+            textwrap.dedent(
+                """
         <div class="card-box" style="
             min-height: 430px;
             background:#ffffff;
@@ -1360,82 +1556,100 @@ elif st.session_state["rol"] == "cliente":
                 </div>
             </div>
         </div>
-        """), unsafe_allow_html=True)
+        """
+            ),
+            unsafe_allow_html=True,
+        )
 
-    # -----------------------------------------------------
-    # VISTA 0: MIS COTIZACIONES (HISTORIAL Y DESCARGAS)
-    # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF", unsafe_allow_html=True)
         st.caption("Aquí puedes consultar y descargar el comprobante en PDF de cada cotización generada.")
-        
+
         if lista_mis_cotizaciones:
             for cot in lista_mis_cotizaciones:
                 id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
                     <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {fec_c}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small>
                 </div>
-                """, unsafe_allow_html=True)
-                
+                """,
+                    unsafe_allow_html=True,
+                )
+
                 pdf_historial = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
                     nombre=nombre_completo,
                     telefono=tel_cli,
                     ciudad=ciu_cli,
                     tipo_carga="Cotización Histórica",
-                    al=al_c, an=an_c, la=la_c,
-                    peso_lb=pe_lb_c, peso_kg=pe_lb_c/2.20462,
-                    vol_m3=vol_m3_c, vol_ft3=vol_m3_c*35.3147,
+                    al=al_c,
+                    an=an_c,
+                    la=la_c,
+                    peso_lb=pe_lb_c,
+                    peso_kg=pe_lb_c / 2.20462,
+                    vol_m3=vol_m3_c,
+                    vol_ft3=vol_m3_c * 35.3147,
                     total_usd=tot_c,
                     detalle_tarifa="Tarifa Calculada Sistema CCM",
                     id_cot=id_cot_item,
                     destino_entrega=st.session_state["modalidad_envio_seleccionada"],
-                    fecha_emision=fec_c
+                    fecha_emision=fec_c,
                 )
                 st.download_button(
                     f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
                     pdf_historial,
                     f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
                     "application/pdf",
-                    key=f"dl_cot_{id_cot_item}"
+                    key=f"dl_cot_{id_cot_item}",
                 )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
             st.info("Aún no has generado ninguna cotización.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PANEL PARA CREAR, LISTAR Y ELIMINAR DIRECCIONES ---
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
-        
-        st.markdown(f"""
+
+        st.markdown(
+            f"""
         <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
             <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
             <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         if direcciones_guardadas:
-            st.markdown("<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>", unsafe_allow_html=True)
+            st.markdown(
+                "<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>",
+                unsafe_allow_html=True,
+            )
             for dir_item in direcciones_guardadas:
                 id_dir, etiq, rec, ciu_d, dir_e = dir_item
                 col_info_d, col_btn_del = st.columns([3.8, 1])
                 with col_info_d:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
                         <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
                         <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 with col_btn_del:
                     if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir}", type="secondary"):
                         with get_db() as conn:
                             cur = conn.cursor()
-                            cur.execute("DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?", (id_dir, casillero))
+                            cur.execute(
+                                "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
+                                (id_dir, casillero),
+                            )
                             conn.commit()
                         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
                         st.session_state.pop("datos_pdf_confirmado", None)
@@ -1450,10 +1664,18 @@ elif st.session_state["rol"] == "cliente":
             receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_completo)
         with c_et2:
             tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
-            dep_dir_in = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0, key="sb_dep_nueva_dir")
-        
+            dep_dir_in = st.selectbox(
+                "Departamento *",
+                list(MUNICIPIOS_HONDURAS.keys()),
+                index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
+                key="sb_dep_nueva_dir",
+            )
+
         ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
-        dir_exacta_in = st.text_area("Dirección exacta y referencias *", placeholder="Barrio, calle, número de casa, puntos clave...")
+        dir_exacta_in = st.text_area(
+            "Dirección exacta y referencias *",
+            placeholder="Barrio, calle, número de casa, puntos clave...",
+        )
 
         c_sv1, c_sv2 = st.columns(2)
         with c_sv1:
@@ -1462,10 +1684,22 @@ elif st.session_state["rol"] == "cliente":
                     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                     with get_db() as conn:
                         cur = conn.cursor()
-                        cur.execute("""
+                        cur.execute(
+                            """
                             INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (casillero, etiqueta_in, receptor_in, tel_dir_in, dep_dir_in, ciu_dir_in, dir_exacta_in, f_ahora))
+                            """,
+                            (
+                                casillero,
+                                etiqueta_in,
+                                receptor_in,
+                                tel_dir_in,
+                                dep_dir_in,
+                                ciu_dir_in,
+                                dir_exacta_in,
+                                f_ahora,
+                            ),
+                        )
                         conn.commit()
                     st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
                     st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
@@ -1478,10 +1712,10 @@ elif st.session_state["rol"] == "cliente":
                 st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- BANNER PROMOCIONAL ---
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div class="app-banner-card">
         <div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>
         <div style="font-size:1.1rem; font-weight:800; line-height:1.3; margin-bottom:6px;">
@@ -1492,17 +1726,16 @@ elif st.session_state["rol"] == "cliente":
             <b style="color:#ec4899; font-size:1rem; letter-spacing:1px;">VIVE LIGERO</b> &bull; Casillero asignado: <b>{casillero}</b>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
-    # -----------------------------------------------------
-    # VISTA 1: CATÁLOGO CHINO 1688
-    # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
-        
+
         modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
-        
+
         resultados_1688 = []
         if modo_busq == "🔎 Por Nombre / Palabras":
             kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
@@ -1518,56 +1751,69 @@ elif st.session_state["rol"] == "cliente":
         if resultados_1688:
             st.markdown("---")
             for prod in resultados_1688:
-                calc = calcular_costo_puesto_honduras(prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"])
-                
+                calc = calcular_costo_puesto_honduras(
+                    prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
+                )
+
                 c_img, c_det = st.columns([1, 1.8])
                 with c_img:
                     st.image(prod["imagen_url"], use_container_width=True)
                 with c_det:
                     st.markdown(f"**{prod['nombre']}**")
                     st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
-                    st.markdown(f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds.")
-                    st.success(f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*")
-                    
+                    st.markdown(
+                        f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
+                    )
+                    st.success(
+                        f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*"
+                    )
+
                     msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
                     url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
-                    
+
                     c_b1, c_b2 = st.columns(2)
                     with c_b1:
-                        st.markdown(f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>', unsafe_allow_html=True)
+                        st.markdown(
+                            f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
+                            unsafe_allow_html=True,
+                        )
                     with c_b2:
-                        st.markdown(f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>', unsafe_allow_html=True)
+                        st.markdown(
+                            f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
+                            unsafe_allow_html=True,
+                        )
                 st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------
-    # VISTA 2: COTIZADOR MARÍTIMO
-    # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
-        
-        st.info(f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*")
 
-        t_lb = get_tarifa("tarifa_libra")       # $3.50
-        t_m3 = get_tarifa("tarifa_m3")           # $680.00
-        min_usd = get_tarifa("minimo_cobro_usd") # $10.00
+        st.info(
+            f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*"
+        )
+
+        t_lb = get_tarifa("tarifa_libra")
+        t_m3 = get_tarifa("tarifa_m3")
+        min_usd = get_tarifa("minimo_cobro_usd")
 
         tipo_carga = st.selectbox(
             "Modalidad de Importación:",
             [
                 "📦 Paquetería Menor (1 a 99 lbs)",
-                "🚢 Carga Comercial por CBM (100 a 860 lbs / 390 kg)"
+                "🚢 Carga Comercial por CBM (100 a 860 lbs / 390 kg)",
             ],
             index=0,
-            key="sb_tipo_carga_select"
+            key="sb_tipo_carga_select",
         )
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
         c_u1, c_u2 = st.columns(2)
         with c_u1:
-            unidad_medida = st.selectbox("Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida")
+            unidad_medida = st.selectbox(
+                "Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida"
+            )
         with c_u2:
             unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
 
@@ -1575,11 +1821,38 @@ elif st.session_state["rol"] == "cliente":
 
         if "Paquetería Menor" in tipo_carga:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_input = st.number_input(f"Alto ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=30.0, step=1.0, key="in_al_menor")
-            with c2: an_input = st.number_input(f"Ancho ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=30.0, step=1.0, key="in_an_menor")
-            with c3: la_input = st.number_input(f"Largo ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=40.0, step=1.0, key="in_la_menor")
-            with c4: 
-                pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=4.0, step=0.5, key="in_pe_menor")
+            with c1:
+                al_input = st.number_input(
+                    f"Alto ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=30.0,
+                    step=1.0,
+                    key="in_al_menor",
+                )
+            with c2:
+                an_input = st.number_input(
+                    f"Ancho ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=30.0,
+                    step=1.0,
+                    key="in_an_menor",
+                )
+            with c3:
+                la_input = st.number_input(
+                    f"Largo ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=40.0,
+                    step=1.0,
+                    key="in_la_menor",
+                )
+            with c4:
+                pe_input = st.number_input(
+                    f"Peso ({unidad_peso.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=4.0,
+                    step=0.5,
+                    key="in_pe_menor",
+                )
 
             if "Pulgadas" in unidad_medida:
                 al_val = al_input * 2.54
@@ -1625,11 +1898,38 @@ elif st.session_state["rol"] == "cliente":
 
         else:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: al_input = st.number_input(f"Alto ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_al_com")
-            with c2: an_input = st.number_input(f"Ancho ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_an_com")
-            with c3: la_input = st.number_input(f"Largo ({unidad_medida.split()[1].strip('()')})", min_value=0.1, value=120.0, step=1.0, key="in_la_com")
-            with c4: 
-                pe_input = st.number_input(f"Peso ({unidad_peso.split()[1].strip('()')})", min_value=0.1, value=500.0, step=10.0, key="in_pe_com")
+            with c1:
+                al_input = st.number_input(
+                    f"Alto ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=120.0,
+                    step=1.0,
+                    key="in_al_com",
+                )
+            with c2:
+                an_input = st.number_input(
+                    f"Ancho ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=120.0,
+                    step=1.0,
+                    key="in_an_com",
+                )
+            with c3:
+                la_input = st.number_input(
+                    f"Largo ({unidad_medida.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=120.0,
+                    step=1.0,
+                    key="in_la_com",
+                )
+            with c4:
+                pe_input = st.number_input(
+                    f"Peso ({unidad_peso.split()[1].strip('()')})",
+                    min_value=0.1,
+                    value=500.0,
+                    step=10.0,
+                    key="in_pe_com",
+                )
 
             if "Pulgadas" in unidad_medida:
                 al_val = al_input * 2.54
@@ -1675,27 +1975,37 @@ elif st.session_state["rol"] == "cliente":
             f_hoy_doc = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
             with get_db() as conn:
                 cur = conn.cursor()
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql))
+                    """,
+                    (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql),
+                )
                 id_generado = cur.lastrowid
-            
+
             st.session_state["ultima_cot_id"] = id_generado
             st.session_state["datos_pdf_confirmado"] = {
-                "tipo_carga": modalidad_pdf, "al": al_val, "an": an_val, "la": la_val,
-                "peso_lb": pe_lb, "peso_kg": pe_kg, "vol_m3": vol_m3_val, "vol_ft3": vol_ft3_val,
-                "total_usd": tot, "detalle_tarifa": detalle_pdf, "id_cot": id_generado,
+                "tipo_carga": modalidad_pdf,
+                "al": al_val,
+                "an": an_val,
+                "la": la_val,
+                "peso_lb": pe_lb,
+                "peso_kg": pe_kg,
+                "vol_m3": vol_m3_val,
+                "vol_ft3": vol_ft3_val,
+                "total_usd": tot,
+                "detalle_tarifa": detalle_pdf,
+                "id_cot": id_generado,
                 "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
-                "fecha_hora_doc": f_hoy_doc
+                "fecha_hora_doc": f_hoy_doc,
             }
             st.rerun()
 
-        # VALIDACIÓN COMPLETA: VISUALIZACIÓN DE LA COTIZACIÓN CONFIRMADA
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            
-            mismo_destino = (d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"])
+
+            mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
             mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
             mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
             mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
@@ -1706,16 +2016,19 @@ elif st.session_state["rol"] == "cliente":
                 id_c = d_pdf.get("id_cot", 1)
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
-                
-                st.markdown(f"""
+
+                st.markdown(
+                    f"""
                 <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
                         <span style="font-size: 1.4rem;">🎉</span>
                         <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">Cotización CCM-COT-{id_c:05d} confirmada el {fecha_doc} para entrega en: {dest_pdf}</h4>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-                
+                """,
+                    unsafe_allow_html=True,
+                )
+
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
                     nombre=nombre_completo,
@@ -1728,9 +2041,9 @@ elif st.session_state["rol"] == "cliente":
                     pe_kg=d_pdf.get("peso_kg", 0),
                     vol_m3=d_pdf.get("vol_m3", 0),
                     destino_entrega=dest_pdf,
-                    fecha_emision=fecha_doc
+                    fecha_emision=fecha_doc,
                 )
-                
+
                 pdf_conf = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
                     nombre=nombre_completo,
@@ -1748,55 +2061,68 @@ elif st.session_state["rol"] == "cliente":
                     detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
                     id_cot=id_c,
                     destino_entrega=dest_pdf,
-                    fecha_emision=fecha_doc
+                    fecha_emision=fecha_doc,
                 )
-                
+
                 c_doc1, c_doc2 = st.columns(2)
                 with c_doc1:
-                    st.download_button("📥 PDF Fabricante", pdf_fab, f"Shipping_Label_Fabricante_{casillero}.pdf", "application/pdf")
+                    st.download_button(
+                        "📥 PDF Fabricante",
+                        pdf_fab,
+                        f"Shipping_Label_Fabricante_{casillero}.pdf",
+                        "application/pdf",
+                    )
                 with c_doc2:
-                    st.download_button("📥 PDF Tarifa", pdf_conf, f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf", "application/pdf")
-                
+                    st.download_button(
+                        "📥 PDF Tarifa",
+                        pdf_conf,
+                        f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
+                        "application/pdf",
+                    )
+
                 texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                 url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-                st.markdown(f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
+                    unsafe_allow_html=True,
+                )
             else:
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------
-    # VISTA 3: MIS ENVÍOS
-    # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?", (casillero,))
+            c.execute(
+                "SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?",
+                (casillero,),
+            )
             paquetes = c.fetchall()
 
         if paquetes:
             for p in paquetes:
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:10px; padding:12px; margin-bottom:8px;">
                     <b>Tracking:</b> {p[0]} | <b>Contenedor:</b> {p[2]}<br>
                     <b>Estado:</b> <span style="color:#004ac1; font-weight:bold;">{p[3]}</span><br>
                     <small style="color:#64748b;">Actualizado: {p[4]}</small>
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
         else:
             st.info("No tienes paquetes registrados en travesía.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------
-    # VISTA 4: FICHA CHINA
-    # -----------------------------------------------------
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
         st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
-        
+
         f_etiqueta_actual = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
         pdf_bytes = generar_pdf_etiqueta_proveedor(
             casillero=casillero,
@@ -1804,12 +2130,24 @@ elif st.session_state["rol"] == "cliente":
             telefono=tel_cli,
             ciudad=ciu_cli,
             destino_entrega=st.session_state["modalidad_envio_seleccionada"],
-            fecha_emision=f_etiqueta_actual
+            fecha_emision=f_etiqueta_actual,
         )
-        st.download_button("📄 Descargar Etiqueta para Proveedor (PDF)", pdf_bytes, f"Shipping_Label_{casillero}.pdf", "application/pdf")
-        
-        destino_pantalla = str(st.session_state['modalidad_envio_seleccionada']).replace('📍', '').replace('📦', '').replace('🏬', '').strip()
-        st.markdown(f"""
+        st.download_button(
+            "📄 Descargar Etiqueta para Proveedor (PDF)",
+            pdf_bytes,
+            f"Shipping_Label_{casillero}.pdf",
+            "application/pdf",
+        )
+
+        destino_pantalla = (
+            str(st.session_state["modalidad_envio_seleccionada"])
+            .replace("📍", "")
+            .replace("📦", "")
+            .replace("🏬", "")
+            .strip()
+        )
+        st.markdown(
+            f"""
         <div class="china-address-box" style="margin-top:10px;">
 <strong>CLIENT CODE / CASILLERO:</strong> {casillero}<br>
 <strong>DESTINATION / ENTREGA:</strong> {destino_pantalla.upper()}, HONDURAS<br>
@@ -1818,34 +2156,78 @@ elif st.session_state["rol"] == "cliente":
 <strong>ADDRESS:</strong> CHILAT Logistics Warehouse, District B, Port Area, Guangzhou<br>
 <strong>ADDRESS (中文):</strong> 广东省广州市白云区集运仓 / 转 {casillero}
         </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "admin":
     st.markdown("## 🛠️ Panel Maestro — Administrador")
-    tab_u, tab_p = st.tabs(["👥 Directorio de Clientes", "📦 Registrar Paquetes"])
+    tab_u, tab_p, tab_t = st.tabs(["👥 Directorio de Clientes", "📦 Registrar Paquetes", "⚙️ Tarifas"])
 
     with tab_u:
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal, ciudad FROM usuarios WHERE rol = 'cliente'")
-            st.dataframe(c.fetchall(), use_container_width=True)
+            c.execute(
+                "SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal, ciudad FROM usuarios WHERE rol = 'cliente'"
+            )
+            st.dataframe(c.fetchall(), use_container_width=True, hide_index=True)
 
     with tab_p:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
         t_in = st.text_input("Tracking de China")
         c_in = st.text_input("Casillero Asignado (8 dígitos)")
-        e_in = st.selectbox("Estado", ["En Bodega China", "En Travesía Marítima", "En Desaduanaje", "Disponible en Bodega Central", "Entregado"])
+        d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
+        cont_in = st.text_input("ID de contenedor", placeholder="Ej: CCM-CNT-014")
+        e_in = st.selectbox(
+            "Estado",
+            [
+                "En Bodega China",
+                "En Travesía Marítima",
+                "En Desaduanaje",
+                "Disponible en Bodega Central",
+                "Entregado",
+            ],
+        )
         if st.button("Actualizar Paquete", type="primary"):
             if t_in and c_in:
+                f_act = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     cur = conn.cursor()
-                    cur.execute("INSERT OR REPLACE INTO paquetes (tracking, codigo_casillero, estado, fecha_actualizacion) VALUES (?, ?, ?, ?)", (t_in, c_in, e_in, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    cur.execute(
+                        """
+                        INSERT INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(tracking) DO UPDATE SET
+                            codigo_casillero = excluded.codigo_casillero,
+                            descripcion = excluded.descripcion,
+                            contenedor_id = excluded.contenedor_id,
+                            estado = excluded.estado,
+                            fecha_actualizacion = excluded.fecha_actualizacion
+                        """,
+                        (t_in, c_in, d_in, cont_in, e_in, f_act),
+                    )
                 st.success("Paquete actualizado.")
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.rerun()
+            else:
+                st.warning("Ingrese tracking y casillero.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab_t:
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### Tarifas marítimas vigentes")
+        n_lb = st.number_input("Tarifa por libra (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra")), step=0.05)
+        n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3")), step=1.0)
+        n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd")), step=0.50)
+        if st.button("Guardar tarifas", type="primary"):
+            set_tarifa("tarifa_libra", n_lb)
+            set_tarifa("tarifa_m3", n_m3)
+            set_tarifa("minimo_cobro_usd", n_min)
+            st.success("Tarifas actualizadas.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Cerrar Sesión Admin", type="secondary"):
         logout()
