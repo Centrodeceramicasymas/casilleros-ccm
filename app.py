@@ -1,21 +1,12 @@
 import streamlit as st
 import sqlite3
 import hashlib
+import math
 import random
 import string
 from datetime import datetime, timezone, timedelta
 import io
 import urllib.parse
-
-from limites_contenedor import (
-    CONTENEDOR_40_ALTO_M,
-    CONTENEDOR_40_ANCHO_M,
-    CONTENEDOR_40_LARGO_M,
-    PESO_MAX_CONTENEDOR_HN_KG,
-    limites_dimensiones,
-    limites_peso,
-    peso_max_contenedor_hn_lb,
-)
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
@@ -589,6 +580,106 @@ def generar_codigo_casillero_dni(dni_raw):
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
     return "".join(random.choice(caracteres) for _ in range(8))
+
+
+# Medidas internas de un contenedor 40' High Cube y peso máximo IHTT (Honduras).
+CONTENEDOR_40_ALTO_M = 2.69
+CONTENEDOR_40_ANCHO_M = 2.35
+CONTENEDOR_40_LARGO_M = 12.03
+PESO_MAX_CONTENEDOR_HN_KG = 25_000.0
+LB_POR_KG = 2.20462
+PESO_MAX_PAQUETERIA_LB = 99.0
+
+
+def peso_max_contenedor_hn_lb():
+    return round(PESO_MAX_CONTENEDOR_HN_KG * LB_POR_KG, 2)
+
+
+def max_alineado(min_v, max_v, step):
+    n = math.floor((max_v - min_v) / step + 1e-9)
+    return round(min_v + n * step, 4)
+
+
+def limites_dimensiones(unidad_medida, comercial=False):
+    if "Metros" in unidad_medida:
+        factor = 1.0
+        step = 0.01
+        min_v = 0.01
+        formato = "%.2f"
+        defaults_paq = {"alto": 0.30, "ancho": 0.30, "largo": 0.40}
+        defaults_com = {"alto": 1.20, "ancho": 1.20, "largo": 1.20}
+        codigo = "m"
+    elif "Pulgadas" in unidad_medida:
+        factor = 1.0 / 0.0254
+        step = 0.5
+        min_v = 0.5
+        formato = "%.1f"
+        defaults_paq = {"alto": 12.0, "ancho": 12.0, "largo": 16.0}
+        defaults_com = {"alto": 47.0, "ancho": 47.0, "largo": 47.0}
+        codigo = "in"
+    else:
+        factor = 100.0
+        step = 1.0
+        min_v = 1.0
+        formato = "%.0f"
+        defaults_paq = {"alto": 30.0, "ancho": 30.0, "largo": 40.0}
+        defaults_com = {"alto": 120.0, "ancho": 120.0, "largo": 120.0}
+        codigo = "cm"
+
+    maxes = {
+        "alto": max_alineado(min_v, CONTENEDOR_40_ALTO_M * factor, step),
+        "ancho": max_alineado(min_v, CONTENEDOR_40_ANCHO_M * factor, step),
+        "largo": max_alineado(min_v, CONTENEDOR_40_LARGO_M * factor, step),
+    }
+    base = defaults_com if comercial else defaults_paq
+    defaults = {k: min(v, maxes[k]) for k, v in base.items()}
+    return {
+        "min": min_v,
+        "step": step,
+        "formato": formato,
+        "codigo": codigo,
+        "defaults": defaults,
+        "max": maxes,
+    }
+
+
+def limites_peso(unidad_peso, paqueteria):
+    if paqueteria:
+        max_lb = PESO_MAX_PAQUETERIA_LB
+        default_lb = 4.0
+        min_lb = 0.5
+        step_lb = 0.5
+    else:
+        max_lb = peso_max_contenedor_hn_lb()
+        default_lb = 500.0
+        min_lb = 1.0
+        step_lb = 10.0
+
+    if "Kilogramos" in unidad_peso:
+        min_v = 0.1 if paqueteria else 1.0
+        default = round(default_lb / LB_POR_KG, 1)
+        max_v = round(max_lb / LB_POR_KG, 1)
+        step = 0.1 if paqueteria else 1.0
+        codigo = "kg"
+        formato = "%.1f"
+    else:
+        min_v = min_lb
+        default = default_lb
+        max_v = max_lb
+        step = step_lb
+        codigo = "lb"
+        formato = "%.1f"
+
+    max_v = max_alineado(min_v, max_v, step)
+    default = min(default, max_v)
+    return {
+        "min": min_v,
+        "default": default,
+        "max": max_v,
+        "step": step,
+        "codigo": codigo,
+        "formato": formato,
+    }
 
 
 def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
