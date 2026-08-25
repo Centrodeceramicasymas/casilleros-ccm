@@ -935,7 +935,7 @@ st.markdown(
         --greeting-title: 0.95rem;
         --greeting-sub: 0.68rem;
         --greeting-time: 0.62rem;
-        --sticky-h: 150px;
+        --sticky-h: 176px;
     }
 
     html, body {
@@ -1044,6 +1044,25 @@ st.markdown(
         display: flex !important;
         flex-direction: column !important;
         gap: 1px !important;
+        container-type: inline-size;
+    }
+
+    .app-header-brand {
+        display: block;
+        width: 100%;
+        margin: 0 0 6px 0;
+        padding: 0 0 6px 0;
+        border-bottom: 1px solid rgba(219, 234, 254, 0.35);
+        color: #ffffff;
+        font-weight: 800;
+        text-transform: uppercase;
+        white-space: nowrap;
+        text-align: justify;
+        text-align-last: justify;
+        letter-spacing: 0.04em;
+        line-height: 1.15;
+        font-size: clamp(0.58rem, 4.4cqi, 1.2rem);
+        overflow: hidden;
     }
 
     .app-greeting-title {
@@ -1083,7 +1102,7 @@ st.markdown(
             --greeting-title: 0.92rem;
             --greeting-sub: 0.66rem;
             --greeting-time: 0.60rem;
-            --sticky-h: 142px;
+            --sticky-h: 168px;
         }
         .app-header-blue {
             border-radius: 11px !important;
@@ -1108,7 +1127,7 @@ st.markdown(
             --greeting-title: 1.05rem;
             --greeting-sub: 0.74rem;
             --greeting-time: 0.68rem;
-            --sticky-h: 156px;
+            --sticky-h: 182px;
         }
         .app-header-blue { border-radius: 14px !important; }
     }
@@ -1125,7 +1144,7 @@ st.markdown(
             --greeting-title: 1.22rem;
             --greeting-sub: 0.84rem;
             --greeting-time: 0.74rem;
-            --sticky-h: 168px;
+            --sticky-h: 194px;
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
         .card-box { padding: 1.35rem; }
@@ -1144,7 +1163,7 @@ st.markdown(
             --greeting-title: 1.35rem;
             --greeting-sub: 0.90rem;
             --greeting-time: 0.78rem;
-            --sticky-h: 158px;
+            --sticky-h: 184px;
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
         .card-box { padding: 1.5rem; border-radius: 16px; }
@@ -1951,6 +1970,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown(
             f"""
         <div class="app-header-blue">
+            <div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>
             <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
             <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
             <div class="app-header-time">🕒 {fecha_hora_texto}</div>
