@@ -584,7 +584,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON CABECERA TOTALMENTE FIJA (STICKY HEADER)
+# 6. ESTILOS CSS REFINADOS: HEADER ADAPTABLE Y ELEGANTE
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -599,7 +599,7 @@ st.markdown("""
     #MainMenu, header, footer {visibility: hidden;}
 
     .block-container {
-        max-width: 500px !important;
+        max-width: 520px !important;
         padding-top: 0rem !important;
         padding-bottom: 5rem !important;
         padding-left: 0.8rem !important;
@@ -614,43 +614,49 @@ st.markdown("""
         top: 0 !important;
         z-index: 999 !important;
         background-color: #f8fafc !important;
-        padding-top: 0.5rem !important;
-        padding-bottom: 0.4rem !important;
+        padding-top: 0.4rem !important;
+        padding-bottom: 0.3rem !important;
         margin-left: -0.8rem !important;
         margin-right: -0.8rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
-        border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03) !important;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
     }
 
-    /* HEADER AZUL SUPERIOR LIMPIO */
+    /* HEADER AZUL PROPORCIONAL, ADAPTABLE Y ELEGANTE */
     .app-header-blue {
-        background-color: #004ac1 !important;
-        padding: 16px 14px 14px 14px !important;
-        border-radius: 18px !important;
+        background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
+        padding: clamp(12px, 2.5vw, 18px) clamp(14px, 3vw, 20px) !important;
+        border-radius: clamp(14px, 2.5vw, 20px) !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.25) !important;
+        box-shadow: 0 6px 18px rgba(0, 74, 193, 0.22) !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
-        margin-bottom: 8px !important;
+        margin-bottom: 6px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 3px !important;
     }
 
     .app-greeting-title {
-        font-size: 1.15rem !important;
+        font-size: clamp(1.02rem, 3.2vw, 1.25rem) !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
+        line-height: 1.25 !important;
+        letter-spacing: -0.2px !important;
     }
 
     .app-greeting-sub {
-        font-size: 0.8rem !important;
-        color: #bfdbfe !important;
-        margin-top: 2px !important;
+        font-size: clamp(0.74rem, 2.2vw, 0.84rem) !important;
+        color: #dbeafe !important;
+        margin-top: 1px !important;
+        font-weight: 500 !important;
     }
 
     .app-header-time {
-        font-size: 0.72rem !important;
+        font-size: clamp(0.68rem, 2vw, 0.75rem) !important;
         color: #bfdbfe !important;
         margin-top: 2px !important;
         font-weight: 600 !important;
@@ -719,23 +725,23 @@ st.markdown("""
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 120px !important;
-        width: 120px !important;
-        min-width: 120px !important;
-        max-width: 120px !important;
+        flex: 0 0 115px !important;
+        width: 115px !important;
+        min-width: 115px !important;
+        max-width: 115px !important;
         box-sizing: border-box !important;
     }
 
     .st-key-nav_scroll div.stButton {
-        width: 120px !important;
-        min-width: 120px !important;
-        max-width: 120px !important;
+        width: 115px !important;
+        min-width: 115px !important;
+        max-width: 115px !important;
         margin: 0 !important;
     }
 
     .st-key-nav_scroll div.stButton > button {
-        width: 120px !important;
-        min-width: 120px !important;
+        width: 115px !important;
+        min-width: 115px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
@@ -772,7 +778,7 @@ st.markdown("""
         align-items: center;
         gap: 6px;
         color: #3b82f6;
-        font-size: 0.82rem;
+        font-size: 0.80rem;
         font-weight: 800;
         margin: 2px 0 6px 0;
         animation: pulseBlink 1.4s infinite ease-in-out;
@@ -917,7 +923,7 @@ st.markdown("""
 
     .st-key-btn_logout_cliente button,
     .st-key-btn_logout_cliente button[kind="secondary"] {
-        width: 120px !important;
+        width: 115px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
@@ -959,14 +965,9 @@ st.markdown("""
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         st.markdown("""
-        <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 0 0 25px 25px;">
-            <div class="app-header-row">
-                <div>
-                    <h2 class="app-greeting-title">Centro de Cerámicas y Más</h2>
-                    <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
-                </div>
-                <div class="app-header-logo">🏠</div>
-            </div>
+        <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 20px;">
+            <h2 class="app-greeting-title">Centro de Cerámicas y Más</h2>
+            <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1182,7 +1183,7 @@ elif st.session_state["rol"] == "cliente":
     # BLOQUE DE CABECERA TOTALMENTE FIJA (STICKY HEADER)
     # =========================================================
     with st.container(key="sticky_top_header"):
-        # --- HEADER AZUL CON DATOS DEL USUARIO ---
+        # --- HEADER AZUL PROPORCIONAL Y ELEGANTE ---
         st.markdown(f"""
         <div class="app-header-blue">
             <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
