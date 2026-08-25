@@ -938,6 +938,13 @@ st.markdown("""
         color: #004ac1 !important;
         fill: #004ac1 !important;
     }
+
+    .app-header {
+        scroll-margin-top: 8px;
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 1000 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
