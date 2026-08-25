@@ -22,10 +22,72 @@ DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo centro y mas.jpg"
 
 ZONA_HONDURAS = timezone(timedelta(hours=-6))
+VIGENCIA_COTIZACION_HORAS = 24
+VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
+FORMATOS_FECHA_COTIZACION = (
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S.%f",
+    "%d/%m/%Y %I:%M:%S %p",
+    "%d/%m/%Y %H:%M:%S",
+)
 
 
 def obtener_tiempo_honduras():
     return datetime.now(ZONA_HONDURAS)
+
+
+def parsear_fecha_cotizacion(fecha_raw):
+    if fecha_raw is None:
+        return None
+    if isinstance(fecha_raw, datetime):
+        dt = fecha_raw
+    else:
+        texto = str(fecha_raw).strip()
+        dt = None
+        for fmt in FORMATOS_FECHA_COTIZACION:
+            try:
+                dt = datetime.strptime(texto, fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=ZONA_HONDURAS)
+    return dt.astimezone(ZONA_HONDURAS)
+
+
+def cotizacion_vigente(fecha_raw, ahora=None):
+    dt = parsear_fecha_cotizacion(fecha_raw)
+    if dt is None:
+        return False
+    ahora = ahora or obtener_tiempo_honduras()
+    edad = ahora - dt
+    return timedelta(0) <= edad <= VIGENCIA_COTIZACION
+
+
+def vencimiento_cotizacion(fecha_raw):
+    dt = parsear_fecha_cotizacion(fecha_raw)
+    if dt is None:
+        return None
+    return dt + VIGENCIA_COTIZACION
+
+
+def texto_vigencia_cotizacion(fecha_raw, ahora=None):
+    dt = parsear_fecha_cotizacion(fecha_raw)
+    if dt is None:
+        return "Sin vigencia"
+    ahora = ahora or obtener_tiempo_honduras()
+    fin = dt + VIGENCIA_COTIZACION
+    restante = fin - ahora
+    fin_txt = fin.strftime("%d/%m/%Y %I:%M %p")
+    if restante.total_seconds() <= 0:
+        return f"Vencida (era hasta {fin_txt})"
+    total_min = int(restante.total_seconds() // 60)
+    horas, minutos = divmod(total_min, 60)
+    if horas >= 1:
+        return f"Vigente {horas} h {minutos} min (hasta {fin_txt})"
+    return f"Vigente {minutos} min (hasta {fin_txt})"
 
 
 def leer_config_moneda(clave, valor_default):
@@ -148,12 +210,45 @@ MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo")
 MODULOS_CHINA_BLOQUEADOS = ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
 
 
+def _limpiar_cotizacion_vencida_en_sesion(ahora):
+    d_pdf = st.session_state.get("datos_pdf_confirmado")
+    if not isinstance(d_pdf, dict):
+        return None
+    fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+    if cotizacion_vigente(fecha_pdf, ahora):
+        return fecha_pdf
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.session_state.pop("ultima_cot_id", None)
+    st.session_state["china_modulos_desbloqueados"] = False
+    return None
+
+
+def fechas_cotizaciones_casillero(casillero):
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return []
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC",
+                (cas,),
+            )
+            return [fila[0] for fila in cur.fetchall()]
+    except Exception:
+        return []
+
+
 def china_seguimiento_habilitado():
-    if st.session_state.get("china_modulos_desbloqueados"):
-        return True
-    if st.session_state.get("datos_pdf_confirmado"):
+    ahora = obtener_tiempo_honduras()
+    if _limpiar_cotizacion_vencida_en_sesion(ahora):
         st.session_state["china_modulos_desbloqueados"] = True
         return True
+    cas = st.session_state.get("casillero", "")
+    if any(cotizacion_vigente(fecha, ahora) for fecha in fechas_cotizaciones_casillero(cas)):
+        st.session_state["china_modulos_desbloqueados"] = True
+        return True
+    st.session_state["china_modulos_desbloqueados"] = False
     return False
 
 
@@ -2122,14 +2217,14 @@ elif st.session_state["rol"] == "cliente":
 
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero = ?", (casillero,))
-        total_cotizaciones = c.fetchone()[0]
-
         c.execute(
             "SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC",
             (casillero,),
         )
-        lista_mis_cotizaciones = c.fetchall()
+        lista_todas_cotizaciones = c.fetchall()
+
+        lista_mis_cotizaciones = [row for row in lista_todas_cotizaciones if cotizacion_vigente(row[7], ahora_hn)]
+        total_cotizaciones = len(lista_mis_cotizaciones)
 
         c.execute(
             "SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?",
@@ -2241,8 +2336,14 @@ elif st.session_state["rol"] == "cliente":
             mods = modulos_china_visibles()
             if not china_seguimiento_habilitado():
                 st.caption(
-                    "Confirma una tarifa en el Cotizador para habilitar historial, envíos y fichas de bodega."
+                    "Cada tarifa dura 24 horas. Confirma una cotización en el Cotizador para habilitar historial, envíos y fichas de bodega."
                 )
+            else:
+                fechas_vigentes = [
+                    fecha for fecha in fechas_cotizaciones_casillero(casillero) if cotizacion_vigente(fecha, ahora_hn)
+                ]
+                if fechas_vigentes:
+                    st.caption(texto_vigencia_cotizacion(fechas_vigentes[0], ahora_hn) + ".")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -2278,16 +2379,18 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-        st.caption("Aquí puedes consultar y descargar el comprobante en PDF de cada cotización generada.")
+        st.caption("Solo se muestran tarifas vigentes (24 horas desde la emisión, hora de Honduras).")
 
         if lista_mis_cotizaciones:
             for cot in lista_mis_cotizaciones:
                 id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
+                vigencia_txt = texto_vigencia_cotizacion(fec_c, ahora_hn)
                 st.markdown(
                     f"""
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
                     <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {fec_c}<br>
-                    <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small>
+                    <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
+                    <small style="color:#166534; font-weight:700;">⏳ {vigencia_txt}</small>
                 </div>
                 """,
                     unsafe_allow_html=True,
@@ -2321,7 +2424,7 @@ elif st.session_state["rol"] == "cliente":
                 )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
-            st.info("Aún no has generado ninguna cotización.")
+            st.info("No hay cotizaciones vigentes. Confirma una tarifa nueva; cada una dura 24 horas.")
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown("#### 📍 Administrar Direcciones de Envío")
@@ -2673,12 +2776,17 @@ elif st.session_state["rol"] == "cliente":
                 "id_cot": id_generado,
                 "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
                 "fecha_hora_doc": f_hoy_doc,
+                "fecha_sql": f_hoy_sql,
             }
             st.session_state["china_modulos_desbloqueados"] = True
             st.rerun()
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
+            if not cotizacion_vigente(d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn):
+                st.session_state.pop("datos_pdf_confirmado", None)
+                st.session_state["china_modulos_desbloqueados"] = False
+                st.rerun()
 
             mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
             mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
@@ -2691,6 +2799,7 @@ elif st.session_state["rol"] == "cliente":
                 id_c = d_pdf.get("id_cot", 1)
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
+                vigencia_doc = texto_vigencia_cotizacion(d_pdf.get("fecha_sql") or fecha_doc, ahora_hn)
 
                 st.markdown(
                     f"""
@@ -2699,6 +2808,7 @@ elif st.session_state["rol"] == "cliente":
                         <span style="font-size: 1.4rem;">🎉</span>
                         <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">Cotización CCM-COT-{id_c:05d} confirmada el {fecha_doc} para entrega en: {dest_pdf}</h4>
                     </div>
+                    <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">⏳ {vigencia_doc}. Al vencer, el hub China vuelve a Cotizador y Catálogo.</div>
                 </div>
                 """,
                     unsafe_allow_html=True,
