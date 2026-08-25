@@ -144,9 +144,31 @@ HUBS = {
 
 MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
 VISTAS_MODULO = set(MODULOS_POR_ID.keys())
+MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo")
+MODULOS_CHINA_BLOQUEADOS = ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+
+
+def china_seguimiento_habilitado():
+    if st.session_state.get("china_modulos_desbloqueados"):
+        return True
+    if st.session_state.get("datos_pdf_confirmado"):
+        st.session_state["china_modulos_desbloqueados"] = True
+        return True
+    return False
+
+
+def modulos_china_visibles():
+    mods = HUBS["china"]["modulos"]
+    if china_seguimiento_habilitado():
+        return mods
+    por_id = {m["id"]: m for m in mods}
+    return [por_id[mid] for mid in MODULOS_CHINA_INICIAL if mid in por_id]
 
 
 def ir_a(vista, hub="_omit"):
+    if vista in MODULOS_CHINA_BLOQUEADOS and not china_seguimiento_habilitado():
+        vista = "Cotizador"
+        hub = "china"
     if hub != "_omit":
         st.session_state["hub"] = hub
     elif vista in MODULOS_POR_ID:
@@ -945,6 +967,13 @@ def restaurar_sesion_persistente():
         elif vista_url == "Honduras":
             st.session_state["hub"] = "honduras"
 
+        if (
+            st.session_state.get("sub_tab_inicio") in MODULOS_CHINA_BLOQUEADOS
+            and not china_seguimiento_habilitado()
+        ):
+            st.session_state["sub_tab_inicio"] = "Cotizador"
+            st.session_state["hub"] = "china"
+
         return True
 
     except Exception:
@@ -978,6 +1007,7 @@ def logout():
         "modalidad_envio_seleccionada",
         "sub_tab_inicio",
         "hub",
+        "china_modulos_desbloqueados",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -1877,6 +1907,7 @@ if not st.session_state["autenticado"]:
                         st.session_state["telefono"] = user[6]
                         st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
+                        st.session_state["china_modulos_desbloqueados"] = False
                         st.session_state["sub_tab_inicio"] = "Inicio"
                         st.session_state["hub"] = None
 
@@ -2050,6 +2081,16 @@ if not st.session_state["autenticado"]:
 # 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
+    if (
+        st.session_state.get("sub_tab_inicio") in MODULOS_CHINA_BLOQUEADOS
+        and not china_seguimiento_habilitado()
+    ):
+        st.session_state["sub_tab_inicio"] = "Cotizador"
+        st.session_state["hub"] = "china"
+        st.query_params["vista"] = "Cotizador"
+        st.query_params["hub"] = "china"
+        st.rerun()
+
     casillero = formatear_casillero(st.session_state["casillero"])
     if casillero != st.session_state["casillero"]:
         st.session_state["casillero"] = casillero
@@ -2118,7 +2159,7 @@ elif st.session_state["rol"] == "cliente":
         )
 
         hub_activo = st.session_state.get("hub")
-        china_mods = HUBS["china"]["modulos"]
+        china_mods = modulos_china_visibles()
         mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
 
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
@@ -2197,7 +2238,11 @@ elif st.session_state["rol"] == "cliente":
             hub_china = HUBS["china"]
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
-            mods = hub_china["modulos"]
+            mods = modulos_china_visibles()
+            if not china_seguimiento_habilitado():
+                st.caption(
+                    "Confirma una tarifa en el Cotizador para habilitar historial, envíos y fichas de bodega."
+                )
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -2629,6 +2674,7 @@ elif st.session_state["rol"] == "cliente":
                 "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
                 "fecha_hora_doc": f_hoy_doc,
             }
+            st.session_state["china_modulos_desbloqueados"] = True
             st.rerun()
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
