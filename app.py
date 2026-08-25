@@ -9,6 +9,13 @@ from datetime import datetime, timezone, timedelta
 import io
 import urllib.parse
 
+try:
+    from zoneinfo import ZoneInfo
+
+    ZONA_HONDURAS = ZoneInfo("America/Tegucigalpa")
+except Exception:
+    ZONA_HONDURAS = timezone(timedelta(hours=-6), name="America/Tegucigalpa")
+
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
@@ -22,7 +29,6 @@ st.set_page_config(
 DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo centro y mas.jpg"
 
-ZONA_HONDURAS = timezone(timedelta(hours=-6))
 VIGENCIA_COTIZACION_HORAS = 24
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
 FORMATOS_FECHA_COTIZACION = (
@@ -35,6 +41,38 @@ FORMATOS_FECHA_COTIZACION = (
 
 def obtener_tiempo_honduras():
     return datetime.now(ZONA_HONDURAS)
+
+
+def estampa_tiempo_honduras(ahora=None):
+    """Marca de emisión en hora oficial de Honduras (America/Tegucigalpa, UTC-6)."""
+    dt = ahora or obtener_tiempo_honduras()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZONA_HONDURAS)
+    else:
+        dt = dt.astimezone(ZONA_HONDURAS)
+    return dt, dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def formatear_fecha_pantalla(fecha_raw):
+    dt = parsear_fecha_cotizacion(fecha_raw)
+    if dt is None:
+        return str(fecha_raw or "")
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def clave_orden_cotizacion(fecha_raw, id_cot=0):
+    dt = parsear_fecha_cotizacion(fecha_raw)
+    ts = dt.timestamp() if dt is not None else 0.0
+    try:
+        cid = int(id_cot or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    return (-ts, -cid)
+
+
+def ordenar_cotizaciones_desc(filas, idx_fecha=7, idx_id=0):
+    """LIFO: la cotización más reciente (fecha Honduras) queda primero."""
+    return sorted(filas, key=lambda r: clave_orden_cotizacion(r[idx_fecha], r[idx_id]))
 
 
 def parsear_fecha_cotizacion(fecha_raw):
@@ -284,7 +322,7 @@ def fechas_cotizaciones_casillero(casillero):
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC",
+                "SELECT COALESCE(fecha_creacion, fecha) FROM cotizaciones WHERE codigo_casillero = ? ORDER BY fecha_creacion DESC, id DESC",
                 (cas,),
             )
             return [fila[0] for fila in cur.fetchall()]
@@ -356,7 +394,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     cas = formatear_casillero(casillero or "")
     if not cas:
         return False
-    ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    _, ahora = estampa_tiempo_honduras()
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -769,7 +807,8 @@ def init_db():
                 total_usd REAL,
                 fecha TEXT NOT NULL,
                 confirmada INTEGER NOT NULL DEFAULT 0,
-                fecha_confirmacion TEXT
+                fecha_confirmacion TEXT,
+                fecha_creacion TEXT
             )
             """
         )
@@ -779,6 +818,15 @@ def init_db():
             c.execute("ALTER TABLE cotizaciones ADD COLUMN confirmada INTEGER NOT NULL DEFAULT 0")
         if "fecha_confirmacion" not in columnas_cot:
             c.execute("ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT")
+        if "fecha_creacion" not in columnas_cot:
+            c.execute("ALTER TABLE cotizaciones ADD COLUMN fecha_creacion TEXT")
+        c.execute(
+            """
+            UPDATE cotizaciones
+            SET fecha_creacion = fecha
+            WHERE fecha_creacion IS NULL OR TRIM(fecha_creacion) = ''
+            """
+        )
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS paquetes (
@@ -1277,15 +1325,10 @@ def asegurar_superadmin():
 
 
 def restaurar_datos_operativos_cliente():
-    """Reabre una sola vez las cotizaciones vencidas de prueba para que el historial vuelva a verse."""
+    """Marca el arranque operativo sin reescribir fechas de cotización (se conserva el orden cronológico)."""
     if get_config_sistema("datos_operativos_restaurados", "") == "1":
         return
-    ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("UPDATE cotizaciones SET fecha = ?", (ahora,))
-        conn.commit()
-    set_config_sistema("datos_operativos_restaurados", "1", "Cotizaciones reabiertas al habilitar todos los módulos")
+    set_config_sistema("datos_operativos_restaurados", "1", "Módulos habilitados sin alterar timestamps de cotización")
 
 
 def migrar_prefijo_casillero():
@@ -2857,16 +2900,19 @@ elif st.session_state["rol"] == "cliente":
         c = conn.cursor()
         c.execute(
             """
-            SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha, IFNULL(confirmada, 0)
-            FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC
+            SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
+                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
+            FROM cotizaciones
+            WHERE codigo_casillero = ?
+            ORDER BY fecha_creacion DESC, id DESC
             """,
             (casillero,),
         )
-        lista_todas_cotizaciones = c.fetchall()
+        lista_todas_cotizaciones = ordenar_cotizaciones_desc(c.fetchall())
 
-        lista_mis_cotizaciones = [
-            row for row in lista_todas_cotizaciones if cotizacion_visible_historial(row[7], row[8], ahora_hn)
-        ]
+        lista_mis_cotizaciones = ordenar_cotizaciones_desc(
+            [row for row in lista_todas_cotizaciones if cotizacion_visible_historial(row[7], row[8], ahora_hn)]
+        )
         total_cotizaciones = len(lista_mis_cotizaciones)
 
         c.execute(
@@ -3019,7 +3065,7 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown(
                     f"""
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {fec_c}<br>
+                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
                     <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
                 </div>
@@ -3422,19 +3468,19 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
-            f_hoy_sql = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-            f_hoy_doc = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
+            ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
+            f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
             with get_db() as conn:
                 cur = conn.cursor()
                 cur.execute(
                     """
                     INSERT INTO cotizaciones (
                         codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
-                        total_usd, fecha, confirmada
+                        total_usd, fecha, confirmada, fecha_creacion
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                     """,
-                    (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql),
+                    (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql, f_hoy_sql),
                 )
                 id_generado = cur.lastrowid
 
@@ -3576,9 +3622,9 @@ elif st.session_state["rol"] == "cliente":
 
         st.markdown("#### 📄 PDF Tarifa de cotizaciones confirmadas")
         st.caption("Descargue el comprobante de tarifa de cada cotización consolidada en cualquier momento.")
-        cotizaciones_despacho = [
-            row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])
-        ]
+        cotizaciones_despacho = ordenar_cotizaciones_desc(
+            [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
+        )
         try:
             foco_envios = int(st.session_state.get("cotizacion_envio_foco") or 0)
         except (TypeError, ValueError):
@@ -3586,7 +3632,10 @@ elif st.session_state["rol"] == "cliente":
         if foco_envios:
             cotizaciones_despacho = sorted(
                 cotizaciones_despacho,
-                key=lambda r: (0 if int(r[0]) == foco_envios else 1, -int(r[0])),
+                key=lambda r: (
+                    0 if int(r[0]) == foco_envios else 1,
+                    *clave_orden_cotizacion(r[7], r[0]),
+                ),
             )
         if cotizaciones_despacho:
             for cot_env in cotizaciones_despacho:
@@ -3602,7 +3651,7 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown(
                     f"""
                 <div style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {fec_e}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
+                    <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_e)}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
                     <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
                     <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
                 </div>
