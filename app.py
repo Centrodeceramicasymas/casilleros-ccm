@@ -514,6 +514,18 @@ def ir_a_envios_de_cotizacion(id_cot):
     ir_a("Mis Envíos", hub="china")
 
 
+def ir_a_cotizacion_emitida(id_cot):
+    """Tras emitir en el Cotizador, abre Mis Cotizaciones en la tarifa recién generada."""
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        cid = 0
+    if cid:
+        st.session_state["cotizacion_historial_foco"] = cid
+        st.session_state["ultima_cot_id"] = cid
+    ir_a("Mis Cotizaciones", hub="china")
+
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -1710,6 +1722,7 @@ def logout():
         "hub",
         "china_modulos_desbloqueados",
         "cotizacion_envio_foco",
+        "cotizacion_historial_foco",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -3056,16 +3069,29 @@ elif st.session_state["rol"] == "cliente":
         )
 
         if lista_mis_cotizaciones:
+            try:
+                foco_hist = int(st.session_state.get("cotizacion_historial_foco") or 0)
+            except (TypeError, ValueError):
+                foco_hist = 0
+            if foco_hist and any(int(row[0]) == foco_hist for row in lista_mis_cotizaciones):
+                st.success(
+                    f"CCM-COT-{foco_hist:05d} acaba de emitirse. Está en la primera tarjeta. "
+                    "Confírmela aquí para que no caduque en 24 horas."
+                )
             for cot in lista_mis_cotizaciones:
                 id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                 consolidada = es_cotizacion_confirmada(conf_c)
                 estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn)
                 color_estado = "#1d4ed8" if consolidada else "#166534"
                 icono_estado = "✅" if consolidada else "⏳"
+                es_foco_hist = foco_hist and int(id_cot_item) == foco_hist
+                borde = "#16a34a" if es_foco_hist else "#e2e8f0"
+                fondo = "#f0fdf4" if es_foco_hist else "#f8fafc"
+                etiqueta_foco = " &bull; <span style='color:#166534;font-weight:800;'>Recién emitida</span>" if es_foco_hist else ""
                 st.markdown(
                     f"""
-                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)}<br>
+                <div id="cotizacion-ccm-{id_cot_item}" style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
+                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)}{etiqueta_foco}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
                     <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
                 </div>
@@ -3132,6 +3158,40 @@ elif st.session_state["rol"] == "cliente":
                             "application/pdf",
                             key=f"dl_cot_{id_cot_item}",
                             use_container_width=True,
+                        )
+                    if es_foco_hist:
+                        pdf_fab_hist = generar_pdf_etiqueta_proveedor(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            al=al_c,
+                            an=an_c,
+                            la=la_c,
+                            pe_lb=pe_lb_c,
+                            pe_kg=pe_lb_c / 2.20462,
+                            vol_m3=vol_m3_c,
+                            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+                            fecha_emision=fec_c,
+                        )
+                        st.download_button(
+                            "📥 PDF Fabricante",
+                            pdf_fab_hist,
+                            f"Shipping_Label_Fabricante_{casillero}.pdf",
+                            "application/pdf",
+                            key=f"dl_pdf_fab_hist_{id_cot_item}",
+                            use_container_width=True,
+                        )
+                        msg_wa = (
+                            f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_cot_item:05d} "
+                            f"generada el {formatear_fecha_pantalla(fec_c)} del casillero {casillero}. "
+                            f"Destino de Entrega: {st.session_state['modalidad_envio_seleccionada']}. "
+                            f"Total: ${tot_c:.2f} USD."
+                        )
+                        url_wa_hist = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_wa)
+                        st.markdown(
+                            f'<a href="{url_wa_hist}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
+                            unsafe_allow_html=True,
                         )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
@@ -3501,8 +3561,7 @@ elif st.session_state["rol"] == "cliente":
                 "fecha_hora_doc": f_hoy_doc,
                 "fecha_sql": f_hoy_sql,
             }
-            st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
-            st.rerun()
+            ir_a_cotizacion_emitida(id_generado)
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
