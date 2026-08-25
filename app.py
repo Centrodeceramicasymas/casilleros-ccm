@@ -708,111 +708,211 @@ st.markdown(
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@700&display=swap');
 
+    :root {
+        --app-max-width: 520px;
+        --app-pad: 0.7rem;
+        --nav-btn-w: 108px;
+        --nav-btn-h: 40px;
+        --header-blue-pad-y: 8px;
+        --header-blue-pad-x: 12px;
+        --greeting-title: 0.95rem;
+        --greeting-sub: 0.68rem;
+        --greeting-time: 0.62rem;
+        --sticky-h: 150px;
+    }
+
+    html, body {
+        overflow-x: hidden !important;
+        max-width: 100% !important;
+    }
+
     .stApp {
         background-color: #f8fafc !important;
         color: #0f172a !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
+        overflow: visible !important;
+        height: auto !important;
+        min-height: 100% !important;
     }
 
-    #MainMenu, header, footer {visibility: hidden;}
+    #MainMenu, footer, header, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+    }
+
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    section.main,
+    .stMain,
+    .stMainBlockContainer,
+    [data-testid="stVerticalBlock"] {
+        overflow: visible !important;
+        height: auto !important;
+        min-height: 0 !important;
+        transform: none !important;
+        filter: none !important;
+        contain: none !important;
+    }
 
     .block-container {
-        max-width: 520px !important;
+        max-width: var(--app-max-width) !important;
+        width: 100% !important;
         padding-top: 0rem !important;
         padding-bottom: 5rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-left: var(--app-pad) !important;
+        padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
-        overflow-x: hidden !important;
+        overflow: visible !important;
+        transform: none !important;
     }
 
-    .st-key-sticky_top_header {
-        position: sticky !important;
+    .block-container:has(.st-key-sticky_top_header),
+    .block-container:has([class*="st-key-sticky_top_header"]) {
+        padding-top: var(--sticky-h) !important;
+    }
+
+    .st-key-sticky_top_header,
+    div[class*="st-key-sticky_top_header"] {
+        position: fixed !important;
         top: 0 !important;
-        z-index: 999 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        z-index: 2147483647 !important;
         background-color: #f8fafc !important;
-        padding-top: 0.4rem !important;
-        padding-bottom: 0.3rem !important;
-        margin-left: -0.8rem !important;
-        margin-right: -0.8rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-top: max(0.35rem, env(safe-area-inset-top, 0px)) !important;
+        padding-bottom: 0.35rem !important;
+        margin: 0 !important;
+        padding-left: max(var(--app-pad), calc((100vw - var(--app-max-width)) / 2)) !important;
+        padding-right: max(var(--app-pad), calc((100vw - var(--app-max-width)) / 2)) !important;
+        box-sizing: border-box !important;
         border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
     }
 
     .app-header-blue {
         background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
-        padding: 14px 16px 14px 16px !important;
-        border-radius: 16px !important;
+        padding: var(--header-blue-pad-y) var(--header-blue-pad-x) !important;
+        border-radius: 12px !important;
         color: #ffffff !important;
         box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
         max-width: 100% !important;
+        width: 100% !important;
         box-sizing: border-box !important;
-        margin-bottom: 6px !important;
+        margin-bottom: 4px !important;
         display: flex !important;
         flex-direction: column !important;
-        gap: 3px !important;
+        gap: 1px !important;
     }
 
     .app-greeting-title {
-        font-size: 1.12rem !important;
+        font-size: var(--greeting-title) !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
-        line-height: 1.25 !important;
+        line-height: 1.2 !important;
         letter-spacing: -0.2px !important;
     }
 
     .app-greeting-sub {
-        font-size: 0.80rem !important;
+        font-size: var(--greeting-sub) !important;
         color: #dbeafe !important;
-        margin-top: 1px !important;
+        margin-top: 0 !important;
         font-weight: 500 !important;
+        line-height: 1.25 !important;
     }
 
     .app-header-time {
-        font-size: 0.72rem !important;
+        font-size: var(--greeting-time) !important;
         color: #bfdbfe !important;
-        margin-top: 2px !important;
+        margin-top: 1px !important;
         font-weight: 600 !important;
+        line-height: 1.2 !important;
     }
 
+    /* iPhone / Android compacto */
     @media (max-width: 480px) {
+        :root {
+            --app-max-width: 100vw;
+            --app-pad: 0.55rem;
+            --nav-btn-w: 102px;
+            --nav-btn-h: 38px;
+            --header-blue-pad-y: 8px;
+            --header-blue-pad-x: 12px;
+            --greeting-title: 0.92rem;
+            --greeting-sub: 0.66rem;
+            --greeting-time: 0.60rem;
+            --sticky-h: 142px;
+        }
         .app-header-blue {
-            padding: 12px 14px !important;
-            border-radius: 14px !important;
-            margin-bottom: 4px !important;
+            border-radius: 11px !important;
+            margin-bottom: 3px !important;
         }
-        .app-greeting-title {
-            font-size: 1.05rem !important;
+        .inicio-placeholder { min-height: 260px; }
+        .inicio-placeholder-body { min-height: 180px; }
+        .card-box { padding: 0.9rem; border-radius: 12px; }
+        .app-banner-card { padding: 12px; border-radius: 12px; margin-bottom: 0.85rem; }
+        .swipe-indicator-bar { font-size: 0.68rem; margin: 1px 0 4px 0; }
+    }
+
+    /* Teléfonos grandes */
+    @media (min-width: 481px) and (max-width: 767px) {
+        :root {
+            --app-max-width: 560px;
+            --app-pad: 0.75rem;
+            --nav-btn-w: 112px;
+            --nav-btn-h: 42px;
+            --header-blue-pad-y: 11px;
+            --header-blue-pad-x: 14px;
+            --greeting-title: 1.05rem;
+            --greeting-sub: 0.74rem;
+            --greeting-time: 0.68rem;
+            --sticky-h: 156px;
         }
-        .app-greeting-sub {
-            font-size: 0.76rem !important;
+        .app-header-blue { border-radius: 14px !important; }
+    }
+
+    /* Tablet */
+    @media (min-width: 768px) and (max-width: 1023px) {
+        :root {
+            --app-max-width: 820px;
+            --app-pad: 1.1rem;
+            --nav-btn-w: 122px;
+            --nav-btn-h: 44px;
+            --header-blue-pad-y: 14px;
+            --header-blue-pad-x: 18px;
+            --greeting-title: 1.22rem;
+            --greeting-sub: 0.84rem;
+            --greeting-time: 0.74rem;
+            --sticky-h: 168px;
         }
-        .app-header-time {
-            font-size: 0.68rem !important;
+        .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
+        .card-box { padding: 1.35rem; }
+        .inicio-placeholder { min-height: 380px; }
+    }
+
+    /* Computadora */
+    @media (min-width: 1024px) {
+        :root {
+            --app-max-width: 1080px;
+            --app-pad: 1.4rem;
+            --nav-btn-w: 128px;
+            --nav-btn-h: 46px;
+            --header-blue-pad-y: 16px;
+            --header-blue-pad-x: 22px;
+            --greeting-title: 1.35rem;
+            --greeting-sub: 0.90rem;
+            --greeting-time: 0.78rem;
+            --sticky-h: 158px;
         }
-        .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-            flex: 0 0 110px !important;
-            width: 110px !important;
-            min-width: 110px !important;
-            max-width: 110px !important;
-        }
-        .st-key-nav_scroll div.stButton {
-            width: 110px !important;
-            min-width: 110px !important;
-            max-width: 110px !important;
-        }
-        .st-key-nav_scroll div.stButton > button {
-            width: 110px !important;
-            min-width: 110px !important;
-            height: 40px !important;
-            min-height: 40px !important;
-            max-height: 40px !important;
-            font-size: 0.72rem !important;
-            padding: 0 4px !important;
-        }
+        .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
+        .card-box { padding: 1.5rem; border-radius: 16px; }
+        .inicio-placeholder { min-height: 420px; }
+        .swipe-indicator-bar { display: none; }
     }
 
     .app-delivery-container {
@@ -877,26 +977,26 @@ st.markdown(
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 115px !important;
-        width: 115px !important;
-        min-width: 115px !important;
-        max-width: 115px !important;
+        flex: 0 0 var(--nav-btn-w) !important;
+        width: var(--nav-btn-w) !important;
+        min-width: var(--nav-btn-w) !important;
+        max-width: var(--nav-btn-w) !important;
         box-sizing: border-box !important;
     }
 
     .st-key-nav_scroll div.stButton {
-        width: 115px !important;
-        min-width: 115px !important;
-        max-width: 115px !important;
+        width: var(--nav-btn-w) !important;
+        min-width: var(--nav-btn-w) !important;
+        max-width: var(--nav-btn-w) !important;
         margin: 0 !important;
     }
 
     .st-key-nav_scroll div.stButton > button {
-        width: 115px !important;
-        min-width: 115px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        max-height: 44px !important;
+        width: var(--nav-btn-w) !important;
+        min-width: var(--nav-btn-w) !important;
+        height: var(--nav-btn-h) !important;
+        min-height: var(--nav-btn-h) !important;
+        max-height: var(--nav-btn-h) !important;
         border-radius: 10px !important;
         padding: 0 8px !important;
         font-size: 0.76rem !important;
@@ -1105,10 +1205,10 @@ st.markdown(
 
     .st-key-btn_logout_cliente button,
     .st-key-btn_logout_cliente button[kind="secondary"] {
-        width: 115px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        max-height: 44px !important;
+        width: var(--nav-btn-w) !important;
+        height: var(--nav-btn-h) !important;
+        min-height: var(--nav-btn-h) !important;
+        max-height: var(--nav-btn-h) !important;
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
