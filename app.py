@@ -466,6 +466,16 @@ def ir_a(vista, hub="_omit"):
     st.rerun()
 
 
+def ir_a_envios_de_cotizacion(id_cot):
+    """Abre Envíos con la cotización consolidada en foco (PDF Tarifa y datos del envío)."""
+    try:
+        st.session_state["cotizacion_envio_foco"] = int(id_cot)
+    except (TypeError, ValueError):
+        st.session_state.pop("cotizacion_envio_foco", None)
+    st.session_state["china_modulos_desbloqueados"] = True
+    ir_a("Mis Envíos", hub="china")
+
+
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
@@ -1656,6 +1666,7 @@ def logout():
         "sub_tab_inicio",
         "hub",
         "china_modulos_desbloqueados",
+        "cotizacion_envio_foco",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -2994,7 +3005,8 @@ elif st.session_state["rol"] == "cliente":
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
         st.caption(
             "Las tarifas no confirmadas caducan a las 24 horas (hora de Honduras) y se eliminan. "
-            "Al confirmar, la cotización queda consolidada de forma permanente."
+            "Al confirmar, la cotización queda consolidada de forma permanente. "
+            "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
         )
 
         if lista_mis_cotizaciones:
@@ -3035,13 +3047,24 @@ elif st.session_state["rol"] == "cliente":
                     fecha_emision=fec_c,
                 )
                 if consolidada:
-                    st.download_button(
-                        f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
-                        pdf_historial,
-                        f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
-                        "application/pdf",
-                        key=f"dl_cot_{id_cot_item}",
-                    )
+                    col_env, col_pdf = st.columns(2)
+                    with col_env:
+                        if st.button(
+                            "📦 Ir a Envíos",
+                            type="primary",
+                            key=f"btn_ir_envios_{id_cot_item}",
+                            use_container_width=True,
+                        ):
+                            ir_a_envios_de_cotizacion(id_cot_item)
+                    with col_pdf:
+                        st.download_button(
+                            f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
+                            pdf_historial,
+                            f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_cot_{id_cot_item}",
+                            use_container_width=True,
+                        )
                 else:
                     col_conf, col_pdf = st.columns(2)
                     with col_conf:
@@ -3053,6 +3076,7 @@ elif st.session_state["rol"] == "cliente":
                         ):
                             if confirmar_cotizacion_casillero(id_cot_item, casillero):
                                 st.session_state["china_modulos_desbloqueados"] = True
+                                st.session_state["cotizacion_envio_foco"] = int(id_cot_item)
                                 st.rerun()
                     with col_pdf:
                         st.download_button(
@@ -3555,13 +3579,30 @@ elif st.session_state["rol"] == "cliente":
         cotizaciones_despacho = [
             row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])
         ]
+        try:
+            foco_envios = int(st.session_state.get("cotizacion_envio_foco") or 0)
+        except (TypeError, ValueError):
+            foco_envios = 0
+        if foco_envios:
+            cotizaciones_despacho = sorted(
+                cotizaciones_despacho,
+                key=lambda r: (0 if int(r[0]) == foco_envios else 1, -int(r[0])),
+            )
         if cotizaciones_despacho:
             for cot_env in cotizaciones_despacho:
                 id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
+                es_foco = foco_envios and int(id_e) == foco_envios
+                borde = "#004ac1" if es_foco else "#e2e8f0"
+                fondo = "#eff6ff" if es_foco else "#f8fafc"
+                if es_foco:
+                    st.success(
+                        f"CCM-COT-{id_e:05d} está lista para seguimiento. "
+                        "Descargue el PDF Tarifa de esta cotización consolidada."
+                    )
                 st.markdown(
                     f"""
-                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {fec_e}<br>
+                <div style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                    <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {fec_e}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
                     <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
                     <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
                 </div>
