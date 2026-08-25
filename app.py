@@ -1784,28 +1784,24 @@ elif st.session_state["rol"] == "cliente":
             )
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
-        st.markdown("#### 🏠 Inicio")
-        st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
-
         hub_sel = st.session_state.get("hub")
-        for hub_id, hub in HUBS.items():
-            etiqueta = f"{hub['icon']}  {hub['label']}"
-            seleccionado = hub_sel == hub_id
-            if st.button(
-                etiqueta,
-                type="primary" if seleccionado else "secondary",
-                key=f"hub_{hub_id}",
-                use_container_width=True,
-            ):
-                if hub_id == "china":
-                    ir_a("Inicio", hub="china")
-                else:
-                    ir_a("Inicio", hub=hub_id)
 
-        if hub_sel == "china":
-            st.markdown("##### Módulos de China")
+        if not hub_sel:
+            st.markdown("#### 🏠 Inicio")
+            st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+            for hub_id, hub in HUBS.items():
+                if st.button(
+                    f"{hub['icon']}  {hub['label']}",
+                    type="secondary",
+                    key=f"hub_{hub_id}",
+                    use_container_width=True,
+                ):
+                    ir_a("Inicio", hub=hub_id)
+        elif hub_sel == "china":
+            hub_china = HUBS["china"]
+            st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
-            mods = HUBS["china"]["modulos"]
+            mods = hub_china["modulos"]
             for fila in range(0, len(mods), 2):
                 cols_mod = st.columns(2, gap="small")
                 for offset, col in enumerate(cols_mod):
@@ -1823,9 +1819,9 @@ elif st.session_state["rol"] == "cliente":
                         ):
                             ir_a(modulo["id"], hub="china")
                         st.caption(modulo["detalle"])
-
-        elif hub_sel in ("eeuu", "honduras"):
+        elif hub_sel in HUBS:
             hub_vacio = HUBS[hub_sel]
+            st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
             st.markdown(
                 f'<div class="hub-empty-box">'
                 f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
