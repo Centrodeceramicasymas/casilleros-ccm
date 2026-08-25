@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import sqlite3
 import hashlib
 import math
@@ -524,6 +525,28 @@ def ir_a_cotizacion_emitida(id_cot):
         st.session_state["cotizacion_historial_foco"] = cid
         st.session_state["ultima_cot_id"] = cid
     ir_a("Mis Cotizaciones", hub="china")
+
+
+def desplazar_a_cotizacion_pendiente():
+    """Auto-scroll suave hasta la tarjeta que hay que confirmar (bajo el header sticky)."""
+    components.html(
+        """
+        <script>
+        (function () {
+          const ir = () => {
+            const doc = window.parent.document;
+            const el = doc.getElementById("cotizacion-foco-pendiente");
+            if (!el) return;
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+          };
+          setTimeout(ir, 180);
+          setTimeout(ir, 480);
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
 
 
 # ---------------------------------------------------------
@@ -2095,6 +2118,48 @@ st.markdown(
         100% { opacity: 0.35; }
     }
 
+    @keyframes cotPulseBorde {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.38);
+            border-color: #f59e0b;
+        }
+        50% {
+            box-shadow: 0 0 0 7px rgba(245, 158, 11, 0.12);
+            border-color: #d97706;
+        }
+    }
+    @keyframes cotPulseInsignia {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.42; }
+    }
+    @keyframes cotPulseBoton {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.40); }
+        50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.16); }
+    }
+
+    .cotizacion-pendiente-foco {
+        animation: cotPulseBorde 1.55s ease-in-out infinite;
+        scroll-margin-top: 12.5rem;
+    }
+    .cotizacion-badge-pendiente {
+        display: inline-block;
+        margin-left: 6px;
+        background: #fffbeb;
+        color: #b45309;
+        border: 1.5px solid #f59e0b;
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        animation: cotPulseInsignia 1.2s ease-in-out infinite;
+        vertical-align: middle;
+    }
+    [class*="st-key-foco_confirmar_"] button,
+    [class*="st-key-foco_confirmar_"] [data-testid^="stBaseButton"] {
+        animation: cotPulseBoton 1.55s ease-in-out infinite;
+    }
+
     .swipe-indicator-bar {
         display: flex;
         justify-content: center;
@@ -3073,31 +3138,45 @@ elif st.session_state["rol"] == "cliente":
                 foco_hist = int(st.session_state.get("cotizacion_historial_foco") or 0)
             except (TypeError, ValueError):
                 foco_hist = 0
-            if foco_hist and any(int(row[0]) == foco_hist for row in lista_mis_cotizaciones):
-                st.success(
-                    f"CCM-COT-{foco_hist:05d} acaba de emitirse. Está en la primera tarjeta. "
-                    "Confírmela aquí para que no caduque en 24 horas."
+            if foco_hist:
+                lista_mis_cotizaciones = sorted(
+                    lista_mis_cotizaciones,
+                    key=lambda r: (
+                        0 if int(r[0]) == foco_hist else 1,
+                        *clave_orden_cotizacion(r[7], r[0]),
+                    ),
                 )
+            scroll_pendiente_hecho = False
             for cot in lista_mis_cotizaciones:
                 id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                 consolidada = es_cotizacion_confirmada(conf_c)
                 estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn)
                 color_estado = "#1d4ed8" if consolidada else "#166534"
                 icono_estado = "✅" if consolidada else "⏳"
-                es_foco_hist = foco_hist and int(id_cot_item) == foco_hist
-                borde = "#16a34a" if es_foco_hist else "#e2e8f0"
-                fondo = "#f0fdf4" if es_foco_hist else "#f8fafc"
-                etiqueta_foco = " &bull; <span style='color:#166534;font-weight:800;'>Recién emitida</span>" if es_foco_hist else ""
+                es_foco_hist = bool(foco_hist and int(id_cot_item) == foco_hist)
+                pendiente_foco = es_foco_hist and not consolidada
+                clase_foco = "cotizacion-pendiente-foco" if pendiente_foco else ""
+                id_ancla = 'id="cotizacion-foco-pendiente"' if pendiente_foco else f'id="cotizacion-ccm-{id_cot_item}"'
+                borde = "#f59e0b" if pendiente_foco else "#e2e8f0"
+                fondo = "#fffbeb" if pendiente_foco else "#f8fafc"
+                insignia = (
+                    '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
+                    if pendiente_foco
+                    else ""
+                )
                 st.markdown(
                     f"""
-                <div id="cotizacion-ccm-{id_cot_item}" style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
-                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)}{etiqueta_foco}<br>
+                <div {id_ancla} class="{clase_foco}" style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
+                    <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)} {insignia}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
                     <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
                 </div>
                 """,
                     unsafe_allow_html=True,
                 )
+                if pendiente_foco and not scroll_pendiente_hecho:
+                    desplazar_a_cotizacion_pendiente()
+                    scroll_pendiente_hecho = True
 
                 pdf_historial = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
@@ -3140,16 +3219,24 @@ elif st.session_state["rol"] == "cliente":
                 else:
                     col_conf, col_pdf = st.columns(2)
                     with col_conf:
-                        if st.button(
-                            "Confirmar Cotización",
-                            type="primary",
-                            key=f"btn_confirmar_cot_{id_cot_item}",
-                            use_container_width=True,
-                        ):
-                            if confirmar_cotizacion_casillero(id_cot_item, casillero):
-                                st.session_state["china_modulos_desbloqueados"] = True
-                                st.session_state["cotizacion_envio_foco"] = int(id_cot_item)
-                                st.rerun()
+                        confirmar_ctx = (
+                            st.container(key=f"foco_confirmar_{id_cot_item}")
+                            if pendiente_foco
+                            else st.container()
+                        )
+                        with confirmar_ctx:
+                            if st.button(
+                                "Confirmar Cotización",
+                                type="primary",
+                                key=f"btn_confirmar_cot_{id_cot_item}",
+                                use_container_width=True,
+                            ):
+                                if confirmar_cotizacion_casillero(id_cot_item, casillero):
+                                    st.session_state["china_modulos_desbloqueados"] = True
+                                    st.session_state["cotizacion_envio_foco"] = int(id_cot_item)
+                                    if int(st.session_state.get("cotizacion_historial_foco") or 0) == int(id_cot_item):
+                                        st.session_state.pop("cotizacion_historial_foco", None)
+                                    st.rerun()
                     with col_pdf:
                         st.download_button(
                             f"📥 PDF CCM-COT-{id_cot_item:05d}",
@@ -3158,40 +3245,6 @@ elif st.session_state["rol"] == "cliente":
                             "application/pdf",
                             key=f"dl_cot_{id_cot_item}",
                             use_container_width=True,
-                        )
-                    if es_foco_hist:
-                        pdf_fab_hist = generar_pdf_etiqueta_proveedor(
-                            casillero=casillero,
-                            nombre=nombre_completo,
-                            telefono=tel_cli,
-                            ciudad=ciu_cli,
-                            al=al_c,
-                            an=an_c,
-                            la=la_c,
-                            pe_lb=pe_lb_c,
-                            pe_kg=pe_lb_c / 2.20462,
-                            vol_m3=vol_m3_c,
-                            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
-                            fecha_emision=fec_c,
-                        )
-                        st.download_button(
-                            "📥 PDF Fabricante",
-                            pdf_fab_hist,
-                            f"Shipping_Label_Fabricante_{casillero}.pdf",
-                            "application/pdf",
-                            key=f"dl_pdf_fab_hist_{id_cot_item}",
-                            use_container_width=True,
-                        )
-                        msg_wa = (
-                            f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_cot_item:05d} "
-                            f"generada el {formatear_fecha_pantalla(fec_c)} del casillero {casillero}. "
-                            f"Destino de Entrega: {st.session_state['modalidad_envio_seleccionada']}. "
-                            f"Total: ${tot_c:.2f} USD."
-                        )
-                        url_wa_hist = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_wa)
-                        st.markdown(
-                            f'<a href="{url_wa_hist}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px;">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
-                            unsafe_allow_html=True,
                         )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
@@ -3561,7 +3614,8 @@ elif st.session_state["rol"] == "cliente":
                 "fecha_hora_doc": f_hoy_doc,
                 "fecha_sql": f_hoy_sql,
             }
-            ir_a_cotizacion_emitida(id_generado)
+            st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
+            st.rerun()
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
@@ -3619,7 +3673,7 @@ elif st.session_state["rol"] == "cliente":
                         key=f"btn_ver_mis_cotizaciones_{id_c}",
                         use_container_width=True,
                     ):
-                        ir_a("Mis Cotizaciones", hub="china")
+                        ir_a_cotizacion_emitida(id_c)
 
                     pdf_fab = generar_pdf_etiqueta_proveedor(
                         casillero=casillero,
