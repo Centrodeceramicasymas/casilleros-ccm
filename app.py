@@ -582,7 +582,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER EN HEADER SUPERIOR
+# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER EN BARRA HORIZONTAL
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -606,8 +606,8 @@ st.markdown("""
         overflow-x: hidden !important;
     }
 
-    /* HEADER AZUL SUPERIOR CON BOTÓN POWER FIJO A LA DERECHA */
-    .st-key-cliente_header {
+    /* HEADER AZUL SUPERIOR LIMPIO */
+    .app-header-blue {
         background-color: #004ac1 !important;
         padding: 18px 16px 16px 16px !important;
         border-radius: 0 0 20px 20px !important;
@@ -618,112 +618,24 @@ st.markdown("""
         box-sizing: border-box !important;
     }
 
-    /* FORZAR GRID HORIZONTAL DENTRO DEL HEADER PARA QUE NO SE DESPLACE HACIA ABAJO */
-    .st-key-cliente_header div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: flex-start !important;
-        justify-content: space-between !important;
-        width: 100% !important;
-        margin: 0 !important;
-    }
-
-    .st-key-cliente_header div[data-testid="stHorizontalBlock"] > div:first-child {
-        flex: 1 1 auto !important;
-        min-width: 0 !important;
-    }
-
-    .st-key-cliente_header div[data-testid="stHorizontalBlock"] > div:last-child {
-        flex: 0 0 54px !important;
-        min-width: 54px !important;
-        max-width: 54px !important;
-        display: flex !important;
-        justify-content: flex-end !important;
-    }
-
-    .st-key-cliente_header .app-header-info {
-        padding: 0 !important;
-    }
-
-    .st-key-cliente_header .app-greeting-title {
+    .app-greeting-title {
         font-size: 1.15rem !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
     }
 
-    .st-key-cliente_header .app-greeting-sub {
+    .app-greeting-sub {
         font-size: 0.8rem !important;
         color: #bfdbfe !important;
         margin-top: 2px !important;
     }
 
-    .st-key-cliente_header .app-header-time {
+    .app-header-time {
         font-size: 0.72rem !important;
         color: #bfdbfe !important;
         margin-top: 2px !important;
         font-weight: 600 !important;
-    }
-
-    /* =========================================================
-       BOTÓN DE APAGADO / POWER ROJO BRILLANTE 3D
-       ========================================================= */
-    .st-key-cliente_header div.stButton > button,
-    div.stButton > button[key="btn_logout_cliente"] {
-        width: 48px !important;
-        min-width: 48px !important;
-        max-width: 48px !important;
-        height: 48px !important;
-        min-height: 48px !important;
-        max-height: 48px !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border-radius: 50% !important;
-        background: radial-gradient(circle at 35% 30%, #ff4d4d 0%, #d60000 60%, #850000 100%) !important;
-        color: #ffffff !important;
-        border: 3.5px solid #d1d5db !important;
-        outline: 1.5px solid #9ca3af !important;
-        box-shadow: 
-            0 4px 10px rgba(0, 0, 0, 0.4),
-            inset 0 3px 6px rgba(255, 255, 255, 0.6),
-            inset 0 -3px 6px rgba(0, 0, 0, 0.5) !important;
-        font-size: 1.35rem !important;
-        font-weight: 900 !important;
-        line-height: 1 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-align: center !important;
-        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        cursor: pointer !important;
-    }
-
-    .st-key-cliente_header div.stButton > button p {
-        font-size: 1.35rem !important;
-        font-weight: 900 !important;
-        color: #ffffff !important;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6) !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        display: block !important;
-    }
-
-    .st-key-cliente_header div.stButton > button:hover {
-        background: radial-gradient(circle at 35% 30%, #ff6b6b 0%, #e60000 60%, #990000 100%) !important;
-        border-color: #f3f4f6 !important;
-        transform: scale(1.08) !important;
-        box-shadow: 
-            0 6px 14px rgba(230, 0, 0, 0.45),
-            inset 0 3px 8px rgba(255, 255, 255, 0.75),
-            inset 0 -3px 6px rgba(0, 0, 0, 0.6) !important;
-    }
-
-    .st-key-cliente_header div.stButton > button:active {
-        transform: scale(0.95) !important;
-        box-shadow: 
-            0 2px 5px rgba(0, 0, 0, 0.5),
-            inset 0 2px 4px rgba(0, 0, 0, 0.6) !important;
     }
 
     .app-delivery-container {
@@ -787,15 +699,84 @@ st.markdown("""
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 125px !important;
-        width: 125px !important;
-        min-width: 125px !important;
-        max-width: 125px !important;
+        flex: 0 0 120px !important;
+        width: 120px !important;
+        min-width: 120px !important;
+        max-width: 120px !important;
     }
 
+    /* COLUMNA DEL BOTÓN DE APAGADO */
+    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div:first-child {
+        flex: 0 0 54px !important;
+        width: 54px !important;
+        min-width: 54px !important;
+        max-width: 54px !important;
+    }
+
+    /* =========================================================
+       BOTÓN DE APAGADO / POWER ROJO BRILLANTE 3D
+       ========================================================= */
+    .st-key-btn_logout_cliente div.stButton > button,
+    div.stButton > button[key="btn_logout_cliente"] {
+        width: 44px !important;
+        min-width: 44px !important;
+        max-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+        background: radial-gradient(circle at 35% 30%, #ff4d4d 0%, #d60000 60%, #850000 100%) !important;
+        color: #ffffff !important;
+        border: 3px solid #d1d5db !important;
+        outline: 1.5px solid #9ca3af !important;
+        box-shadow: 
+            0 3px 8px rgba(0, 0, 0, 0.35),
+            inset 0 3px 6px rgba(255, 255, 255, 0.6),
+            inset 0 -3px 6px rgba(0, 0, 0, 0.5) !important;
+        font-size: 1.25rem !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        cursor: pointer !important;
+    }
+
+    .st-key-btn_logout_cliente div.stButton > button p {
+        font-size: 1.25rem !important;
+        font-weight: 900 !important;
+        color: #ffffff !important;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    .st-key-btn_logout_cliente div.stButton > button:hover {
+        background: radial-gradient(circle at 35% 30%, #ff6b6b 0%, #e60000 60%, #990000 100%) !important;
+        border-color: #f3f4f6 !important;
+        transform: scale(1.08) !important;
+        box-shadow: 
+            0 5px 12px rgba(230, 0, 0, 0.45),
+            inset 0 3px 8px rgba(255, 255, 255, 0.75),
+            inset 0 -3px 6px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    .st-key-btn_logout_cliente div.stButton > button:active {
+        transform: scale(0.95) !important;
+        box-shadow: 
+            0 2px 5px rgba(0, 0, 0, 0.5),
+            inset 0 2px 4px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    /* BOTONES DE NAVEGACIÓN GENERALES */
     .st-key-nav_scroll div.stButton > button {
-        width: 125px !important;
-        min-width: 125px !important;
+        width: 120px !important;
+        min-width: 120px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
@@ -1199,52 +1180,53 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR CON BOTÓN POWER EN ESQUINA SUPERIOR DERECHA ---
-    with st.container(key="cliente_header"):
-        col_header_info, col_header_logout = st.columns([8.2, 1.3], gap="small")
+    # --- HEADER AZUL SUPERIOR LIMPIO ---
+    st.markdown(f"""
+    <div class="app-header-blue">
+        <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
+        <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
+        <div class="app-header-time">🕒 {fecha_hora_texto}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        with col_header_info:
-            st.markdown(f"""
-            <div class="app-header-info">
-                <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
-                <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
-                <div class="app-header-time">🕒 {fecha_hora_texto}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col_header_logout:
+    # =========================================================
+    # MENÚ HORIZONTAL DESLIZABLE (CON BOTÓN DE APAGADO AL INICIO)
+    # =========================================================
+    with st.container(key="nav_scroll"):
+        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns([0.5, 1, 1, 1, 1, 1], gap="small")
+        
+        with c_nav_p:
             if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
-    # =========================================================
-    # MENÚ HORIZONTAL DESLIZABLE
-    # =========================================================
-    with st.container(key="nav_scroll"):
-        c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(5, gap="small")
         with c_nav_c:
             if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
                 st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Mis Cotizaciones"
                 st.rerun()
+
         with c_nav1:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Catálogo"
                 st.rerun()
+
         with c_nav2:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Cotizador"
                 st.rerun()
+
         with c_nav3:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Mis Envíos"
                 st.rerun()
+
         with c_nav4:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
