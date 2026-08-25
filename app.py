@@ -997,6 +997,7 @@ if "autenticado" not in st.session_state:
             "ciudad": None,
             "reg_paso": 1,
             "reg_datos": {},
+            "reg_exito": None,
         }
     )
 
@@ -1702,12 +1703,120 @@ st.markdown(
         color: #ffffff;
     }
 
-    .stTextInput label, .stNumberInput label, .stSelectbox label, .stTextArea label, .stRadio label {
+    .stTextInput [data-testid="stWidgetLabel"],
+    .stNumberInput [data-testid="stWidgetLabel"],
+    .stSelectbox [data-testid="stWidgetLabel"],
+    .stTextArea [data-testid="stWidgetLabel"],
+    .stRadio [data-testid="stWidgetLabel"],
+    [data-testid="stWidgetLabel"] p {
         color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
         font-weight: 700 !important;
         font-size: 0.84rem !important;
         margin-bottom: 4px !important;
+    }
+
+    [data-testid="stRadio"],
+    [data-testid="stRadioGroup"],
+    [data-testid="stRadioOption"] {
+        color: #0f172a !important;
+    }
+
+    [data-testid="stRadioOption"] {
+        display: flex !important;
+        align-items: flex-start !important;
+        width: 100% !important;
+        margin: 6px 0 !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+
+    [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"],
+    [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stRadioOption"] [data-testid="stCaptionContainer"],
+    [data-testid="stRadioOption"] span,
+    .stRadio [data-testid="stMarkdownContainer"] p {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        font-size: 0.92rem !important;
+        font-weight: 600 !important;
+        line-height: 1.35 !important;
         display: block !important;
+    }
+
+    [data-testid="stAlert"],
+    [data-testid="stNotification"],
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"],
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] span,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] strong,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] code,
+    [data-testid="stNotification"] p {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+
+    [data-testid="stAlertContentSuccess"],
+    [data-testid="stAlertContentSuccess"] p {
+        background-color: #ecfdf5 !important;
+        color: #14532d !important;
+        -webkit-text-fill-color: #14532d !important;
+    }
+
+    [data-testid="stAlertContentWarning"],
+    [data-testid="stAlertContentWarning"] p {
+        background-color: #fffbeb !important;
+        color: #92400e !important;
+        -webkit-text-fill-color: #92400e !important;
+    }
+
+    [data-testid="stAlertContentInfo"],
+    [data-testid="stAlertContentInfo"] p {
+        background-color: #eff6ff !important;
+        color: #1e3a8a !important;
+        -webkit-text-fill-color: #1e3a8a !important;
+    }
+
+    [data-testid="stAlertContentError"],
+    [data-testid="stAlertContentError"] p {
+        background-color: #fef2f2 !important;
+        color: #991b1b !important;
+        -webkit-text-fill-color: #991b1b !important;
+    }
+
+    .reg-confirm-card {
+        background: #ecfdf5;
+        border: 2px solid #16a34a;
+        border-radius: 14px;
+        padding: 16px 14px;
+        color: #14532d;
+        margin: 12px 0 16px 0;
+    }
+    .reg-confirm-card h4 {
+        margin: 0 0 10px 0;
+        color: #14532d;
+        font-size: 1.08rem;
+        font-weight: 800;
+    }
+    .reg-confirm-card p, .reg-confirm-card div {
+        color: #14532d;
+        font-size: 0.92rem;
+        font-weight: 600;
+        line-height: 1.45;
+        margin: 0 0 6px 0;
+    }
+    .reg-warn-card {
+        background: #fffbeb;
+        border: 2px solid #d97706;
+        border-radius: 14px;
+        padding: 14px;
+        color: #92400e;
+        font-weight: 700;
+        margin: 12px 0;
     }
 
     div[data-baseweb="input"],
@@ -2026,6 +2135,33 @@ if not st.session_state["autenticado"]:
 
     elif st.session_state["vista_actual"] == "registro":
         st.markdown("### 📋 Apertura de Casillero en China")
+        if st.session_state.get("reg_exito"):
+            creado = st.session_state["reg_exito"]
+            st.markdown(
+                f"""
+                <div class="reg-confirm-card">
+                    <h4>🎉 Casillero y correo confirmados</h4>
+                    <div>Guarde estos datos para iniciar sesión:</div>
+                    <div>👤 {creado.get("nombre", "")}</div>
+                    <div>📧 Correo: <b>{creado.get("correo", "")}</b></div>
+                    <div>🔑 Casillero: <b>{creado.get("casillero", "")}</b></div>
+                    <div>🔒 Contraseña: <b>{creado.get("password", "")}</b></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Ir al inicio de sesión", type="primary"):
+                st.session_state["reg_exito"] = None
+                st.session_state["reg_paso"] = 1
+                st.session_state["reg_datos"] = {}
+                st.session_state["vista_actual"] = "login"
+                st.rerun()
+            if st.button("Volver al Login", type="secondary"):
+                st.session_state["reg_exito"] = None
+                st.session_state["vista_actual"] = "login"
+                st.rerun()
+            st.stop()
+
         paso = st.session_state["reg_paso"]
         st.progress(paso / 4.0, text=f"Paso {paso} de 4")
 
@@ -2091,10 +2227,18 @@ if not st.session_state["autenticado"]:
                 "Rubro Principal",
                 ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"],
             )
-            mod = st.radio(
-                "Modalidad de Entrega",
-                ["Retiro en Bodega Central (San Juan, Intibucá)", "Envío con Forza a Domicilio"],
-            )
+            with st.container(key="reg_modalidad"):
+                mod = st.radio(
+                    "Modalidad de Entrega",
+                    [
+                        "Retiro en Bodega Central (San Juan, Intibucá)",
+                        "Envío con Forza a Domicilio",
+                    ],
+                    captions=[
+                        "Recoge su carga en el almacén principal",
+                        "Entrega a domicilio con mensajería Forza",
+                    ],
+                )
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⬅️ Atrás", type="secondary"):
@@ -2119,7 +2263,10 @@ if not st.session_state["autenticado"]:
                             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(
                                 "Hola, necesito asistencia con mi casillero ya registrado."
                             )
-                            st.warning("⚠️ Ya existe un casillero registrado con este DNI o correo.")
+                            st.markdown(
+                                '<div class="reg-warn-card">⚠️ Ya existe un casillero registrado con este DNI o correo. Use otro correo o consulte a soporte.</div>',
+                                unsafe_allow_html=True,
+                            )
                             st.markdown(
                                 f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>',
                                 unsafe_allow_html=True,
@@ -2143,10 +2290,15 @@ if not st.session_state["autenticado"]:
                                 ),
                             )
                             conn.commit()
-                            st.success("🎉 ¡Casillero Creado!")
-                            st.info(f"🔑 **Casillero:** `{n_cod}` | 🔒 **Contraseña:** `{n_pwd}`")
+                            st.session_state["reg_exito"] = {
+                                "nombre": d["nom"],
+                                "correo": d["cor"],
+                                "casillero": n_cod,
+                                "password": n_pwd,
+                            }
                             st.session_state["reg_paso"] = 1
                             st.session_state["reg_datos"] = {}
+                            st.rerun()
 
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
