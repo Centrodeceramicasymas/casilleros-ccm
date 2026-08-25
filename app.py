@@ -1394,20 +1394,64 @@ st.markdown(
         justify-content: flex-start !important;
         padding: 0 16px !important;
         white-space: normal !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
     }
-    .st-key-mod_cotizaciones div.stButton > button,
-    .st-key-mod_catalogo div.stButton > button,
-    .st-key-mod_cotizador div.stButton > button,
-    .st-key-mod_envios div.stButton > button,
-    .st-key-mod_fichas div.stButton > button {
-        height: 78px !important;
-        min-height: 78px !important;
-        max-height: 78px !important;
-        font-size: 0.86rem !important;
+
+    .st-key-china_modulos button,
+    .st-key-china_modulos [data-testid^="stBaseButton"],
+    .st-key-china_modulos div.stButton > button,
+    .st-key-mod_cotizaciones button,
+    .st-key-mod_catalogo button,
+    .st-key-mod_cotizador button,
+    .st-key-mod_envios button,
+    .st-key-mod_fichas button {
+        height: 64px !important;
+        min-height: 64px !important;
+        max-height: 72px !important;
+        font-size: 0.92rem !important;
+        font-weight: 800 !important;
         border-radius: 14px !important;
         white-space: normal !important;
         line-height: 1.25 !important;
-        padding: 8px 10px !important;
+        padding: 10px 12px !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    .st-key-china_modulos button *,
+    .st-key-china_modulos [data-testid^="stBaseButton"] *,
+    .st-key-mod_cotizaciones button *,
+    .st-key-mod_catalogo button *,
+    .st-key-mod_cotizador button *,
+    .st-key-mod_envios button *,
+    .st-key-mod_fichas button * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+
+    .st-key-china_modulos button:hover,
+    .st-key-china_modulos [data-testid^="stBaseButton"]:hover {
+        background: #f8fafc !important;
+        border-color: #004ac1 !important;
+        color: #004ac1 !important;
+    }
+
+    .mod-detalle {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #64748b;
+        text-align: center;
+        margin: 4px 0 12px 0;
+        line-height: 1.3;
     }
 </style>
 """,
@@ -1802,23 +1846,26 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
             mods = hub_china["modulos"]
-            for fila in range(0, len(mods), 2):
-                cols_mod = st.columns(2, gap="small")
-                for offset, col in enumerate(cols_mod):
-                    if fila + offset >= len(mods):
-                        break
-                    modulo = mods[fila + offset]
-                    with col:
-                        texto = f"{modulo['icon']} {modulo['label']}"
-                        if st.button(
-                            texto,
-                            type="secondary",
-                            key=modulo["btn_key"],
-                            use_container_width=True,
-                            help=modulo["detalle"],
-                        ):
-                            ir_a(modulo["id"], hub="china")
-                        st.caption(modulo["detalle"])
+            with st.container(key="china_modulos"):
+                for fila in range(0, len(mods), 2):
+                    cols_mod = st.columns(2, gap="small")
+                    for offset, col in enumerate(cols_mod):
+                        if fila + offset >= len(mods):
+                            break
+                        modulo = mods[fila + offset]
+                        with col:
+                            texto = f"{modulo['icon']}  {modulo['label']}"
+                            if st.button(
+                                texto,
+                                type="secondary",
+                                key=modulo["btn_key"],
+                                use_container_width=True,
+                            ):
+                                ir_a(modulo["id"], hub="china")
+                            st.markdown(
+                                f'<div class="mod-detalle">{modulo["detalle"]}</div>',
+                                unsafe_allow_html=True,
+                            )
         elif hub_sel in HUBS:
             hub_vacio = HUBS[hub_sel]
             st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
