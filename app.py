@@ -152,7 +152,7 @@ def ir_a(vista, hub="_omit"):
     elif vista in MODULOS_POR_ID:
         st.session_state["hub"] = MODULOS_POR_ID[vista]
     st.session_state["sub_tab_inicio"] = vista
-    cas = str(st.session_state.get("casillero", "")).strip()
+    cas = formatear_casillero(st.session_state.get("casillero", ""))
     if cas:
         st.query_params["casillero"] = cas
     st.query_params["vista"] = vista
@@ -521,7 +521,7 @@ def init_db():
                 telefono_principal, departamento, ciudad, direccion_exacta,
                 password_hash, rol, activo, fecha_creacion
             ) VALUES (
-                '08011990', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
+                'CCM-08011990', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
                 '+504 9999-0000', 'Intibucá', 'San Juan', 'Oficina Central CCM',
                 ?, 'admin', 1, '2026-08-22 00:00:00'
             )
@@ -537,7 +537,7 @@ def init_db():
                 telefono_principal, departamento, ciudad, direccion_exacta,
                 rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
             ) VALUES (
-                '13011998', 'María Elena López', '1301199800990', 'cliente@ccm.hn',
+                'CCM-13011998', 'María Elena López', '1301199800990', 'cliente@ccm.hn',
                 '+504 9577-1099', 'Intibucá', 'San Juan', 'Barrio El Centro, frente al parque',
                 'Cerámica & Acabados', 'Retiro en Bodega Central (San Juan, Intibucá)',
                 ?, 'cliente', 1, '2026-08-22 00:00:00'
@@ -548,7 +548,7 @@ def init_db():
         c.execute(
             """
             INSERT OR IGNORE INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
-            VALUES ('CN-GZ-88421', '13011998', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
+            VALUES ('CN-GZ-88421', 'CCM-13011998', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
             """
         )
 
@@ -570,11 +570,77 @@ def set_tarifa(clave, valor):
         c.execute("UPDATE config_maritima SET valor = ? WHERE clave = ?", (valor, clave))
 
 
+PREFIJO_CASILLERO = "CCM-"
+
+
+def nucleo_casillero_desde_id(valor):
+    """Toma los primeros 8 dígitos del DNI o del código ingresado."""
+    texto = str(valor or "").strip().upper()
+    if texto.startswith(PREFIJO_CASILLERO):
+        texto = texto[len(PREFIJO_CASILLERO) :]
+    digitos = "".join(filter(str.isdigit, texto))
+    if len(digitos) >= 8:
+        return digitos[:8]
+    if digitos:
+        return digitos.zfill(8)
+    return ""
+
+
 def generar_codigo_casillero_dni(dni_raw):
-    solo_digitos = "".join(filter(str.isdigit, str(dni_raw)))
-    if len(solo_digitos) >= 8:
-        return solo_digitos[:8]
-    return solo_digitos.zfill(8)
+    nucleo = nucleo_casillero_desde_id(dni_raw)
+    if not nucleo:
+        return ""
+    return f"{PREFIJO_CASILLERO}{nucleo}"
+
+
+def formatear_casillero(codigo):
+    return generar_codigo_casillero_dni(codigo) or str(codigo or "").strip()
+
+
+def codigo_casillero_desde_usuario(codigo, dni):
+    dni_digitos = "".join(filter(str.isdigit, str(dni or "")))
+    if len(dni_digitos) >= 8:
+        return generar_codigo_casillero_dni(dni)
+    return formatear_casillero(codigo)
+
+
+def coincidencias_casillero(valor):
+    vistos = []
+    for candidato in (str(valor or "").strip(), formatear_casillero(valor), nucleo_casillero_desde_id(valor)):
+        if candidato and candidato not in vistos:
+            vistos.append(candidato)
+    nucleo = nucleo_casillero_desde_id(valor)
+    if nucleo:
+        con_prefijo = f"{PREFIJO_CASILLERO}{nucleo}"
+        if con_prefijo not in vistos:
+            vistos.append(con_prefijo)
+    return vistos
+
+
+def migrar_prefijo_casillero():
+    tablas_hijas = ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, codigo_casillero, dni FROM usuarios")
+        filas = c.fetchall()
+        for uid, codigo, dni in filas:
+            nuevo = codigo_casillero_desde_usuario(codigo, dni)
+            if not nuevo or nuevo == codigo:
+                continue
+            c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo, uid))
+            destino_existe = c.fetchone() is not None
+            for tabla in tablas_hijas:
+                c.execute(
+                    f"UPDATE {tabla} SET codigo_casillero = ? WHERE codigo_casillero = ?",
+                    (nuevo, codigo),
+                )
+            if destino_existe:
+                continue
+            c.execute("UPDATE usuarios SET codigo_casillero = ? WHERE id = ?", (nuevo, uid))
+        conn.commit()
+
+
+migrar_prefijo_casillero()
 
 
 def generar_clave_provisional():
@@ -832,16 +898,18 @@ def restaurar_sesion_persistente():
         if not cas_param:
             return False
 
+        claves = coincidencias_casillero(cas_param)
+        placeholders = ",".join("?" * len(claves))
         with get_db() as conn:
             c = conn.cursor()
             c.execute(
-                """
+                f"""
                 SELECT id, codigo_casillero, nombre_completo, correo_principal,
                        rol, activo, telefono_principal, ciudad
                 FROM usuarios
-                WHERE codigo_casillero = ? AND activo = 1
+                WHERE codigo_casillero IN ({placeholders}) AND activo = 1
                 """,
-                (cas_param,),
+                claves,
             )
             user_rec = c.fetchone()
 
@@ -849,7 +917,7 @@ def restaurar_sesion_persistente():
             return False
 
         st.session_state["autenticado"] = True
-        st.session_state["casillero"] = user_rec[1]
+        st.session_state["casillero"] = formatear_casillero(user_rec[1])
         st.session_state["nombre"] = user_rec[2]
         st.session_state["usuario"] = user_rec[3]
         st.session_state["rol"] = user_rec[4]
@@ -886,8 +954,9 @@ def restaurar_sesion_persistente():
 restaurar_sesion_persistente()
 
 if st.session_state.get("autenticado", False):
-    cas_actual = str(st.session_state.get("casillero", "")).strip()
+    cas_actual = formatear_casillero(st.session_state.get("casillero", ""))
     if cas_actual:
+        st.session_state["casillero"] = cas_actual
         try:
             if st.query_params.get("casillero") != cas_actual:
                 st.query_params["casillero"] = cas_actual
@@ -1012,8 +1081,10 @@ st.markdown(
         padding-top: calc(var(--sticky-h) + var(--sticky-delivery)) !important;
     }
 
-    .block-container:has(.st-key-delivery_select) {
-        --sticky-delivery: 110px;
+    .block-container:has(.st-key-delivery_select),
+    [data-testid="stMainBlockContainer"]:has(.st-key-delivery_select) {
+        --sticky-delivery: 158px;
+        padding-top: calc(var(--sticky-h) + var(--sticky-delivery)) !important;
     }
 
     .st-key-sticky_top_header,
@@ -1130,7 +1201,7 @@ st.markdown(
         .card-box { padding: 0.9rem; border-radius: 12px; }
         .app-banner-card { padding: 12px; border-radius: 12px; margin-bottom: 0.85rem; }
         .swipe-indicator-bar { font-size: 0.68rem; margin: 1px 0 4px 0; }
-        .block-container:has(.st-key-delivery_select) { --sticky-delivery: 108px; }
+        .block-container:has(.st-key-delivery_select) { --sticky-delivery: 150px; }
     }
 
     /* Teléfonos grandes */
@@ -1377,13 +1448,18 @@ st.markdown(
         background: transparent !important;
     }
 
+    .banner-clearance {
+        height: 12px;
+        width: 100%;
+    }
+
     .app-banner-card {
         background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
         border: 1px solid #bfdbfe;
         border-radius: 14px;
         padding: 14px 16px;
         color: #0f172a;
-        margin: 0.35rem auto 1rem auto;
+        margin: 0.85rem auto 1rem auto;
         max-width: 34rem;
         width: 100%;
         box-sizing: border-box;
@@ -1766,7 +1842,7 @@ if not st.session_state["autenticado"]:
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
         u_ident = st.text_input(
             "Número de casillero o correo",
-            placeholder="Ej: 13011998 o correo@gmail.com",
+            placeholder="Ej: CCM-13011998 o correo@gmail.com",
             key="log_cas",
         )
         u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
@@ -1775,11 +1851,17 @@ if not st.session_state["autenticado"]:
         if st.button("➔ Ingresar a mi Casillero", type="primary", key="btn_login_submit"):
             if u_ident and u_pass:
                 p_hash = hash_pwd(u_pass)
+                claves = coincidencias_casillero(u_ident)
+                placeholders = ",".join("?" * len(claves))
                 with get_db() as conn:
                     c = conn.cursor()
                     c.execute(
-                        "SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad FROM usuarios WHERE (correo_principal = ? OR codigo_casillero = ?) AND password_hash = ?",
-                        (u_ident, u_ident, p_hash),
+                        f"""
+                        SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad
+                        FROM usuarios
+                        WHERE (correo_principal = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
+                        """,
+                        (u_ident, *claves, p_hash),
                     )
                     user = c.fetchone()
 
@@ -1788,7 +1870,7 @@ if not st.session_state["autenticado"]:
                         st.error("⛔ Cuenta inactiva. Contacte al soporte.")
                     else:
                         st.session_state["autenticado"] = True
-                        st.session_state["casillero"] = user[1]
+                        st.session_state["casillero"] = formatear_casillero(user[1])
                         st.session_state["nombre"] = user[2]
                         st.session_state["usuario"] = user[3]
                         st.session_state["rol"] = user[4]
@@ -1798,7 +1880,7 @@ if not st.session_state["autenticado"]:
                         st.session_state["sub_tab_inicio"] = "Inicio"
                         st.session_state["hub"] = None
 
-                        st.query_params["casillero"] = str(user[1])
+                        st.query_params["casillero"] = formatear_casillero(user[1])
                         st.query_params["vista"] = "Inicio"
                         st.rerun()
                 else:
@@ -1902,8 +1984,10 @@ if not st.session_state["autenticado"]:
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute(
-                            "SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero = ?",
-                            (d["cor"], d["dni"], n_cod),
+                            "SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero IN ({})".format(
+                                ",".join("?" * len(coincidencias_casillero(n_cod)))
+                            ),
+                            (d["cor"], d["dni"], *coincidencias_casillero(n_cod)),
                         )
                         if cur.fetchone():
                             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(
@@ -1966,7 +2050,9 @@ if not st.session_state["autenticado"]:
 # 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
-    casillero = st.session_state["casillero"]
+    casillero = formatear_casillero(st.session_state["casillero"])
+    if casillero != st.session_state["casillero"]:
+        st.session_state["casillero"] = casillero
     nombre_completo = st.session_state["nombre"]
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
@@ -2297,6 +2383,7 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state.get("hub") == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO:
         st.markdown(
             (
+                '<div class="banner-clearance"></div>'
                 '<div class="app-banner-card">'
                 '<div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>'
                 '<div class="app-banner-title">En el momento que sientes que cargas con '
@@ -2715,7 +2802,7 @@ elif st.session_state["rol"] == "admin":
             if filas:
                 st.dataframe(
                     {
-                        "Casillero": [r[0] for r in filas],
+                        "Casillero": [formatear_casillero(r[0]) for r in filas],
                         "Nombre": [r[1] for r in filas],
                         "Correo": [r[2] for r in filas],
                         "Teléfono": [r[3] for r in filas],
@@ -2729,7 +2816,7 @@ elif st.session_state["rol"] == "admin":
 
     with tab_p:
         t_in = st.text_input("Tracking de China")
-        c_in = st.text_input("Casillero Asignado (8 dígitos)")
+        c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-13011998 o DNI del cliente")
         d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
         cont_in = st.text_input("ID de contenedor", placeholder="Ej: CCM-CNT-014")
         e_in = st.selectbox(
@@ -2758,7 +2845,7 @@ elif st.session_state["rol"] == "admin":
                             estado = excluded.estado,
                             fecha_actualizacion = excluded.fecha_actualizacion
                         """,
-                        (t_in, c_in, d_in, cont_in, e_in, f_act),
+                        (t_in, formatear_casillero(c_in), d_in, cont_in, e_in, f_act),
                     )
                 st.success("Paquete actualizado.")
                 st.rerun()
