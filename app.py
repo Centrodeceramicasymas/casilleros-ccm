@@ -552,7 +552,8 @@ def restaurar_sesion_persistente():
             "Catálogo",
             "Cotizador",
             "Mis Envíos",
-            "Etiqueta"
+            "Etiqueta",
+            "Inicio"
         }
         if vista_url in vistas_validas:
             st.session_state["sub_tab_inicio"] = vista_url
@@ -696,6 +697,7 @@ st.markdown("""
         align-items: center !important;
         width: max-content !important;
         min-width: max-content !important;
+        padding-right: 4px !important;
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
@@ -703,6 +705,20 @@ st.markdown("""
         width: 120px !important;
         min-width: 120px !important;
         max-width: 120px !important;
+        box-sizing: border-box !important;
+    }
+
+    /* CERRAR, INICIO Y TODOS LOS BOTONES DEL MENÚ: MISMA CAJA Y MISMA ALINEACIÓN */
+    .st-key-nav_scroll div.stButton {
+        width: 120px !important;
+        min-width: 120px !important;
+        max-width: 120px !important;
+        margin: 0 !important;
+    }
+
+    .st-key-nav_scroll div.stButton > button {
+        margin: 0 !important;
+        box-sizing: border-box !important;
     }
 
     /* BOTONES DE LA BARRA DE NAVEGACIÓN — UNIFORMES Y CON TEXTO NEGRO */
@@ -884,56 +900,6 @@ st.markdown("""
     div.stButton > button[kind="secondary"]:hover * {
         color: #004ac1 !important;
     }
-
-    /* BOTÓN CERRAR SESIÓN: MISMO COLOR, TAMAÑO Y ESPACIADO QUE LOS DEMÁS */
-    .st-key-btn_logout_cliente {
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 120px !important;
-        min-width: 120px !important;
-        max-width: 120px !important;
-        flex: 0 0 120px !important;
-    }
-
-    .st-key-btn_logout_cliente div.stButton > button,
-    .st-key-btn_logout_cliente button {
-        width: 120px !important;
-        min-width: 120px !important;
-        max-width: 120px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        max-height: 44px !important;
-        margin: 0 !important;
-        padding: 0 8px !important;
-        border-radius: 10px !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-        border: 1.5px solid #cbd5e1 !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
-        font-size: 0.76rem !important;
-        font-weight: 700 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-align: center !important;
-        white-space: nowrap !important;
-    }
-
-    .st-key-btn_logout_cliente div.stButton > button:hover,
-    .st-key-btn_logout_cliente button:hover {
-        background: #f8fafc !important;
-        background-color: #f8fafc !important;
-        border-color: #004ac1 !important;
-        color: #004ac1 !important;
-        box-shadow: 0 4px 10px rgba(0, 74, 193, 0.12) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    .st-key-btn_logout_cliente button *,
-    .st-key-btn_logout_cliente button:hover * {
-        color: inherit !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -980,10 +946,10 @@ if not st.session_state["autenticado"]:
                         st.session_state["telefono"] = user[6]
                         st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
-                        st.session_state["sub_tab_inicio"] = "Catálogo"
+                        st.session_state["sub_tab_inicio"] = "Inicio"
 
                         st.query_params["casillero"] = str(user[1])
-                        st.query_params["vista"] = "Catálogo"
+                        st.query_params["vista"] = "Inicio"
                         st.rerun()
                 else:
                     st.error("❌ Credenciales inválidas.")
@@ -1175,41 +1141,50 @@ elif st.session_state["rol"] == "cliente":
     # MENÚ HORIZONTAL DESLIZABLE (CON BOTÓN DE CERRAR AL INICIO)
     # =========================================================
     with st.container(key="nav_scroll"):
-        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(6, gap="small")
-        
+        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
+
+        # CERRAR — mismo tamaño, margen, borde y color que los demás botones blancos
         with c_nav_p:
             if st.button("🚪 Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
+        # INICIO — sección blanca reservada para nueva información
         with c_nav_c:
+            if st.button("🏠 Inicio", type="secondary", key="btn_inicio_cliente"):
+                st.session_state["sub_tab_inicio"] = "Inicio"
+                st.query_params["casillero"] = str(casillero)
+                st.query_params["vista"] = "Inicio"
+                st.rerun()
+
+        with c_nav1:
             if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
                 st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Mis Cotizaciones"
                 st.rerun()
 
-        with c_nav1:
+        with c_nav2:
             if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
                 st.session_state["sub_tab_inicio"] = "Catálogo"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Catálogo"
                 st.rerun()
 
-        with c_nav2:
+        with c_nav3:
             if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
                 st.session_state["sub_tab_inicio"] = "Cotizador"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Cotizador"
                 st.rerun()
 
-        with c_nav3:
+        with c_nav4:
             if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
                 st.session_state["sub_tab_inicio"] = "Mis Envíos"
                 st.query_params["casillero"] = str(casillero)
                 st.query_params["vista"] = "Mis Envíos"
                 st.rerun()
 
-        with c_nav4:
+        with c_nav5:
             if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
                 st.session_state["sub_tab_inicio"] = "Etiqueta"
                 st.query_params["casillero"] = str(casillero)
@@ -1247,6 +1222,53 @@ elif st.session_state["rol"] == "cliente":
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("""
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # VISTA INICIO — ESPACIO BLANCO PARA INFORMACIÓN FUTURA
+    # -----------------------------------------------------
+    if st.session_state["sub_tab_inicio"] == "Inicio":
+        st.markdown("""
+        <div class="card-box" style="
+            min-height: 430px;
+            background:#ffffff;
+            border:1px solid #e2e8f0;
+            border-radius:14px;
+            padding:22px;
+            margin-top:8px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.05);
+        ">
+            <div style="
+                display:flex;
+                align-items:center;
+                gap:10px;
+                padding-bottom:14px;
+                border-bottom:1px solid #e2e8f0;
+                margin-bottom:18px;
+            ">
+                <span style="font-size:1.35rem;">🏠</span>
+                <span style="font-size:1.05rem;font-weight:800;color:#0f172a;">Inicio</span>
+            </div>
+
+            <div style="
+                min-height:340px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                text-align:center;
+                color:#94a3b8;
+            ">
+                <div>
+                    <div style="font-size:2.2rem;margin-bottom:8px;">＋</div>
+                    <div style="font-size:0.95rem;font-weight:700;color:#64748b;">
+                        Espacio disponible para agregar información
+                    </div>
+                    <div style="font-size:0.78rem;margin-top:5px;">
+                        Esta sección queda en blanco para colocar contenido posteriormente.
+                    </div>
+                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
