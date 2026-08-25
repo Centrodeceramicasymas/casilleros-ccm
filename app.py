@@ -224,7 +224,7 @@ MODULOS_CHINA_BLOQUEADOS = ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
 ROLES_ADMIN = ("admin", "superadmin")
 DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
-CORREO_SUPERADMIN = "domingo.ardon@ccm.hn"
+CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
@@ -737,7 +737,7 @@ def init_db():
                 telefono_principal, departamento, ciudad, direccion_exacta,
                 password_hash, rol, activo, fecha_creacion
             ) VALUES (
-                'CCM-13011998', 'Domingo Heriberto Ardon', '1301199800990', 'domingo.ardon@ccm.hn',
+                'CCM-13011998', 'Domingo Heriberto Ardon', '1301199800990', 'heribertoardon1998@gmail.com',
                 '+504 9577-1099', 'Intibucá', 'San Juan', 'Oficina Central CCM',
                 ?, 'superadmin', 1, '2026-08-22 00:00:00'
             )
