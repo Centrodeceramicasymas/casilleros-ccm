@@ -226,6 +226,8 @@ DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
+# Por el momento todos los usuarios ven hubs y módulos como antes del superadmin.
+PERMISOS_ABIERTOS_TEMPORAL = True
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
     "Cotizador": "mod_cotizador",
@@ -266,6 +268,8 @@ def fechas_cotizaciones_casillero(casillero):
 
 
 def china_seguimiento_habilitado():
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
     ahora = obtener_tiempo_honduras()
     if _limpiar_cotizacion_vencida_en_sesion(ahora):
         st.session_state["china_modulos_desbloqueados"] = True
@@ -851,21 +855,10 @@ def es_superadmin(rol=None):
 
 
 def permisos_default(rol="cliente"):
-    if rol in ROLES_ADMIN:
-        return {
-            "hub_china": 1,
-            "hub_eeuu": 1,
-            "hub_honduras": 1,
-            "mod_cotizador": 1,
-            "mod_catalogo": 1,
-            "mod_cotizaciones": 1,
-            "mod_envios": 1,
-            "mod_fichas": 1,
-        }
     return {
         "hub_china": 1,
-        "hub_eeuu": 0,
-        "hub_honduras": 0,
+        "hub_eeuu": 1,
+        "hub_honduras": 1,
         "mod_cotizador": 1,
         "mod_catalogo": 1,
         "mod_cotizaciones": 1,
@@ -883,10 +876,19 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
         c = conn.cursor()
         c.execute(
             """
-            INSERT OR IGNORE INTO permisos_usuario (
+            INSERT INTO permisos_usuario (
                 codigo_casillero, hub_china, hub_eeuu, hub_honduras,
                 mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(codigo_casillero) DO UPDATE SET
+                hub_china = excluded.hub_china,
+                hub_eeuu = excluded.hub_eeuu,
+                hub_honduras = excluded.hub_honduras,
+                mod_cotizador = excluded.mod_cotizador,
+                mod_catalogo = excluded.mod_catalogo,
+                mod_cotizaciones = excluded.mod_cotizaciones,
+                mod_envios = excluded.mod_envios,
+                mod_fichas = excluded.mod_fichas
             """,
             (
                 cas,
@@ -900,6 +902,19 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
                 vals["mod_fichas"],
             ),
         )
+
+
+def abrir_permisos_todos_los_usuarios():
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE permisos_usuario SET
+                hub_china=1, hub_eeuu=1, hub_honduras=1,
+                mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+            """
+        )
+        conn.commit()
 
 
 def permisos_de(casillero=None):
@@ -938,6 +953,8 @@ def permisos_de(casillero=None):
 
 
 def usuario_puede_hub(hub_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
     col = HUB_PERMISO_COL.get(hub_id)
     if not col:
         return False
@@ -945,6 +962,8 @@ def usuario_puede_hub(hub_id, casillero=None):
 
 
 def usuario_puede_modulo(mod_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
     col = MODULO_PERMISO_COL.get(mod_id)
     if not col:
         return False
@@ -1080,7 +1099,7 @@ def asegurar_superadmin():
                     vals["mod_fichas"],
                 ),
             )
-            if rol in ROLES_ADMIN:
+            if rol in ROLES_ADMIN or PERMISOS_ABIERTOS_TEMPORAL:
                 c.execute(
                     """
                     UPDATE permisos_usuario SET hub_china=1, hub_eeuu=1, hub_honduras=1,
@@ -1090,6 +1109,18 @@ def asegurar_superadmin():
                     (cas,),
                 )
         conn.commit()
+
+
+def restaurar_datos_operativos_cliente():
+    """Reabre una sola vez las cotizaciones vencidas de prueba para que el historial vuelva a verse."""
+    if get_config_sistema("datos_operativos_restaurados", "") == "1":
+        return
+    ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE cotizaciones SET fecha = ?", (ahora,))
+        conn.commit()
+    set_config_sistema("datos_operativos_restaurados", "1", "Cotizaciones reabiertas al habilitar todos los módulos")
 
 
 def migrar_prefijo_casillero():
@@ -1113,6 +1144,8 @@ def migrar_prefijo_casillero():
 
 migrar_prefijo_casillero()
 asegurar_superadmin()
+abrir_permisos_todos_los_usuarios()
+restaurar_datos_operativos_cliente()
 
 
 def generar_clave_provisional():
