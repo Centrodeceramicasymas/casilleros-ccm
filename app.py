@@ -413,9 +413,32 @@ def modulos_china_visibles():
 
 
 def modulos_china_nav():
-    """Barra superior: siempre los mismos botones; Envíos y Fichas se ocultan con CSS fuera de Mis Cotizaciones."""
+    """Barra superior: Envíos y Fichas solo en Mis Cotizaciones / Envíos / Fichas. Nunca se ocultan con CSS."""
     mods = HUBS["china"]["modulos"]
-    return [m for m in mods if usuario_puede_modulo(m["id"])]
+    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
+    if vista_muestra_envios_fichas():
+        return permitidos
+    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
+    return [m for m in permitidos if m["id"] not in bloqueados]
+
+
+def selector_modalidad_entrega(opciones_modalidad):
+    """Select de entrega en el cuerpo del Cotizador (fuera del header sticky, sin CSS sobre Baseweb)."""
+    idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+    sel_kwargs = {"key": "sb_modalidad_entrega"}
+    if "sb_modalidad_entrega" not in st.session_state:
+        sel_kwargs["index"] = idx_mod
+    elif st.session_state.get("sb_modalidad_entrega") not in opciones_modalidad:
+        st.session_state["sb_modalidad_entrega"] = opciones_modalidad[idx_mod]
+    mod_elegida = st.selectbox(
+        "🏪 ¿Cómo deseas recibir tu compra?",
+        opciones_modalidad,
+        **sel_kwargs,
+    )
+    if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+        st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+        st.session_state.pop("datos_pdf_confirmado", None)
+        st.rerun()
 
 
 def ir_a(vista, hub="_omit"):
@@ -1629,6 +1652,7 @@ def logout():
         "datos_pdf_confirmado",
         "ultima_cot_id",
         "modalidad_envio_seleccionada",
+        "sb_modalidad_entrega",
         "sub_tab_inicio",
         "hub",
         "china_modulos_desbloqueados",
@@ -1708,14 +1732,10 @@ st.markdown(
     [data-testid="stMainBlockContainer"],
     section.main,
     .stMain,
-    .stMainBlockContainer,
-    [data-testid="stVerticalBlock"] {
+    .stMainBlockContainer {
         overflow: visible !important;
         height: auto !important;
         min-height: 0 !important;
-        transform: none !important;
-        filter: none !important;
-        contain: none !important;
     }
 
     .block-container {
@@ -1902,43 +1922,6 @@ st.markdown(
         .swipe-indicator-bar { display: none; }
     }
 
-    .app-delivery-container {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: #0f172a;
-        margin-top: 4px;
-        margin-bottom: 4px;
-    }
-    .st-key-delivery_select div[data-baseweb="select"] > div,
-    .app-delivery-select div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        border: 1.5px solid #cbd5e1 !important;
-        border-radius: 10px !important;
-        color: #0f172a !important;
-        padding: 0 4px !important;
-        min-height: 38px !important;
-    }
-    .st-key-delivery_select div[data-baseweb="select"] span,
-    .app-delivery-select div[data-baseweb="select"] span,
-    div[data-baseweb="select"] span {
-        color: #0f172a !important;
-        font-weight: 700 !important;
-        font-size: 0.82rem !important;
-    }
-    .st-key-delivery_select svg,
-    .app-delivery-select svg,
-    div[data-baseweb="select"] svg {
-        fill: #0f172a !important;
-    }
-    ul[role="listbox"],
-    li[role="option"],
-    div[data-baseweb="popover"],
-    div[data-baseweb="menu"] {
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-    }
-
     .st-key-nav_home {
         width: 100% !important;
         max-width: 100% !important;
@@ -2059,35 +2042,6 @@ st.markdown(
         transform: none;
         overflow: visible;
         line-height: 1.3;
-    }
-
-    .st-key-delivery_select {
-        background: transparent !important;
-        margin: 8px 0 0 0 !important;
-        padding: 6px 0 4px 0 !important;
-        overflow: visible !important;
-    }
-    .st-key-delivery_select [data-testid="stWidgetLabel"],
-    .st-key-delivery_select [data-testid="stWidgetLabel"] p,
-    .st-key-delivery_select label,
-    .st-key-delivery_select .stSelectbox label {
-        display: block !important;
-        overflow: visible !important;
-        height: auto !important;
-        min-height: 1.45em !important;
-        line-height: 1.4 !important;
-        white-space: normal !important;
-        margin: 0 0 6px 0 !important;
-        padding: 2px 0 0 0 !important;
-        font-size: 0.86rem !important;
-        font-weight: 700 !important;
-        color: #0f172a !important;
-    }
-    .st-key-delivery_select [data-testid="stSelectbox"],
-    .st-key-delivery_select [data-testid="stSelectbox"] > div {
-        overflow: visible !important;
-        height: auto !important;
-        background: transparent !important;
     }
 
     .banner-clearance {
@@ -2338,14 +2292,11 @@ st.markdown(
     div[data-baseweb="input"],
     div[data-baseweb="input"] > div,
     div[data-baseweb="base-input"],
-    div[data-baseweb="select"] > div,
-    div[data-baseweb="select"] > div > div,
     div[data-baseweb="textarea"],
     [data-testid="stNumberInputContainer"],
     [data-testid="stNumberInputContainer"] > div,
-    [data-testid="stSelectbox"] > div,
     [data-testid="stTextInput"] > div,
-    input, textarea, select {
+    input, textarea {
         background-color: #ffffff !important;
         background: #ffffff !important;
         border-color: #cbd5e1 !important;
@@ -2353,7 +2304,7 @@ st.markdown(
         color-scheme: light !important;
     }
 
-    div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
+    div[data-baseweb="input"], div[data-baseweb="textarea"] {
         border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
@@ -2937,27 +2888,6 @@ elif st.session_state["rol"] == "cliente":
         hub_activo = st.session_state.get("hub")
         china_mods = modulos_china_nav()
         mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
-        if mostrar_subnav_china and not vista_muestra_envios_fichas():
-            st.markdown(
-                """
-                <style>
-                .st-key-nav_mod_envios,
-                .st-key-nav_mod_fichas,
-                div[data-testid="stColumn"]:has(.st-key-nav_mod_envios),
-                div[data-testid="stColumn"]:has(.st-key-nav_mod_fichas) {
-                    display: none !important;
-                    width: 0 !important;
-                    min-width: 0 !important;
-                    max-width: 0 !important;
-                    flex: 0 0 0 !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                    overflow: hidden !important;
-                }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
 
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
 
@@ -3001,24 +2931,6 @@ elif st.session_state["rol"] == "cliente":
                     '<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>',
                     unsafe_allow_html=True,
                 )
-
-        if st.session_state["sub_tab_inicio"] == "Cotizador":
-            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-            sel_kwargs = {"label_visibility": "visible", "key": "sb_modalidad_header"}
-            if "sb_modalidad_header" not in st.session_state:
-                sel_kwargs["index"] = idx_mod
-            elif st.session_state.get("sb_modalidad_header") not in opciones_modalidad:
-                st.session_state["sb_modalidad_header"] = opciones_modalidad[idx_mod]
-            with st.container(key="delivery_select"):
-                mod_elegida = st.selectbox(
-                    "🏪 ¿Cómo deseas recibir tu compra?",
-                    opciones_modalidad,
-                    **sel_kwargs,
-                )
-            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-                st.session_state.pop("datos_pdf_confirmado", None)
-                st.rerun()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
@@ -3159,6 +3071,7 @@ elif st.session_state["rol"] == "cliente":
             )
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
+        selector_modalidad_entrega(opciones_modalidad)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
 
         st.markdown(
@@ -3328,9 +3241,12 @@ elif st.session_state["rol"] == "cliente":
                         )
                 st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
 
-    elif st.session_state["sub_tab_inicio"] == "Cotizador":
+    elif (
+        st.session_state["sub_tab_inicio"] == "Cotizador"
+        and st.session_state["modalidad_envio_seleccionada"] != "➕ Crear Nueva Dirección de Envío"
+    ):
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
-
+        selector_modalidad_entrega(opciones_modalidad)
         st.info(
             f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*"
         )
