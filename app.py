@@ -1,5 +1,4 @@
 import streamlit as st
-import textwrap
 import sqlite3
 import hashlib
 import random
@@ -965,6 +964,43 @@ st.markdown(
         margin-bottom: 1rem;
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
+    .inicio-placeholder {
+        min-height: 430px;
+        margin-top: 8px;
+    }
+    .inicio-placeholder-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 18px;
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #0f172a;
+    }
+    .inicio-placeholder-body {
+        min-height: 340px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: #94a3b8;
+    }
+    .inicio-placeholder-plus {
+        font-size: 2.2rem;
+        margin-bottom: 8px;
+    }
+    .inicio-placeholder-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+    .inicio-placeholder-sub {
+        font-size: 0.78rem;
+        margin-top: 5px;
+    }
     .china-address-box {
         background-color: #0f172a;
         border: 2px dashed #0052cc;
@@ -1514,50 +1550,13 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         st.markdown(
-            textwrap.dedent(
-                """
-        <div class="card-box" style="
-            min-height: 430px;
-            background:#ffffff;
-            border:1px solid #e2e8f0;
-            border-radius:14px;
-            padding:22px;
-            margin-top:8px;
-            box-shadow:0 4px 12px rgba(0,0,0,0.05);
-        ">
-            <div style="
-                display:flex;
-                align-items:center;
-                gap:10px;
-                padding-bottom:14px;
-                border-bottom:1px solid #e2e8f0;
-                margin-bottom:18px;
-            ">
-                <span style="font-size:1.35rem;">🏠</span>
-                <span style="font-size:1.05rem;font-weight:800;color:#0f172a;">Inicio</span>
-            </div>
-
-            <div style="
-                min-height:340px;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                text-align:center;
-                color:#94a3b8;
-            ">
-                <div>
-                    <div style="font-size:2.2rem;margin-bottom:8px;">＋</div>
-                    <div style="font-size:0.95rem;font-weight:700;color:#64748b;">
-                        Espacio disponible para agregar información
-                    </div>
-                    <div style="font-size:0.78rem;margin-top:5px;">
-                        Esta sección queda en blanco para colocar contenido posteriormente.
-                    </div>
-                </div>
-            </div>
-        </div>
-        """
-            ),
+            '<div class="card-box inicio-placeholder">'
+            '<div class="inicio-placeholder-head"><span>🏠</span><span>Inicio</span></div>'
+            '<div class="inicio-placeholder-body">'
+            '<div class="inicio-placeholder-plus">＋</div>'
+            '<div class="inicio-placeholder-title">Espacio disponible para agregar información</div>'
+            '<div class="inicio-placeholder-sub">Esta sección queda en blanco para colocar contenido posteriormente.</div>'
+            "</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -2174,7 +2173,21 @@ elif st.session_state["rol"] == "admin":
             c.execute(
                 "SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal, ciudad FROM usuarios WHERE rol = 'cliente'"
             )
-            st.dataframe(c.fetchall(), use_container_width=True, hide_index=True)
+            filas = c.fetchall()
+            if filas:
+                st.dataframe(
+                    {
+                        "Casillero": [r[0] for r in filas],
+                        "Nombre": [r[1] for r in filas],
+                        "Correo": [r[2] for r in filas],
+                        "Teléfono": [r[3] for r in filas],
+                        "Ciudad": [r[4] for r in filas],
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("Aún no hay clientes registrados.")
 
     with tab_p:
         st.markdown('<div class="card-box">', unsafe_allow_html=True)
