@@ -7,6 +7,16 @@ from datetime import datetime, timezone, timedelta
 import io
 import urllib.parse
 
+from limites_contenedor import (
+    CONTENEDOR_40_ALTO_M,
+    CONTENEDOR_40_ANCHO_M,
+    CONTENEDOR_40_LARGO_M,
+    PESO_MAX_CONTENEDOR_HN_KG,
+    limites_dimensiones,
+    limites_peso,
+    peso_max_contenedor_hn_lb,
+)
+
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
@@ -581,6 +591,24 @@ def generar_clave_provisional():
     return "".join(random.choice(caracteres) for _ in range(8))
 
 
+def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
+    if clave in st.session_state:
+        try:
+            actual = float(st.session_state[clave])
+            st.session_state[clave] = min(max(actual, float(lim_min)), float(lim_max))
+        except (TypeError, ValueError):
+            st.session_state[clave] = float(valor)
+    return st.number_input(
+        label,
+        min_value=float(lim_min),
+        max_value=float(lim_max),
+        value=float(valor),
+        step=float(paso),
+        format=formato,
+        key=clave,
+    )
+
+
 # ---------------------------------------------------------
 # 4. MOTOR DE CATÁLOGO 1688 ESTÁNDAR (BÚSQUEDA DINÁMICA)
 # ---------------------------------------------------------
@@ -825,6 +853,7 @@ st.markdown(
         background-color: #f8fafc !important;
         background: #f8fafc !important;
         color: #0f172a !important;
+        color-scheme: light !important;
     }
 
     .stApp,
@@ -849,6 +878,7 @@ st.markdown(
         overflow: visible !important;
         height: auto !important;
         min-height: 100% !important;
+        color-scheme: light !important;
     }
 
     #MainMenu, footer, header, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
@@ -1317,12 +1347,28 @@ st.markdown(
         display: block !important;
     }
 
-    div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
+    div[data-baseweb="input"],
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"],
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] > div > div,
+    div[data-baseweb="textarea"],
+    [data-testid="stNumberInputContainer"],
+    [data-testid="stNumberInputContainer"] > div,
+    [data-testid="stSelectbox"] > div,
+    [data-testid="stTextInput"] > div,
+    input, textarea, select {
         background-color: #ffffff !important;
+        background: #ffffff !important;
+        border-color: #cbd5e1 !important;
+        color: #0f172a !important;
+        color-scheme: light !important;
+    }
+
+    div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
         border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
-        color: #0f172a !important;
     }
 
     div[data-baseweb="input"] input,
@@ -1330,12 +1376,26 @@ st.markdown(
     div[data-baseweb="input"] input:focus,
     div[data-baseweb="textarea"] textarea:focus,
     div[data-baseweb="textarea"] > div,
+    [data-testid="stNumberInputContainer"] input,
+    [data-testid="stNumberInput"] input,
+    input[type="number"],
+    input[type="text"],
+    input[type="password"],
     textarea {
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
         font-size: 0.92rem !important;
         font-weight: 600 !important;
         background-color: #ffffff !important;
+        background: #ffffff !important;
+        color-scheme: light !important;
+    }
+
+    [data-testid="stNumberInputContainer"] button,
+    [data-testid="stNumberInput"] button {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
     }
 
     div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder, textarea::placeholder {
@@ -2153,7 +2213,7 @@ elif st.session_state["rol"] == "cliente":
             "Modalidad de Importación:",
             [
                 "📦 Paquetería Menor (1 a 99 lbs)",
-                "🚢 Carga Comercial por CBM (100 a 860 lbs / 390 kg)",
+                "🚢 Carga Comercial por CBM (hasta contenedor 40')",
             ],
             index=0,
             key="sb_tipo_carga_select",
@@ -2169,66 +2229,89 @@ elif st.session_state["rol"] == "cliente":
         with c_u2:
             unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
 
+        es_paqueteria = "Paquetería Menor" in tipo_carga
+        dim = limites_dimensiones(unidad_medida, comercial=not es_paqueteria)
+        pes = limites_peso(unidad_peso, paqueteria=es_paqueteria)
+        etiqueta_medida = unidad_medida.split()[1].strip("()")
+        etiqueta_peso = unidad_peso.split()[1].strip("()")
+
+        st.caption(
+            f"Tope de medidas: contenedor 40' High Cube interno "
+            f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
+            f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
+            f"({peso_max_contenedor_hn_lb():,.0f} lb)."
+            + (" En paquetería menor el peso no puede superar 99 lb." if es_paqueteria else "")
+        )
+
         st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
 
-        if "Paquetería Menor" in tipo_carga:
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                al_input = st.number_input(
-                    f"Alto ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=30.0,
-                    step=1.0,
-                    key="in_al_menor",
-                )
-            with c2:
-                an_input = st.number_input(
-                    f"Ancho ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=30.0,
-                    step=1.0,
-                    key="in_an_menor",
-                )
-            with c3:
-                la_input = st.number_input(
-                    f"Largo ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=40.0,
-                    step=1.0,
-                    key="in_la_menor",
-                )
-            with c4:
-                pe_input = st.number_input(
-                    f"Peso ({unidad_peso.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=4.0,
-                    step=0.5,
-                    key="in_pe_menor",
-                )
+        pref = "menor" if es_paqueteria else "com"
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            al_input = campo_numerico(
+                f"Alto ({etiqueta_medida})",
+                dim["min"],
+                dim["defaults"]["alto"],
+                dim["max"]["alto"],
+                dim["step"],
+                f"in_al_{pref}_{dim['codigo']}",
+                dim["formato"],
+            )
+        with c2:
+            an_input = campo_numerico(
+                f"Ancho ({etiqueta_medida})",
+                dim["min"],
+                dim["defaults"]["ancho"],
+                dim["max"]["ancho"],
+                dim["step"],
+                f"in_an_{pref}_{dim['codigo']}",
+                dim["formato"],
+            )
+        with c3:
+            la_input = campo_numerico(
+                f"Largo ({etiqueta_medida})",
+                dim["min"],
+                dim["defaults"]["largo"],
+                dim["max"]["largo"],
+                dim["step"],
+                f"in_la_{pref}_{dim['codigo']}",
+                dim["formato"],
+            )
+        with c4:
+            pe_input = campo_numerico(
+                f"Peso ({etiqueta_peso})",
+                pes["min"],
+                pes["default"],
+                pes["max"],
+                pes["step"],
+                f"in_pe_{pref}_{pes['codigo']}",
+                pes["formato"],
+            )
 
-            if "Pulgadas" in unidad_medida:
-                al_val = al_input * 2.54
-                an_val = an_input * 2.54
-                la_val = la_input * 2.54
-            elif "Metros" in unidad_medida:
-                al_val = al_input * 100.0
-                an_val = an_input * 100.0
-                la_val = la_input * 100.0
-            else:
-                al_val = al_input
-                an_val = an_input
-                la_val = la_input
+        if "Pulgadas" in unidad_medida:
+            al_val = al_input * 2.54
+            an_val = an_input * 2.54
+            la_val = la_input * 2.54
+        elif "Metros" in unidad_medida:
+            al_val = al_input * 100.0
+            an_val = an_input * 100.0
+            la_val = la_input * 100.0
+        else:
+            al_val = al_input
+            an_val = an_input
+            la_val = la_input
 
-            if "Kilogramos" in unidad_peso:
-                pe_lb = pe_input * 2.20462
-                pe_kg = pe_input
-            else:
-                pe_lb = pe_input
-                pe_kg = pe_input / 2.20462
+        if "Kilogramos" in unidad_peso:
+            pe_lb = pe_input * 2.20462
+            pe_kg = pe_input
+        else:
+            pe_lb = pe_input
+            pe_kg = pe_input / 2.20462
 
-            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
-            vol_ft3_val = vol_m3_val * 35.3147
+        vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+        vol_ft3_val = vol_m3_val * 35.3147
 
+        if es_paqueteria:
             if pe_lb <= 3.0:
                 tot = min_usd
                 desc = f"Tarifa Mínima Base (1 a 3 lbs): ${min_usd:.2f} USD"
@@ -2249,62 +2332,6 @@ elif st.session_state["rol"] == "cliente":
             detalle_pdf = desc
 
         else:
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                al_input = st.number_input(
-                    f"Alto ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=120.0,
-                    step=1.0,
-                    key="in_al_com",
-                )
-            with c2:
-                an_input = st.number_input(
-                    f"Ancho ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=120.0,
-                    step=1.0,
-                    key="in_an_com",
-                )
-            with c3:
-                la_input = st.number_input(
-                    f"Largo ({unidad_medida.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=120.0,
-                    step=1.0,
-                    key="in_la_com",
-                )
-            with c4:
-                pe_input = st.number_input(
-                    f"Peso ({unidad_peso.split()[1].strip('()')})",
-                    min_value=0.1,
-                    value=500.0,
-                    step=10.0,
-                    key="in_pe_com",
-                )
-
-            if "Pulgadas" in unidad_medida:
-                al_val = al_input * 2.54
-                an_val = an_input * 2.54
-                la_val = la_input * 2.54
-            elif "Metros" in unidad_medida:
-                al_val = al_input * 100.0
-                an_val = an_input * 100.0
-                la_val = la_input * 100.0
-            else:
-                al_val = al_input
-                an_val = an_input
-                la_val = la_input
-
-            if "Kilogramos" in unidad_peso:
-                pe_lb = pe_input * 2.20462
-                pe_kg = pe_input
-            else:
-                pe_lb = pe_input
-                pe_kg = pe_input / 2.20462
-
-            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
-            vol_ft3_val = vol_m3_val * 35.3147
             vol_m3_peso = pe_kg / 390.0
             cbm_facturable = max(vol_m3_val, vol_m3_peso)
             tot = cbm_facturable * t_m3
