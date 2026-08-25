@@ -3536,7 +3536,7 @@ elif st.session_state["rol"] == "cliente":
                         f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
                     )
                     detalle_emitida = (
-                        f"⏳ {estado_doc}. Confírmela ahora para que no caduque; el PDF Tarifa quedará en Envíos."
+                        f"⏳ {estado_doc}. Confírmela en Mis Cotizaciones para que no caduque; el PDF Tarifa quedará en Envíos."
                     )
 
                 st.markdown(
@@ -3552,16 +3552,13 @@ elif st.session_state["rol"] == "cliente":
                     unsafe_allow_html=True,
                 )
 
-                if not tarifa_consolidada:
-                    if st.button(
-                        "Confirmar Cotización",
-                        type="primary",
-                        key=f"btn_confirmar_emitida_{id_c}",
-                        use_container_width=True,
-                    ):
-                        if confirmar_cotizacion_casillero(id_c, casillero):
-                            st.session_state["china_modulos_desbloqueados"] = True
-                            st.rerun()
+                if st.button(
+                    "Ver en Mis Cotizaciones",
+                    type="primary",
+                    key=f"btn_ver_mis_cotizaciones_{id_c}",
+                    use_container_width=True,
+                ):
+                    ir_a("Mis Cotizaciones", hub="china")
 
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
@@ -4036,3 +4033,4 @@ else:
     st.error("Rol no reconocido. Inicie sesión de nuevo.")
     if st.button("Volver al login"):
         logout()
+
