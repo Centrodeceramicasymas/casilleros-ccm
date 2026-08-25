@@ -226,7 +226,7 @@ DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
-# Hubs y módulos base siguen abiertos; Envíos y Fichas se desbloquean al confirmar una cotización.
+# Hubs y módulos base siguen abiertos; Envíos y Fichas solo se ven dentro de Mis Cotizaciones.
 PERMISOS_ABIERTOS_TEMPORAL = True
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
@@ -392,20 +392,31 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
         return len(ids_borrar)
 
 
+def vista_muestra_envios_fichas():
+    """Envíos y Fichas solo en la barra cuando el usuario está en Mis Cotizaciones (o ya en esos módulos)."""
+    return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+
+
 def china_seguimiento_habilitado():
-    """Envíos y Fichas solo si el casillero tiene al menos una cotización confirmada."""
-    cas = st.session_state.get("casillero", "")
-    if casillero_tiene_cotizacion_confirmada(cas):
-        st.session_state["china_modulos_desbloqueados"] = True
-        return True
-    st.session_state["china_modulos_desbloqueados"] = False
-    return False
+    """Compatibilidad: Envíos y Fichas se habilitan al abrir Mis Cotizaciones."""
+    habilitado = vista_muestra_envios_fichas()
+    st.session_state["china_modulos_desbloqueados"] = habilitado
+    return habilitado
 
 
 def modulos_china_visibles():
+    """Tarjetas del hub China: nunca Envíos ni Fichas."""
     mods = HUBS["china"]["modulos"]
     permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
-    if china_seguimiento_habilitado():
+    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
+    return [m for m in permitidos if m["id"] not in bloqueados]
+
+
+def modulos_china_nav():
+    """Barra superior: Envíos y Fichas únicamente dentro de Mis Cotizaciones."""
+    mods = HUBS["china"]["modulos"]
+    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
+    if vista_muestra_envios_fichas():
         return permitidos
     bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
     return [m for m in permitidos if m["id"] not in bloqueados]
@@ -415,9 +426,6 @@ def ir_a(vista, hub="_omit"):
     if vista in VISTAS_MODULO and not usuario_puede_modulo(vista):
         vista = "Inicio"
         hub = None
-    elif vista in MODULOS_CHINA_BLOQUEADOS and not china_seguimiento_habilitado():
-        vista = "Cotizador" if usuario_puede_modulo("Cotizador") else "Inicio"
-        hub = "china" if vista == "Cotizador" else None
     if hub != "_omit":
         st.session_state["hub"] = hub
     elif vista in MODULOS_POR_ID:
@@ -1583,13 +1591,6 @@ def restaurar_sesion_persistente():
             st.session_state["hub"] = "eeuu"
         elif vista_url == "Honduras":
             st.session_state["hub"] = "honduras"
-
-        if (
-            st.session_state.get("sub_tab_inicio") in MODULOS_CHINA_BLOQUEADOS
-            and not china_seguimiento_habilitado()
-        ):
-            st.session_state["sub_tab_inicio"] = "Cotizador"
-            st.session_state["hub"] = "china"
 
         return True
 
@@ -2864,15 +2865,6 @@ elif st.session_state["rol"] == "cliente":
         st.session_state["hub"] = None
         st.query_params["vista"] = "Inicio"
         st.rerun()
-    if (
-        st.session_state.get("sub_tab_inicio") in MODULOS_CHINA_BLOQUEADOS
-        and not china_seguimiento_habilitado()
-    ):
-        st.session_state["sub_tab_inicio"] = "Cotizador"
-        st.session_state["hub"] = "china"
-        st.query_params["vista"] = "Cotizador"
-        st.query_params["hub"] = "china"
-        st.rerun()
 
     casillero = formatear_casillero(st.session_state["casillero"])
     if casillero != st.session_state["casillero"]:
@@ -2949,7 +2941,7 @@ elif st.session_state["rol"] == "cliente":
         )
 
         hub_activo = st.session_state.get("hub")
-        china_mods = modulos_china_visibles()
+        china_mods = modulos_china_nav()
         mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
 
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
@@ -3034,12 +3026,7 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
             mods = modulos_china_visibles()
-            if not china_seguimiento_habilitado():
-                st.caption(
-                    "Cada tarifa dura 24 horas para confirmarla. Envíos y Fichas se habilitan al confirmar al menos una cotización."
-                )
-            else:
-                st.caption("Hay cotizaciones consolidadas. Envíos y Fichas están habilitados en este casillero.")
+            st.caption("Envíos y Fichas aparecen en la barra superior al abrir Mis Cotizaciones.")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
