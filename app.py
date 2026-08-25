@@ -584,7 +584,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS: HEADER ADAPTABLE Y ELEGANTE
+# 6. ESTILOS CSS REFINADOS: ADAPTABLES A MÓVILES (IPHONE Y ANDROID)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -624,13 +624,13 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
     }
 
-    /* HEADER AZUL PROPORCIONAL, ADAPTABLE Y ELEGANTE */
+    /* HEADER AZUL PROPORCIONAL Y ELEGANTE */
     .app-header-blue {
         background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
-        padding: clamp(12px, 2.5vw, 18px) clamp(14px, 3vw, 20px) !important;
-        border-radius: clamp(14px, 2.5vw, 20px) !important;
+        padding: 14px 16px 14px 16px !important;
+        border-radius: 16px !important;
         color: #ffffff !important;
-        box-shadow: 0 6px 18px rgba(0, 74, 193, 0.22) !important;
+        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
         margin-bottom: 6px !important;
@@ -640,7 +640,7 @@ st.markdown("""
     }
 
     .app-greeting-title {
-        font-size: clamp(1.02rem, 3.2vw, 1.25rem) !important;
+        font-size: 1.12rem !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
@@ -649,17 +649,55 @@ st.markdown("""
     }
 
     .app-greeting-sub {
-        font-size: clamp(0.74rem, 2.2vw, 0.84rem) !important;
+        font-size: 0.80rem !important;
         color: #dbeafe !important;
         margin-top: 1px !important;
         font-weight: 500 !important;
     }
 
     .app-header-time {
-        font-size: clamp(0.68rem, 2vw, 0.75rem) !important;
+        font-size: 0.72rem !important;
         color: #bfdbfe !important;
         margin-top: 2px !important;
         font-weight: 600 !important;
+    }
+
+    /* REGLAS ESPECÍFICAS PARA SMARTPHONES (IPHONE & ANDROID) */
+    @media (max-width: 480px) {
+        .app-header-blue {
+            padding: 12px 14px !important;
+            border-radius: 14px !important;
+            margin-bottom: 4px !important;
+        }
+        .app-greeting-title {
+            font-size: 1.05rem !important;
+        }
+        .app-greeting-sub {
+            font-size: 0.76rem !important;
+        }
+        .app-header-time {
+            font-size: 0.68rem !important;
+        }
+        .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
+            flex: 0 0 110px !important;
+            width: 110px !important;
+            min-width: 110px !important;
+            max-width: 110px !important;
+        }
+        .st-key-nav_scroll div.stButton {
+            width: 110px !important;
+            min-width: 110px !important;
+            max-width: 110px !important;
+        }
+        .st-key-nav_scroll div.stButton > button {
+            width: 110px !important;
+            min-width: 110px !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            max-height: 40px !important;
+            font-size: 0.72rem !important;
+            padding: 0 4px !important;
+        }
     }
 
     .app-delivery-container {
@@ -965,7 +1003,7 @@ st.markdown("""
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         st.markdown("""
-        <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 20px;">
+        <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 16px;">
             <h2 class="app-greeting-title">Centro de Cerámicas y Más</h2>
             <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
         </div>
