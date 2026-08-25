@@ -1038,7 +1038,14 @@ st.markdown(
         fill: #0f172a !important;
     }
 
-    .st-key-nav_scroll {
+    .st-key-nav_home {
+        width: 100% !important;
+        max-width: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+        overflow: visible !important;
+        margin-bottom: 6px !important;
+    }
         width: 100% !important;
         max-width: 100% !important;
         overflow-x: auto !important;
@@ -1063,7 +1070,8 @@ st.markdown(
         border-radius: 20px !important;
     }
 
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"] {
+    .st-key-nav_scroll [data-testid="stHorizontalBlock"],
+    .st-key-nav_home [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
@@ -1074,7 +1082,17 @@ st.markdown(
         padding-right: 4px !important;
     }
 
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
+    .st-key-nav_home [data-testid="stHorizontalBlock"] {
+        justify-content: center !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        margin: 0 auto !important;
+        padding-right: 0 !important;
+        gap: 12px !important;
+    }
+
+    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div,
+    .st-key-nav_home [data-testid="stHorizontalBlock"] > div {
         flex: 0 0 var(--nav-btn-w) !important;
         width: var(--nav-btn-w) !important;
         min-width: var(--nav-btn-w) !important;
@@ -1082,14 +1100,16 @@ st.markdown(
         box-sizing: border-box !important;
     }
 
-    .st-key-nav_scroll div.stButton {
+    .st-key-nav_scroll div.stButton,
+    .st-key-nav_home div.stButton {
         width: var(--nav-btn-w) !important;
         min-width: var(--nav-btn-w) !important;
         max-width: var(--nav-btn-w) !important;
-        margin: 0 !important;
+        margin: 0 auto !important;
     }
 
-    .st-key-nav_scroll div.stButton > button {
+    .st-key-nav_scroll div.stButton > button,
+    .st-key-nav_home div.stButton > button {
         width: var(--nav-btn-w) !important;
         min-width: var(--nav-btn-w) !important;
         height: var(--nav-btn-h) !important;
@@ -1682,10 +1702,11 @@ elif st.session_state["rol"] == "cliente":
             unsafe_allow_html=True,
         )
 
-        with st.container(key="nav_scroll"):
-            hub_activo = st.session_state.get("hub")
-            china_mods = HUBS["china"]["modulos"]
-            mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
+        hub_activo = st.session_state.get("hub")
+        china_mods = HUBS["china"]["modulos"]
+        mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
+
+        with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
 
             if mostrar_subnav_china:
                 nav_cols = st.columns(2 + len(china_mods), gap="small")
