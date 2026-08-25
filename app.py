@@ -936,6 +936,7 @@ st.markdown(
         --greeting-sub: 0.68rem;
         --greeting-time: 0.62rem;
         --sticky-h: 176px;
+        --sticky-delivery: 0px;
     }
 
     html, body {
@@ -1008,7 +1009,11 @@ st.markdown(
 
     .block-container:has(.st-key-sticky_top_header),
     .block-container:has([class*="st-key-sticky_top_header"]) {
-        padding-top: var(--sticky-h) !important;
+        padding-top: calc(var(--sticky-h) + var(--sticky-delivery)) !important;
+    }
+
+    .block-container:has(.st-key-delivery_select) {
+        --sticky-delivery: 110px;
     }
 
     .st-key-sticky_top_header,
@@ -1029,6 +1034,7 @@ st.markdown(
         box-sizing: border-box !important;
         border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+        overflow: visible !important;
     }
 
     .app-header-blue {
@@ -1113,6 +1119,7 @@ st.markdown(
             --greeting-sub: 0.66rem;
             --greeting-time: 0.60rem;
             --sticky-h: 168px;
+            --sticky-delivery: 0px;
         }
         .app-header-blue {
             border-radius: 11px !important;
@@ -1123,6 +1130,7 @@ st.markdown(
         .card-box { padding: 0.9rem; border-radius: 12px; }
         .app-banner-card { padding: 12px; border-radius: 12px; margin-bottom: 0.85rem; }
         .swipe-indicator-bar { font-size: 0.68rem; margin: 1px 0 4px 0; }
+        .block-container:has(.st-key-delivery_select) { --sticky-delivery: 108px; }
     }
 
     /* Teléfonos grandes */
@@ -1188,14 +1196,6 @@ st.markdown(
         color: #0f172a;
         margin-top: 4px;
         margin-bottom: 4px;
-    }
-    .st-key-delivery_select {
-        background: transparent !important;
-        margin: 0 0 14px 0 !important;
-        padding: 0 !important;
-    }
-    .st-key-delivery_select [data-testid="stWidgetLabel"] {
-        margin-bottom: 4px !important;
     }
     .st-key-delivery_select div[data-baseweb="select"] > div,
     .app-delivery-select div[data-baseweb="select"] > div {
@@ -1327,9 +1327,9 @@ st.markdown(
     }
 
     @keyframes pulseBlink {
-        0% { opacity: 0.25; transform: scale(0.95); }
-        50% { opacity: 1; transform: scale(1.05); }
-        100% { opacity: 0.25; transform: scale(0.95); }
+        0% { opacity: 0.35; }
+        50% { opacity: 1; }
+        100% { opacity: 0.35; }
     }
 
     .swipe-indicator-bar {
@@ -1340,9 +1340,41 @@ st.markdown(
         color: #3b82f6;
         font-size: 0.80rem;
         font-weight: 800;
-        margin: 2px 0 6px 0;
+        margin: 4px 0 8px 0;
         animation: pulseBlink 1.4s infinite ease-in-out;
         user-select: none;
+        transform: none;
+        overflow: visible;
+        line-height: 1.3;
+    }
+
+    .st-key-delivery_select {
+        background: transparent !important;
+        margin: 8px 0 0 0 !important;
+        padding: 6px 0 4px 0 !important;
+        overflow: visible !important;
+    }
+    .st-key-delivery_select [data-testid="stWidgetLabel"],
+    .st-key-delivery_select [data-testid="stWidgetLabel"] p,
+    .st-key-delivery_select label,
+    .st-key-delivery_select .stSelectbox label {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        min-height: 1.45em !important;
+        line-height: 1.4 !important;
+        white-space: normal !important;
+        margin: 0 0 6px 0 !important;
+        padding: 2px 0 0 0 !important;
+        font-size: 0.86rem !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+    }
+    .st-key-delivery_select [data-testid="stSelectbox"],
+    .st-key-delivery_select [data-testid="stSelectbox"] > div {
+        overflow: visible !important;
+        height: auto !important;
+        background: transparent !important;
     }
 
     .app-banner-card {
@@ -2034,7 +2066,7 @@ elif st.session_state["rol"] == "cliente":
                         ):
                             ir_a(modulo["id"], hub="china")
 
-        if mostrar_subnav_china:
+        if mostrar_subnav_china and st.session_state["sub_tab_inicio"] != "Cotizador":
             if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
                 st.markdown(
                     '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
@@ -2046,20 +2078,20 @@ elif st.session_state["rol"] == "cliente":
                     unsafe_allow_html=True,
                 )
 
-    if st.session_state["sub_tab_inicio"] == "Cotizador":
-        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-        with st.container(key="delivery_select"):
-            mod_elegida = st.selectbox(
-                "🏪 ¿Cómo deseas recibir tu compra?",
-                opciones_modalidad,
-                index=idx_mod,
-                label_visibility="visible",
-                key="sb_modalidad_header",
-            )
-        if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-            st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-            st.session_state.pop("datos_pdf_confirmado", None)
-            st.rerun()
+        if st.session_state["sub_tab_inicio"] == "Cotizador":
+            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+            with st.container(key="delivery_select"):
+                mod_elegida = st.selectbox(
+                    "🏪 ¿Cómo deseas recibir tu compra?",
+                    opciones_modalidad,
+                    index=idx_mod,
+                    label_visibility="visible",
+                    key="sb_modalidad_header",
+                )
+            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+                st.session_state.pop("datos_pdf_confirmado", None)
+                st.rerun()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
