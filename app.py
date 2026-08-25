@@ -1048,21 +1048,31 @@ st.markdown(
     }
 
     .app-header-brand {
-        display: block;
-        width: 100%;
-        margin: 0 0 6px 0;
-        padding: 0 0 6px 0;
-        border-bottom: 1px solid rgba(219, 234, 254, 0.35);
-        color: #ffffff;
-        font-weight: 800;
-        text-transform: uppercase;
-        white-space: nowrap;
-        text-align: justify;
-        text-align-last: justify;
-        letter-spacing: 0.04em;
-        line-height: 1.15;
-        font-size: clamp(0.58rem, 4.4cqi, 1.2rem);
-        overflow: hidden;
+        display: inline-block !important;
+        width: auto !important;
+        max-width: 100% !important;
+        margin: 0 0 6px 0 !important;
+        padding: 0 0 6px 0 !important;
+        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
+        color: #ffffff !important;
+        font-weight: 800 !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+        text-align-last: left !important;
+        letter-spacing: 0.04em !important;
+        word-spacing: normal !important;
+        line-height: 1.2 !important;
+        font-size: clamp(0.78rem, 3.2cqi, 1.15rem) !important;
+        overflow: hidden !important;
+    }
+
+    .st-key-sticky_top_header [data-testid="stMarkdown"],
+    .st-key-sticky_top_header [data-testid="stMarkdown"] p,
+    .st-key-sticky_top_header [data-testid="stMarkdownContainer"] {
+        text-align: left !important;
+        text-align-last: left !important;
+        word-spacing: normal !important;
     }
 
     .app-greeting-title {
@@ -1970,7 +1980,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown(
             f"""
         <div class="app-header-blue">
-            <div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>
+            <div class="app-header-brand" style="display:inline-block;width:auto;text-align:left;text-align-last:left;letter-spacing:0.04em;word-spacing:normal;white-space:nowrap;">CENTRO DE CERÁMICAS Y MÁS</div>
             <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
             <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
             <div class="app-header-time">🕒 {fecha_hora_texto}</div>
