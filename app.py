@@ -3528,7 +3528,7 @@ elif st.session_state["rol"] == "cliente":
                 )
                 if tarifa_consolidada:
                     titulo_emitida = (
-                        f"Cotización CCM-COT-{id_c:05d} consolidada. Envíos y Fichas ya están habilitados."
+                        f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está en Envíos."
                     )
                     detalle_emitida = f"✅ {estado_doc}"
                 else:
@@ -3536,7 +3536,7 @@ elif st.session_state["rol"] == "cliente":
                         f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
                     )
                     detalle_emitida = (
-                        f"⏳ {estado_doc}. Confírmela ahora para que no caduque y para habilitar Envíos y Fichas."
+                        f"⏳ {estado_doc}. Confírmela ahora para que no caduque; el PDF Tarifa quedará en Envíos."
                     )
 
                 st.markdown(
@@ -3578,41 +3578,13 @@ elif st.session_state["rol"] == "cliente":
                     fecha_emision=fecha_doc,
                 )
 
-                pdf_conf = generar_pdf_confirmacion_cotizacion(
-                    casillero=casillero,
-                    nombre=nombre_completo,
-                    telefono=tel_cli,
-                    ciudad=ciu_cli,
-                    tipo_carga=d_pdf.get("tipo_carga", ""),
-                    al=d_pdf.get("al", 0),
-                    an=d_pdf.get("an", 0),
-                    la=d_pdf.get("la", 0),
-                    peso_lb=d_pdf.get("peso_lb", 0),
-                    peso_kg=d_pdf.get("peso_kg", 0),
-                    vol_m3=d_pdf.get("vol_m3", 0),
-                    vol_ft3=d_pdf.get("vol_ft3", 0),
-                    total_usd=d_pdf.get("total_usd", 0),
-                    detalle_tarifa=d_pdf.get("detalle_tarifa", ""),
-                    id_cot=id_c,
-                    destino_entrega=dest_pdf,
-                    fecha_emision=fecha_doc,
+                st.download_button(
+                    "📥 PDF Fabricante",
+                    pdf_fab,
+                    f"Shipping_Label_Fabricante_{casillero}.pdf",
+                    "application/pdf",
+                    use_container_width=True,
                 )
-
-                c_doc1, c_doc2 = st.columns(2)
-                with c_doc1:
-                    st.download_button(
-                        "📥 PDF Fabricante",
-                        pdf_fab,
-                        f"Shipping_Label_Fabricante_{casillero}.pdf",
-                        "application/pdf",
-                    )
-                with c_doc2:
-                    st.download_button(
-                        "📥 PDF Tarifa",
-                        pdf_conf,
-                        f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
-                        "application/pdf",
-                    )
 
                 texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                 url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
@@ -3648,6 +3620,55 @@ elif st.session_state["rol"] == "cliente":
                 )
         else:
             st.info("No tienes paquetes registrados en travesía.")
+
+        st.markdown("#### 📄 PDF Tarifa de cotizaciones confirmadas")
+        st.caption("Descargue el comprobante de tarifa de cada cotización consolidada en cualquier momento.")
+        cotizaciones_despacho = [
+            row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])
+        ]
+        if cotizaciones_despacho:
+            for cot_env in cotizaciones_despacho:
+                id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
+                st.markdown(
+                    f"""
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                    <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {fec_e}<br>
+                    <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
+                    <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+                pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
+                    casillero=casillero,
+                    nombre=nombre_completo,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    tipo_carga="Cotización Confirmada",
+                    al=al_e,
+                    an=an_e,
+                    la=la_e,
+                    peso_lb=pe_e,
+                    peso_kg=pe_e / 2.20462,
+                    vol_m3=vol_e,
+                    vol_ft3=vol_e * 35.3147,
+                    total_usd=tot_e,
+                    detalle_tarifa="Tarifa Calculada Sistema CCM",
+                    id_cot=id_e,
+                    destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+                    fecha_emision=fec_e,
+                )
+                st.download_button(
+                    f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
+                    pdf_tarifa_env,
+                    f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
+                    "application/pdf",
+                    key=f"dl_tarifa_env_{id_e}",
+                    use_container_width=True,
+                )
+                st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
+        else:
+            st.info("Confirme una cotización para consultar y descargar el PDF Tarifa en este módulo.")
 
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
