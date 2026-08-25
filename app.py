@@ -1,4 +1,5 @@
 import streamlit as st
+import textwrap
 import sqlite3
 import hashlib
 import random
@@ -900,6 +901,43 @@ st.markdown("""
     div.stButton > button[kind="secondary"]:hover * {
         color: #004ac1 !important;
     }
+
+    /* BOTÓN CERRAR SESIÓN — FORZADO AL MISMO ESTILO QUE LOS BOTONES BLANCOS */
+    .st-key-btn_logout_cliente button,
+    .st-key-btn_logout_cliente button[kind="secondary"] {
+        width: 120px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        opacity: 1 !important;
+    }
+
+    .st-key-btn_logout_cliente button:hover,
+    .st-key-btn_logout_cliente button[kind="secondary"]:hover {
+        background: #f8fafc !important;
+        background-color: #f8fafc !important;
+        color: #004ac1 !important;
+        border-color: #004ac1 !important;
+        box-shadow: 0 4px 10px rgba(0,74,193,0.12) !important;
+    }
+
+    .st-key-btn_logout_cliente button *,
+    .st-key-btn_logout_cliente button[kind="secondary"] * {
+        color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+
+    .st-key-btn_logout_cliente button:hover *,
+    .st-key-btn_logout_cliente button[kind="secondary"]:hover * {
+        color: #004ac1 !important;
+        fill: #004ac1 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1145,7 +1183,7 @@ elif st.session_state["rol"] == "cliente":
 
         # CERRAR — mismo tamaño, margen, borde y color que los demás botones blancos
         with c_nav_p:
-            if st.button("🚪 Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
+            if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
         # INICIO — sección blanca reservada para nueva información
@@ -1230,7 +1268,7 @@ elif st.session_state["rol"] == "cliente":
     # VISTA INICIO — ESPACIO BLANCO PARA INFORMACIÓN FUTURA
     # -----------------------------------------------------
     if st.session_state["sub_tab_inicio"] == "Inicio":
-        st.markdown("""
+        st.markdown(textwrap.dedent("""
         <div class="card-box" style="
             min-height: 430px;
             background:#ffffff;
@@ -1271,7 +1309,7 @@ elif st.session_state["rol"] == "cliente":
                 </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """), unsafe_allow_html=True)
 
     # -----------------------------------------------------
     # VISTA 0: MIS COTIZACIONES (HISTORIAL Y DESCARGAS)
