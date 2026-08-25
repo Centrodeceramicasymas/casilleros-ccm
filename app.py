@@ -584,7 +584,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON BOTONES UNIFORMES Y HOMOGÉNEOS
+# 6. ESTILOS CSS REFINADOS CON CABECERA TOTALMENTE FIJA (STICKY HEADER)
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -608,16 +608,32 @@ st.markdown("""
         overflow-x: hidden !important;
     }
 
+    /* CONTENEDOR DE CABECERA SUPERIOR FIJA / STICKY */
+    .st-key-sticky_top_header {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 999 !important;
+        background-color: #f8fafc !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.4rem !important;
+        margin-left: -0.8rem !important;
+        margin-right: -0.8rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03) !important;
+    }
+
     /* HEADER AZUL SUPERIOR LIMPIO */
     .app-header-blue {
         background-color: #004ac1 !important;
-        padding: 18px 16px 16px 16px !important;
-        border-radius: 0 0 20px 20px !important;
+        padding: 16px 14px 14px 14px !important;
+        border-radius: 18px !important;
         color: #ffffff !important;
-        margin: -1rem -0.8rem 1rem -0.8rem !important;
         box-shadow: 0 4px 14px rgba(0, 74, 193, 0.25) !important;
-        max-width: 100vw !important;
+        max-width: 100% !important;
         box-sizing: border-box !important;
+        margin-bottom: 8px !important;
     }
 
     .app-greeting-title {
@@ -644,24 +660,25 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 8px;
-        color: #ffffff;
-        margin-top: 10px;
+        color: #0f172a;
+        margin-top: 4px;
+        margin-bottom: 4px;
     }
     .app-delivery-select div[data-baseweb="select"] > div {
-        background-color: rgba(255, 255, 255, 0.18) !important;
-        border: 1px solid rgba(255, 255, 255, 0.35) !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
-        color: #ffffff !important;
+        color: #0f172a !important;
         padding: 0 4px !important;
         height: 38px !important;
     }
     .app-delivery-select div[data-baseweb="select"] span {
-        color: #ffffff !important;
+        color: #0f172a !important;
         font-weight: 700 !important;
         font-size: 0.82rem !important;
     }
     .app-delivery-select svg {
-        fill: #ffffff !important;
+        fill: #0f172a !important;
     }
 
     /* MENÚ HORIZONTAL DESLIZABLE CON EL DEDO */
@@ -678,7 +695,7 @@ st.markdown("""
     }
 
     .st-key-nav_scroll::-webkit-scrollbar {
-        height: 5px !important;
+        height: 4px !important;
     }
 
     .st-key-nav_scroll::-webkit-scrollbar-track {
@@ -709,7 +726,6 @@ st.markdown("""
         box-sizing: border-box !important;
     }
 
-    /* CERRAR, INICIO Y TODOS LOS BOTONES DEL MENÚ: MISMA CAJA Y MISMA ALINEACIÓN */
     .st-key-nav_scroll div.stButton {
         width: 120px !important;
         min-width: 120px !important;
@@ -717,12 +733,6 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    .st-key-nav_scroll div.stButton > button {
-        margin: 0 !important;
-        box-sizing: border-box !important;
-    }
-
-    /* BOTONES DE LA BARRA DE NAVEGACIÓN — UNIFORMES Y CON TEXTO NEGRO */
     .st-key-nav_scroll div.stButton > button {
         width: 120px !important;
         min-width: 120px !important;
@@ -741,6 +751,8 @@ st.markdown("""
         justify-content: center !important;
         text-align: center !important;
         touch-action: pan-x !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div > div {
@@ -762,7 +774,7 @@ st.markdown("""
         color: #3b82f6;
         font-size: 0.82rem;
         font-weight: 800;
-        margin: 4px 0 10px 0;
+        margin: 2px 0 6px 0;
         animation: pulseBlink 1.4s infinite ease-in-out;
         user-select: none;
     }
@@ -773,6 +785,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 18px;
         color: #ffffff;
+        margin-top: 0.5rem;
         margin-bottom: 1.2rem;
         box-shadow: 0 6px 18px rgba(0,0,0,0.12);
     }
@@ -854,7 +867,7 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* BOTONES UNIFORMES Y ESTÉTICOS EN BLANCO CON TEXTO EN NEGRO */
+    /* BOTONES UNIFORMES EN BLANCO CON TEXTO EN NEGRO */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         height: 44px !important;
@@ -902,7 +915,6 @@ st.markdown("""
         color: #004ac1 !important;
     }
 
-    /* BOTÓN CERRAR SESIÓN — FORZADO AL MISMO ESTILO QUE LOS BOTONES BLANCOS */
     .st-key-btn_logout_cliente button,
     .st-key-btn_logout_cliente button[kind="secondary"] {
         width: 120px !important;
@@ -937,13 +949,6 @@ st.markdown("""
     .st-key-btn_logout_cliente button[kind="secondary"]:hover * {
         color: #004ac1 !important;
         fill: #004ac1 !important;
-    }
-
-    .app-header {
-        scroll-margin-top: 8px;
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 1000 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1173,103 +1178,103 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
-    # --- HEADER AZUL SUPERIOR LIMPIO ---
-    st.markdown(f"""
-    <div class="app-header-blue">
-        <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
-        <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
-        <div class="app-header-time">🕒 {fecha_hora_texto}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
     # =========================================================
-    # MENÚ HORIZONTAL DESLIZABLE (CON BOTÓN DE CERRAR AL INICIO)
+    # BLOQUE DE CABECERA TOTALMENTE FIJA (STICKY HEADER)
     # =========================================================
-    with st.container(key="nav_scroll"):
-        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
-
-        # CERRAR — mismo tamaño, margen, borde y color que los demás botones blancos
-        with c_nav_p:
-            if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
-                logout()
-
-        # INICIO — sección blanca reservada para nueva información
-        with c_nav_c:
-            if st.button("🏠 Inicio", type="secondary", key="btn_inicio_cliente"):
-                st.session_state["sub_tab_inicio"] = "Inicio"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Inicio"
-                st.rerun()
-
-        with c_nav1:
-            if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
-                st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Mis Cotizaciones"
-                st.rerun()
-
-        with c_nav2:
-            if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
-                st.session_state["sub_tab_inicio"] = "Catálogo"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Catálogo"
-                st.rerun()
-
-        with c_nav3:
-            if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
-                st.session_state["sub_tab_inicio"] = "Cotizador"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Cotizador"
-                st.rerun()
-
-        with c_nav4:
-            if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
-                st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Mis Envíos"
-                st.rerun()
-
-        with c_nav5:
-            if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
-                st.session_state["sub_tab_inicio"] = "Etiqueta"
-                st.query_params["casillero"] = str(casillero)
-                st.query_params["vista"] = "Etiqueta"
-                st.rerun()
-
-    # --- FLECHAS GUÍA PARPADEANTES REACTIVAS A LA POSICIÓN ---
-    if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
-        st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
-
-    # --- SELECTOR DE ENTREGA (SOLO VISIBLE EN COTIZADOR) ---
-    if st.session_state["sub_tab_inicio"] == "Cotizador":
-        st.markdown("""
-        <div class="app-delivery-container">
-            <span style="font-size:1.2rem;">🏪</span>
-            <div style="flex:1;">
-        """, unsafe_allow_html=True)
-
-        st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
-        idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-
-        mod_elegida = st.selectbox(
-            "¿Cómo deseas recibir tu compra?",
-            opciones_modalidad,
-            index=idx_mod,
-            label_visibility="visible",
-            key="sb_modalidad_header"
-        )
-        if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-            st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-            st.session_state.pop("datos_pdf_confirmado", None)
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("""
-            </div>
+    with st.container(key="sticky_top_header"):
+        # --- HEADER AZUL CON DATOS DEL USUARIO ---
+        st.markdown(f"""
+        <div class="app-header-blue">
+            <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
+            <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
+            <div class="app-header-time">🕒 {fecha_hora_texto}</div>
         </div>
         """, unsafe_allow_html=True)
+
+        # --- MENÚ HORIZONTAL DESLIZABLE (CON CERRAR E INICIO) ---
+        with st.container(key="nav_scroll"):
+            c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
+
+            with c_nav_p:
+                if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
+                    logout()
+
+            with c_nav_c:
+                if st.button("🏠 Inicio", type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary", key="btn_inicio_cliente"):
+                    st.session_state["sub_tab_inicio"] = "Inicio"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Inicio"
+                    st.rerun()
+
+            with c_nav1:
+                if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
+                    st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Mis Cotizaciones"
+                    st.rerun()
+
+            with c_nav2:
+                if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+                    st.session_state["sub_tab_inicio"] = "Catálogo"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Catálogo"
+                    st.rerun()
+
+            with c_nav3:
+                if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+                    st.session_state["sub_tab_inicio"] = "Cotizador"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Cotizador"
+                    st.rerun()
+
+            with c_nav4:
+                if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+                    st.session_state["sub_tab_inicio"] = "Mis Envíos"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Mis Envíos"
+                    st.rerun()
+
+            with c_nav5:
+                if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+                    st.session_state["sub_tab_inicio"] = "Etiqueta"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Etiqueta"
+                    st.rerun()
+
+        # --- FLECHAS GUÍA PARPADEANTES REACTIVAS ---
+        if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
+            st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
+
+        # --- SELECTOR DE ENTREGA (SOLO VISIBLE EN COTIZADOR) ---
+        if st.session_state["sub_tab_inicio"] == "Cotizador":
+            st.markdown("""
+            <div class="app-delivery-container">
+                <span style="font-size:1.2rem;">🏪</span>
+                <div style="flex:1;">
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
+            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+
+            mod_elegida = st.selectbox(
+                "¿Cómo deseas recibir tu compra?",
+                opciones_modalidad,
+                index=idx_mod,
+                label_visibility="visible",
+                key="sb_modalidad_header"
+            )
+            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+                st.session_state.pop("datos_pdf_confirmado", None)
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown("""
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # -----------------------------------------------------
     # VISTA INICIO — ESPACIO BLANCO PARA INFORMACIÓN FUTURA
