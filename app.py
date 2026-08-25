@@ -1048,8 +1048,8 @@ st.markdown(
     }
 
     .app-header-brand {
-        display: inline-block !important;
-        width: auto !important;
+        display: block !important;
+        width: 100% !important;
         max-width: 100% !important;
         margin: 0 0 6px 0 !important;
         padding: 0 0 6px 0 !important;
@@ -1058,12 +1058,12 @@ st.markdown(
         font-weight: 800 !important;
         text-transform: uppercase !important;
         white-space: nowrap !important;
-        text-align: left !important;
-        text-align-last: left !important;
-        letter-spacing: 0.04em !important;
+        text-align: center !important;
+        text-align-last: center !important;
+        letter-spacing: 0.05em !important;
         word-spacing: normal !important;
         line-height: 1.2 !important;
-        font-size: clamp(0.78rem, 3.2cqi, 1.15rem) !important;
+        font-size: clamp(0.92rem, 4.6cqi, 1.42rem) !important;
         overflow: hidden !important;
     }
 
@@ -1980,7 +1980,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown(
             f"""
         <div class="app-header-blue">
-            <div class="app-header-brand" style="display:inline-block;width:auto;text-align:left;text-align-last:left;letter-spacing:0.04em;word-spacing:normal;white-space:nowrap;">CENTRO DE CERÁMICAS Y MÁS</div>
+            <div class="app-header-brand" style="display:block;width:100%;text-align:center;text-align-last:center;letter-spacing:0.05em;word-spacing:normal;white-space:nowrap;font-weight:800;">CENTRO DE CERÁMICAS Y MÁS</div>
             <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
             <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
             <div class="app-header-time">🕒 {fecha_hora_texto}</div>
