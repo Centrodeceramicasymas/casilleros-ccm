@@ -822,11 +822,29 @@ st.markdown(
     html, body {
         overflow-x: hidden !important;
         max-width: 100% !important;
+        background-color: #f8fafc !important;
+        background: #f8fafc !important;
+        color: #0f172a !important;
+    }
+
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewBlockContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stBottomBlockContainer"],
+    [data-testid="stBottom"],
+    section.main,
+    .stMain,
+    .stMainBlockContainer,
+    .main,
+    .block-container {
+        background-color: #f8fafc !important;
+        background: #f8fafc !important;
+        color: #0f172a !important;
     }
 
     .stApp {
-        background-color: #f8fafc !important;
-        color: #0f172a !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         overflow: visible !important;
         height: auto !important;
@@ -1021,21 +1039,37 @@ st.markdown(
         margin-top: 4px;
         margin-bottom: 4px;
     }
+    .st-key-delivery_select {
+        background: transparent !important;
+        margin: 0 !important;
+    }
+    .st-key-delivery_select div[data-baseweb="select"] > div,
     .app-delivery-select div[data-baseweb="select"] > div {
         background-color: #ffffff !important;
         border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
         color: #0f172a !important;
         padding: 0 4px !important;
-        height: 38px !important;
+        min-height: 38px !important;
     }
-    .app-delivery-select div[data-baseweb="select"] span {
+    .st-key-delivery_select div[data-baseweb="select"] span,
+    .app-delivery-select div[data-baseweb="select"] span,
+    div[data-baseweb="select"] span {
         color: #0f172a !important;
         font-weight: 700 !important;
         font-size: 0.82rem !important;
     }
-    .app-delivery-select svg {
+    .st-key-delivery_select svg,
+    .app-delivery-select svg,
+    div[data-baseweb="select"] svg {
         fill: #0f172a !important;
+    }
+    ul[role="listbox"],
+    li[role="option"],
+    div[data-baseweb="popover"],
+    div[data-baseweb="menu"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
     }
 
     .st-key-nav_home {
@@ -1046,6 +1080,8 @@ st.markdown(
         overflow: visible !important;
         margin-bottom: 6px !important;
     }
+
+    .st-key-nav_scroll {
         width: 100% !important;
         max-width: 100% !important;
         overflow-x: auto !important;
@@ -1055,6 +1091,7 @@ st.markdown(
         margin-bottom: 2px !important;
         padding-bottom: 4px !important;
         touch-action: pan-x !important;
+        background: transparent !important;
     }
 
     .st-key-nav_scroll::-webkit-scrollbar {
@@ -1155,13 +1192,30 @@ st.markdown(
     }
 
     .app-banner-card {
-        background: linear-gradient(135deg, #1e293b, #0f172a);
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+        border: 1px solid #bfdbfe;
         border-radius: 16px;
         padding: 18px;
-        color: #ffffff;
+        color: #0f172a;
         margin-top: 0.5rem;
         margin-bottom: 1.2rem;
-        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+        box-shadow: 0 4px 12px rgba(0, 74, 193, 0.08);
+    }
+    .app-banner-title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        line-height: 1.3;
+        margin-bottom: 6px;
+        color: #0f172a;
+    }
+    .app-banner-accent {
+        color: #004ac1;
+    }
+    .app-banner-sub {
+        font-size: 0.78rem;
+        color: #475569;
+        font-weight: 500;
+        line-height: 1.45;
     }
     .app-banner-tag {
         background: #ec4899;
@@ -1264,10 +1318,11 @@ st.markdown(
     }
 
     div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"] {
-        background-color: #1e293b !important;
-        border: 1.5px solid #334155 !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #cbd5e1 !important;
         border-radius: 10px !important;
         padding: 2px 6px !important;
+        color: #0f172a !important;
     }
 
     div[data-baseweb="input"] input,
@@ -1276,11 +1331,11 @@ st.markdown(
     div[data-baseweb="textarea"] textarea:focus,
     div[data-baseweb="textarea"] > div,
     textarea {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
         font-size: 0.92rem !important;
         font-weight: 600 !important;
-        background-color: transparent !important;
+        background-color: #ffffff !important;
     }
 
     div[data-baseweb="input"] input::placeholder, div[data-baseweb="textarea"] textarea::placeholder, textarea::placeholder {
@@ -1289,6 +1344,13 @@ st.markdown(
         font-weight: 400 !important;
     }
 
+    [data-testid="stMetric"] {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 12px 10px !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+    }
     div[data-testid="stMetricValue"] {
         font-size: 1.15rem !important;
         font-weight: 800 !important;
@@ -1298,6 +1360,12 @@ st.markdown(
         font-size: 0.78rem !important;
         font-weight: 700 !important;
         color: #475569 !important;
+    }
+    [data-testid="stDataFrame"],
+    [data-testid="stDataFrameResizable"],
+    .stDataFrame,
+    [data-testid="stMetricContainer"] {
+        background-color: #ffffff !important;
     }
 
     div.stButton > button, div.stDownloadButton > button {
@@ -1473,7 +1541,6 @@ if not st.session_state["autenticado"]:
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
         u_ident = st.text_input(
             "Número de casillero o correo",
@@ -1526,10 +1593,8 @@ if not st.session_state["autenticado"]:
             if st.button("Crear Casillero", type="secondary"):
                 st.session_state["vista_actual"] = "registro"
                 st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["vista_actual"] == "registro":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("### 📋 Apertura de Casillero en China")
         paso = st.session_state["reg_paso"]
         st.progress(paso / 4.0, text=f"Paso {paso} de 4")
@@ -1654,10 +1719,8 @@ if not st.session_state["autenticado"]:
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["vista_actual"] == "recuperar":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("### 🔄 Restablecer Contraseña")
         r_mail = st.text_input("Correo Registrado")
         if st.button("Generar Nueva Contraseña", type="primary"):
@@ -1676,7 +1739,6 @@ if not st.session_state["autenticado"]:
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 8. PORTAL DEL CLIENTE
@@ -1794,38 +1856,19 @@ elif st.session_state["rol"] == "cliente":
                 )
 
         if st.session_state["sub_tab_inicio"] == "Cotizador":
-            st.markdown(
-                """
-            <div class="app-delivery-container">
-                <span style="font-size:1.2rem;">🏪</span>
-                <div style="flex:1;">
-            """,
-                unsafe_allow_html=True,
-            )
-
-            st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
             idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-
-            mod_elegida = st.selectbox(
-                "¿Cómo deseas recibir tu compra?",
-                opciones_modalidad,
-                index=idx_mod,
-                label_visibility="visible",
-                key="sb_modalidad_header",
-            )
+            with st.container(key="delivery_select"):
+                mod_elegida = st.selectbox(
+                    "🏪 ¿Cómo deseas recibir tu compra?",
+                    opciones_modalidad,
+                    index=idx_mod,
+                    label_visibility="visible",
+                    key="sb_modalidad_header",
+                )
             if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
                 st.session_state["modalidad_envio_seleccionada"] = mod_elegida
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            st.markdown(
-                """
-                </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
@@ -1880,8 +1923,7 @@ elif st.session_state["rol"] == "cliente":
             )
 
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
-        st.markdown('<div class="card-box" style="border: 2px solid #004ac1; background: #ffffff;">', unsafe_allow_html=True)
-        st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF", unsafe_allow_html=True)
+        st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
         st.caption("Aquí puedes consultar y descargar el comprobante en PDF de cada cotización generada.")
 
         if lista_mis_cotizaciones:
@@ -1926,10 +1968,8 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
             st.info("Aún no has generado ninguna cotización.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
-        st.markdown('<div class="card-box" style="border: 2px solid #004ac1;">', unsafe_allow_html=True)
         st.markdown("#### 📍 Administrar Direcciones de Envío")
 
         st.markdown(
@@ -2030,27 +2070,22 @@ elif st.session_state["rol"] == "cliente":
                 st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("hub") == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO:
         st.markdown(
-            f"""
-    <div class="app-banner-card">
-        <div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>
-        <div style="font-size:1.1rem; font-weight:800; line-height:1.3; margin-bottom:6px;">
-            En el momento que sientes que cargas con <span style="color:#38bdf8;">libras extra</span> que te pesan...
-        </div>
-        <div style="font-size:0.78rem; color:#cbd5e1;">
-            ¡Te das cuenta que tienen solución con fletes marítimos desde China!<br>
-            <b style="color:#ec4899; font-size:1rem; letter-spacing:1px;">VIVE LIGERO</b> &bull; Casillero asignado: <b>{casillero}</b>
-        </div>
-    </div>
-    """,
+            (
+                '<div class="app-banner-card">'
+                '<div class="app-banner-tag">¡Y YA ESTÁ DISPONIBLE!</div>'
+                '<div class="app-banner-title">En el momento que sientes que cargas con '
+                '<span class="app-banner-accent">libras extra</span> que te pesan...</div>'
+                '<div class="app-banner-sub">¡Te das cuenta que tienen solución con fletes marítimos desde China!<br>'
+                f'<b style="color:#db2777;letter-spacing:1px;">VIVE LIGERO</b> &bull; Casillero asignado: <b>{casillero}</b>'
+                "</div></div>"
+            ),
             unsafe_allow_html=True,
         )
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
 
         modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
@@ -2102,10 +2137,8 @@ elif st.session_state["rol"] == "cliente":
                             unsafe_allow_html=True,
                         )
                 st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["sub_tab_inicio"] == "Cotizador":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
 
         st.info(
@@ -2408,10 +2441,8 @@ elif st.session_state["rol"] == "cliente":
             else:
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
         with get_db() as conn:
             c = conn.cursor()
@@ -2435,10 +2466,8 @@ elif st.session_state["rol"] == "cliente":
                 )
         else:
             st.info("No tienes paquetes registrados en travesía.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
         st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
 
@@ -2478,7 +2507,6 @@ elif st.session_state["rol"] == "cliente":
         """,
             unsafe_allow_html=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO
@@ -2510,7 +2538,6 @@ elif st.session_state["rol"] == "admin":
                 st.info("Aún no hay clientes registrados.")
 
     with tab_p:
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         t_in = st.text_input("Tracking de China")
         c_in = st.text_input("Casillero Asignado (8 dígitos)")
         d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
@@ -2547,10 +2574,8 @@ elif st.session_state["rol"] == "admin":
                 st.rerun()
             else:
                 st.warning("Ingrese tracking y casillero.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with tab_t:
-        st.markdown('<div class="card-box">', unsafe_allow_html=True)
         st.markdown("#### Tarifas marítimas vigentes")
         n_lb = st.number_input("Tarifa por libra (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra")), step=0.05)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3")), step=1.0)
@@ -2560,7 +2585,6 @@ elif st.session_state["rol"] == "admin":
             set_tarifa("tarifa_m3", n_m3)
             set_tarifa("minimo_cobro_usd", n_min)
             st.success("Tarifas actualizadas.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Cerrar Sesión Admin", type="secondary"):
         logout()
