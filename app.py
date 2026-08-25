@@ -219,14 +219,14 @@ HUBS = {
 
 MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
 VISTAS_MODULO = set(MODULOS_POR_ID.keys())
-MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo")
-MODULOS_CHINA_BLOQUEADOS = ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo", "Mis Cotizaciones")
+MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
 ROLES_ADMIN = ("admin", "superadmin")
 DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
-# Por el momento todos los usuarios ven hubs y módulos como antes del superadmin.
+# Hubs y módulos base siguen abiertos; Envíos y Fichas se desbloquean al confirmar una cotización.
 PERMISOS_ABIERTOS_TEMPORAL = True
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
@@ -238,16 +238,41 @@ MODULO_PERMISO_COL = {
 }
 
 
+def es_cotizacion_confirmada(valor):
+    try:
+        return int(valor or 0) == 1
+    except (TypeError, ValueError):
+        return False
+
+
+def cotizacion_visible_historial(fecha_raw, confirmada, ahora=None):
+    if es_cotizacion_confirmada(confirmada):
+        return True
+    return cotizacion_vigente(fecha_raw, ahora)
+
+
+def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None):
+    if es_cotizacion_confirmada(confirmada):
+        return "Consolidada — permanente en el historial del casillero"
+    return texto_vigencia_cotizacion(fecha_raw, ahora)
+
+
 def _limpiar_cotizacion_vencida_en_sesion(ahora):
     d_pdf = st.session_state.get("datos_pdf_confirmado")
     if not isinstance(d_pdf, dict):
         return None
+    id_cot = d_pdf.get("id_cot")
+    if not cotizacion_existe_en_casillero(id_cot):
+        st.session_state.pop("datos_pdf_confirmado", None)
+        st.session_state.pop("ultima_cot_id", None)
+        return None
+    if cotizacion_esta_confirmada(id_cot):
+        return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
     fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
     if cotizacion_vigente(fecha_pdf, ahora):
         return fecha_pdf
     st.session_state.pop("datos_pdf_confirmado", None)
     st.session_state.pop("ultima_cot_id", None)
-    st.session_state["china_modulos_desbloqueados"] = False
     return None
 
 
@@ -267,15 +292,110 @@ def fechas_cotizaciones_casillero(casillero):
         return []
 
 
+def casillero_tiene_cotizacion_confirmada(casillero):
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return False
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM cotizaciones WHERE codigo_casillero = ? AND IFNULL(confirmada, 0) = 1 LIMIT 1",
+                (cas,),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def cotizacion_existe_en_casillero(id_cot, casillero=None):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            if cas:
+                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ? AND codigo_casillero = ?", (cid, cas))
+            else:
+                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ?", (cid,))
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def cotizacion_esta_confirmada(id_cot, casillero=None):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            if cas:
+                cur.execute(
+                    "SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
+                    (cid, cas),
+                )
+            else:
+                cur.execute("SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ?", (cid,))
+            row = cur.fetchone()
+        return bool(row and int(row[0]) == 1)
+    except Exception:
+        return False
+
+
+def confirmar_cotizacion_casillero(id_cot, casillero):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return False
+    ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE cotizaciones
+            SET confirmada = 1, fecha_confirmacion = ?
+            WHERE id = ? AND codigo_casillero = ? AND IFNULL(confirmada, 0) = 0
+            """,
+            (ahora, cid, cas),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
+    ahora = ahora or obtener_tiempo_honduras()
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT id, fecha, IFNULL(confirmada, 0) FROM cotizaciones")
+        except sqlite3.OperationalError:
+            return 0
+        ids_borrar = []
+        for cid, fecha, confirmada in cur.fetchall():
+            if es_cotizacion_confirmada(confirmada):
+                continue
+            if not cotizacion_vigente(fecha, ahora):
+                ids_borrar.append(cid)
+        if not ids_borrar:
+            return 0
+        cur.executemany("DELETE FROM cotizaciones WHERE id = ?", [(cid,) for cid in ids_borrar])
+        conn.commit()
+        return len(ids_borrar)
+
+
 def china_seguimiento_habilitado():
-    if PERMISOS_ABIERTOS_TEMPORAL:
-        return True
-    ahora = obtener_tiempo_honduras()
-    if _limpiar_cotizacion_vencida_en_sesion(ahora):
-        st.session_state["china_modulos_desbloqueados"] = True
-        return True
+    """Envíos y Fichas solo si el casillero tiene al menos una cotización confirmada."""
     cas = st.session_state.get("casillero", "")
-    if any(cotizacion_vigente(fecha, ahora) for fecha in fechas_cotizaciones_casillero(cas)):
+    if casillero_tiene_cotizacion_confirmada(cas):
         st.session_state["china_modulos_desbloqueados"] = True
         return True
     st.session_state["china_modulos_desbloqueados"] = False
@@ -287,8 +407,8 @@ def modulos_china_visibles():
     permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
     if china_seguimiento_habilitado():
         return permitidos
-    iniciales = set(MODULOS_CHINA_INICIAL)
-    return [m for m in permitidos if m["id"] in iniciales]
+    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
+    return [m for m in permitidos if m["id"] not in bloqueados]
 
 
 def ir_a(vista, hub="_omit"):
@@ -610,10 +730,18 @@ def init_db():
                 volumen_m3 REAL,
                 volumen_ft3 REAL,
                 total_usd REAL,
-                fecha TEXT NOT NULL
+                fecha TEXT NOT NULL,
+                confirmada INTEGER NOT NULL DEFAULT 0,
+                fecha_confirmacion TEXT
             )
             """
         )
+        c.execute("PRAGMA table_info(cotizaciones)")
+        columnas_cot = {fila[1] for fila in c.fetchall()}
+        if "confirmada" not in columnas_cot:
+            c.execute("ALTER TABLE cotizaciones ADD COLUMN confirmada INTEGER NOT NULL DEFAULT 0")
+        if "fecha_confirmacion" not in columnas_cot:
+            c.execute("ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT")
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS paquetes (
@@ -1146,6 +1274,7 @@ migrar_prefijo_casillero()
 asegurar_superadmin()
 abrir_permisos_todos_los_usuarios()
 restaurar_datos_operativos_cliente()
+purgar_cotizaciones_no_confirmadas_vencidas()
 
 
 def generar_clave_provisional():
@@ -2748,6 +2877,9 @@ elif st.session_state["rol"] == "cliente":
     casillero = formatear_casillero(st.session_state["casillero"])
     if casillero != st.session_state["casillero"]:
         st.session_state["casillero"] = casillero
+    ahora_hn = obtener_tiempo_honduras()
+    purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
+    _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
     nombre_completo = st.session_state["nombre"]
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
@@ -2760,7 +2892,6 @@ elif st.session_state["rol"] == "cliente":
     else:
         nombre_display = "Cliente"
 
-    ahora_hn = obtener_tiempo_honduras()
     hora_actual = ahora_hn.hour
     if 5 <= hora_actual < 12:
         saludo_horario = "Buenos días"
@@ -2777,12 +2908,17 @@ elif st.session_state["rol"] == "cliente":
     with get_db() as conn:
         c = conn.cursor()
         c.execute(
-            "SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC",
+            """
+            SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd, fecha, IFNULL(confirmada, 0)
+            FROM cotizaciones WHERE codigo_casillero = ? ORDER BY id DESC
+            """,
             (casillero,),
         )
         lista_todas_cotizaciones = c.fetchall()
 
-        lista_mis_cotizaciones = [row for row in lista_todas_cotizaciones if cotizacion_vigente(row[7], ahora_hn)]
+        lista_mis_cotizaciones = [
+            row for row in lista_todas_cotizaciones if cotizacion_visible_historial(row[7], row[8], ahora_hn)
+        ]
         total_cotizaciones = len(lista_mis_cotizaciones)
 
         c.execute(
@@ -2900,14 +3036,10 @@ elif st.session_state["rol"] == "cliente":
             mods = modulos_china_visibles()
             if not china_seguimiento_habilitado():
                 st.caption(
-                    "Cada tarifa dura 24 horas. Confirma una cotización en el Cotizador para habilitar historial, envíos y fichas de bodega."
+                    "Cada tarifa dura 24 horas para confirmarla. Envíos y Fichas se habilitan al confirmar al menos una cotización."
                 )
             else:
-                fechas_vigentes = [
-                    fecha for fecha in fechas_cotizaciones_casillero(casillero) if cotizacion_vigente(fecha, ahora_hn)
-                ]
-                if fechas_vigentes:
-                    st.caption(texto_vigencia_cotizacion(fechas_vigentes[0], ahora_hn) + ".")
+                st.caption("Hay cotizaciones consolidadas. Envíos y Fichas están habilitados en este casillero.")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -2943,18 +3075,24 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-        st.caption("Solo se muestran tarifas vigentes (24 horas desde la emisión, hora de Honduras).")
+        st.caption(
+            "Las tarifas no confirmadas caducan a las 24 horas (hora de Honduras) y se eliminan. "
+            "Al confirmar, la cotización queda consolidada de forma permanente."
+        )
 
         if lista_mis_cotizaciones:
             for cot in lista_mis_cotizaciones:
-                id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c = cot
-                vigencia_txt = texto_vigencia_cotizacion(fec_c, ahora_hn)
+                id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
+                consolidada = es_cotizacion_confirmada(conf_c)
+                estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn)
+                color_estado = "#1d4ed8" if consolidada else "#166534"
+                icono_estado = "✅" if consolidada else "⏳"
                 st.markdown(
                     f"""
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
                     <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {fec_c}<br>
                     <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
-                    <small style="color:#166534; font-weight:700;">⏳ {vigencia_txt}</small>
+                    <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
                 </div>
                 """,
                     unsafe_allow_html=True,
@@ -2979,16 +3117,41 @@ elif st.session_state["rol"] == "cliente":
                     destino_entrega=st.session_state["modalidad_envio_seleccionada"],
                     fecha_emision=fec_c,
                 )
-                st.download_button(
-                    f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
-                    pdf_historial,
-                    f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
-                    "application/pdf",
-                    key=f"dl_cot_{id_cot_item}",
-                )
+                if consolidada:
+                    st.download_button(
+                        f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
+                        pdf_historial,
+                        f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                        "application/pdf",
+                        key=f"dl_cot_{id_cot_item}",
+                    )
+                else:
+                    col_conf, col_pdf = st.columns(2)
+                    with col_conf:
+                        if st.button(
+                            "Confirmar Cotización",
+                            type="primary",
+                            key=f"btn_confirmar_cot_{id_cot_item}",
+                            use_container_width=True,
+                        ):
+                            if confirmar_cotizacion_casillero(id_cot_item, casillero):
+                                st.session_state["china_modulos_desbloqueados"] = True
+                                st.rerun()
+                    with col_pdf:
+                        st.download_button(
+                            f"📥 PDF CCM-COT-{id_cot_item:05d}",
+                            pdf_historial,
+                            f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_cot_{id_cot_item}",
+                            use_container_width=True,
+                        )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
-            st.info("No hay cotizaciones vigentes. Confirma una tarifa nueva; cada una dura 24 horas.")
+            st.info(
+                "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
+                "tiene 24 horas para confirmarla y habilitar Envíos y Fichas."
+            )
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
         st.markdown("#### 📍 Administrar Direcciones de Envío")
@@ -3321,8 +3484,11 @@ elif st.session_state["rol"] == "cliente":
                 cur = conn.cursor()
                 cur.execute(
                     """
-                    INSERT INTO cotizaciones (codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3, total_usd, fecha)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO cotizaciones (
+                        codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
+                        total_usd, fecha, confirmada
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                     """,
                     (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql),
                 )
@@ -3345,14 +3511,18 @@ elif st.session_state["rol"] == "cliente":
                 "fecha_hora_doc": f_hoy_doc,
                 "fecha_sql": f_hoy_sql,
             }
-            st.session_state["china_modulos_desbloqueados"] = True
+            st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
             st.rerun()
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
-            if not cotizacion_vigente(d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn):
+            id_emitida = d_pdf.get("id_cot")
+            tarifa_consolidada = cotizacion_esta_confirmada(id_emitida, casillero)
+            if not tarifa_consolidada and not cotizacion_vigente(
+                d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+            ):
                 st.session_state.pop("datos_pdf_confirmado", None)
-                st.session_state["china_modulos_desbloqueados"] = False
+                st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
                 st.rerun()
 
             mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
@@ -3366,20 +3536,45 @@ elif st.session_state["rol"] == "cliente":
                 id_c = d_pdf.get("id_cot", 1)
                 dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                 fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
-                vigencia_doc = texto_vigencia_cotizacion(d_pdf.get("fecha_sql") or fecha_doc, ahora_hn)
+                estado_doc = texto_estado_cotizacion(
+                    d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
+                )
+                if tarifa_consolidada:
+                    titulo_emitida = (
+                        f"Cotización CCM-COT-{id_c:05d} consolidada. Envíos y Fichas ya están habilitados."
+                    )
+                    detalle_emitida = f"✅ {estado_doc}"
+                else:
+                    titulo_emitida = (
+                        f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
+                    )
+                    detalle_emitida = (
+                        f"⏳ {estado_doc}. Confírmela ahora para que no caduque y para habilitar Envíos y Fichas."
+                    )
 
                 st.markdown(
                     f"""
                 <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
                         <span style="font-size: 1.4rem;">🎉</span>
-                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">Cotización CCM-COT-{id_c:05d} confirmada el {fecha_doc} para entrega en: {dest_pdf}</h4>
+                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
                     </div>
-                    <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">⏳ {vigencia_doc}. Al vencer, el hub China vuelve a Cotizador y Catálogo.</div>
+                    <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
                 </div>
                 """,
                     unsafe_allow_html=True,
                 )
+
+                if not tarifa_consolidada:
+                    if st.button(
+                        "Confirmar Cotización",
+                        type="primary",
+                        key=f"btn_confirmar_emitida_{id_c}",
+                        use_container_width=True,
+                    ):
+                        if confirmar_cotizacion_casillero(id_c, casillero):
+                            st.session_state["china_modulos_desbloqueados"] = True
+                            st.rerun()
 
                 pdf_fab = generar_pdf_etiqueta_proveedor(
                     casillero=casillero,
