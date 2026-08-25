@@ -582,7 +582,7 @@ def logout():
     st.rerun()
 
 # ---------------------------------------------------------
-# 6. ESTILOS CSS REFINADOS CON BOTÓN POWER EN BARRA HORIZONTAL
+# 6. ESTILOS CSS REFINADOS CON BOTONES UNIFORMES
 # ---------------------------------------------------------
 st.markdown("""
 <style>
@@ -699,89 +699,21 @@ st.markdown("""
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 120px !important;
-        width: 120px !important;
-        min-width: 120px !important;
-        max-width: 120px !important;
+        flex: 0 0 115px !important;
+        width: 115px !important;
+        min-width: 115px !important;
+        max-width: 115px !important;
     }
 
-    /* COLUMNA DEL BOTÓN DE APAGADO */
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div:first-child {
-        flex: 0 0 54px !important;
-        width: 54px !important;
-        min-width: 54px !important;
-        max-width: 54px !important;
-    }
-
-    /* =========================================================
-       BOTÓN DE APAGADO / POWER ROJO BRILLANTE 3D
-       ========================================================= */
-    .st-key-btn_logout_cliente div.stButton > button,
-    div.stButton > button[key="btn_logout_cliente"] {
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        max-height: 44px !important;
-        margin: 0 auto !important;
-        padding: 0 !important;
-        border-radius: 50% !important;
-        background: radial-gradient(circle at 35% 30%, #ff4d4d 0%, #d60000 60%, #850000 100%) !important;
-        color: #ffffff !important;
-        border: 3px solid #d1d5db !important;
-        outline: 1.5px solid #9ca3af !important;
-        box-shadow: 
-            0 3px 8px rgba(0, 0, 0, 0.35),
-            inset 0 3px 6px rgba(255, 255, 255, 0.6),
-            inset 0 -3px 6px rgba(0, 0, 0, 0.5) !important;
-        font-size: 1.25rem !important;
-        font-weight: 900 !important;
-        line-height: 1 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-align: center !important;
-        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        cursor: pointer !important;
-    }
-
-    .st-key-btn_logout_cliente div.stButton > button p {
-        font-size: 1.25rem !important;
-        font-weight: 900 !important;
-        color: #ffffff !important;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6) !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        display: block !important;
-    }
-
-    .st-key-btn_logout_cliente div.stButton > button:hover {
-        background: radial-gradient(circle at 35% 30%, #ff6b6b 0%, #e60000 60%, #990000 100%) !important;
-        border-color: #f3f4f6 !important;
-        transform: scale(1.08) !important;
-        box-shadow: 
-            0 5px 12px rgba(230, 0, 0, 0.45),
-            inset 0 3px 8px rgba(255, 255, 255, 0.75),
-            inset 0 -3px 6px rgba(0, 0, 0, 0.6) !important;
-    }
-
-    .st-key-btn_logout_cliente div.stButton > button:active {
-        transform: scale(0.95) !important;
-        box-shadow: 
-            0 2px 5px rgba(0, 0, 0, 0.5),
-            inset 0 2px 4px rgba(0, 0, 0, 0.6) !important;
-    }
-
-    /* BOTONES DE NAVEGACIÓN GENERALES */
+    /* BOTONES DE LA BARRA DE NAVEGACIÓN */
     .st-key-nav_scroll div.stButton > button {
-        width: 120px !important;
-        min-width: 120px !important;
+        width: 115px !important;
+        min-width: 115px !important;
         height: 44px !important;
         min-height: 44px !important;
         max-height: 44px !important;
         border-radius: 10px !important;
-        padding: 0 8px !important;
+        padding: 0 6px !important;
         font-size: 0.76rem !important;
         font-weight: 700 !important;
         white-space: nowrap !important;
@@ -905,7 +837,7 @@ st.markdown("""
         color: #475569 !important;
     }
 
-    /* BOTONES UNIFORMES Y ESTÉTICOS */
+    /* BOTONES GENERALES */
     div.stButton > button, div.stDownloadButton > button {
         width: 100% !important;
         height: 44px !important;
@@ -1190,13 +1122,13 @@ elif st.session_state["rol"] == "cliente":
     """, unsafe_allow_html=True)
 
     # =========================================================
-    # MENÚ HORIZONTAL DESLIZABLE (CON BOTÓN DE APAGADO AL INICIO)
+    # MENÚ HORIZONTAL DESLIZABLE (CON BOTÓN DE CERRAR AL INICIO)
     # =========================================================
     with st.container(key="nav_scroll"):
-        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns([0.5, 1, 1, 1, 1, 1], gap="small")
+        c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(6, gap="small")
         
         with c_nav_p:
-            if st.button("⏻", key="btn_logout_cliente", help="Cerrar sesión"):
+            if st.button("🚪 Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
                 logout()
 
         with c_nav_c:
