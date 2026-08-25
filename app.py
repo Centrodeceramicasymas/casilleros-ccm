@@ -413,13 +413,9 @@ def modulos_china_visibles():
 
 
 def modulos_china_nav():
-    """Barra superior: Envíos y Fichas únicamente dentro de Mis Cotizaciones."""
+    """Barra superior: siempre los mismos botones; Envíos y Fichas se ocultan con CSS fuera de Mis Cotizaciones."""
     mods = HUBS["china"]["modulos"]
-    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
-    if vista_muestra_envios_fichas():
-        return permitidos
-    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
-    return [m for m in permitidos if m["id"] not in bloqueados]
+    return [m for m in mods if usuario_puede_modulo(m["id"])]
 
 
 def ir_a(vista, hub="_omit"):
@@ -1394,9 +1390,19 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
     if clave in st.session_state:
         try:
             actual = float(st.session_state[clave])
-            st.session_state[clave] = min(max(actual, float(lim_min)), float(lim_max))
+            limitado = min(max(actual, float(lim_min)), float(lim_max))
+            if limitado != actual:
+                st.session_state[clave] = limitado
         except (TypeError, ValueError):
             st.session_state[clave] = float(valor)
+        return st.number_input(
+            label,
+            min_value=float(lim_min),
+            max_value=float(lim_max),
+            step=float(paso),
+            format=formato,
+            key=clave,
+        )
     return st.number_input(
         label,
         min_value=float(lim_min),
@@ -1715,7 +1721,7 @@ st.markdown(
     .block-container {
         max-width: var(--app-max-width) !important;
         width: 100% !important;
-        padding-top: 0rem !important;
+        padding-top: 0.15rem !important;
         padding-bottom: 5rem !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
@@ -1724,32 +1730,21 @@ st.markdown(
         transform: none !important;
     }
 
-    .block-container:has(.st-key-sticky_top_header),
-    .block-container:has([class*="st-key-sticky_top_header"]) {
-        padding-top: calc(var(--sticky-h) + var(--sticky-delivery)) !important;
-    }
-
-    .block-container:has(.st-key-delivery_select),
-    [data-testid="stMainBlockContainer"]:has(.st-key-delivery_select) {
-        --sticky-delivery: 158px;
-        padding-top: calc(var(--sticky-h) + var(--sticky-delivery)) !important;
-    }
-
     .st-key-sticky_top_header,
     div[class*="st-key-sticky_top_header"] {
-        position: fixed !important;
+        position: sticky !important;
         top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
+        left: auto !important;
+        right: auto !important;
         width: 100% !important;
         max-width: 100% !important;
-        z-index: 2147483647 !important;
+        z-index: 999 !important;
         background-color: #f8fafc !important;
         padding-top: max(0.35rem, env(safe-area-inset-top, 0px)) !important;
         padding-bottom: 0.35rem !important;
-        margin: 0 !important;
-        padding-left: max(var(--app-pad), calc((100vw - var(--app-max-width)) / 2)) !important;
-        padding-right: max(var(--app-pad), calc((100vw - var(--app-max-width)) / 2)) !important;
+        margin: 0 0 0.35rem 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
         box-sizing: border-box !important;
         border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
@@ -1849,7 +1844,6 @@ st.markdown(
         .card-box { padding: 0.9rem; border-radius: 12px; }
         .app-banner-card { padding: 12px; border-radius: 12px; margin-bottom: 0.85rem; }
         .swipe-indicator-bar { font-size: 0.68rem; margin: 1px 0 4px 0; }
-        .block-container:has(.st-key-delivery_select) { --sticky-delivery: 150px; }
     }
 
     /* Teléfonos grandes */
@@ -2943,6 +2937,27 @@ elif st.session_state["rol"] == "cliente":
         hub_activo = st.session_state.get("hub")
         china_mods = modulos_china_nav()
         mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
+        if mostrar_subnav_china and not vista_muestra_envios_fichas():
+            st.markdown(
+                """
+                <style>
+                .st-key-nav_mod_envios,
+                .st-key-nav_mod_fichas,
+                div[data-testid="stColumn"]:has(.st-key-nav_mod_envios),
+                div[data-testid="stColumn"]:has(.st-key-nav_mod_fichas) {
+                    display: none !important;
+                    width: 0 !important;
+                    min-width: 0 !important;
+                    max-width: 0 !important;
+                    flex: 0 0 0 !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    overflow: hidden !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
 
@@ -2989,13 +3004,16 @@ elif st.session_state["rol"] == "cliente":
 
         if st.session_state["sub_tab_inicio"] == "Cotizador":
             idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+            sel_kwargs = {"label_visibility": "visible", "key": "sb_modalidad_header"}
+            if "sb_modalidad_header" not in st.session_state:
+                sel_kwargs["index"] = idx_mod
+            elif st.session_state.get("sb_modalidad_header") not in opciones_modalidad:
+                st.session_state["sb_modalidad_header"] = opciones_modalidad[idx_mod]
             with st.container(key="delivery_select"):
                 mod_elegida = st.selectbox(
                     "🏪 ¿Cómo deseas recibir tu compra?",
                     opciones_modalidad,
-                    index=idx_mod,
-                    label_visibility="visible",
-                    key="sb_modalidad_header",
+                    **sel_kwargs,
                 )
             if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
                 st.session_state["modalidad_envio_seleccionada"] = mod_elegida
@@ -3324,15 +3342,14 @@ elif st.session_state["rol"] == "cliente":
         umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
         divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
 
-        tipo_carga = st.selectbox(
-            "Modalidad de Importación:",
-            [
-                f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
-                "🚢 Carga Comercial por CBM (hasta contenedor 40')",
-            ],
-            index=0,
-            key="sb_tipo_carga_select",
-        )
+        tipo_opts = [
+            f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
+            "🚢 Carga Comercial por CBM (hasta contenedor 40')",
+        ]
+        tipo_kwargs = {"key": "sb_tipo_carga_select"}
+        if "sb_tipo_carga_select" not in st.session_state:
+            tipo_kwargs["index"] = 0
+        tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
@@ -3505,93 +3522,92 @@ elif st.session_state["rol"] == "cliente":
             d_pdf = st.session_state["datos_pdf_confirmado"]
             id_emitida = d_pdf.get("id_cot")
             tarifa_consolidada = cotizacion_esta_confirmada(id_emitida, casillero)
-            if not tarifa_consolidada and not cotizacion_vigente(
+            tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
                 d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
-            ):
+            )
+            if not tarifa_sigue_visible:
                 st.session_state.pop("datos_pdf_confirmado", None)
-                st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
-                st.rerun()
-
-            mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
-            mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
-            mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
-            mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
-            mismo_peso = abs(d_pdf.get("peso_lb", 0.0) - pe_lb) < 0.01
-            mismo_precio = abs(d_pdf.get("total_usd", 0.0) - tot) < 0.01
-
-            if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
-                id_c = d_pdf.get("id_cot", 1)
-                dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
-                fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
-                estado_doc = texto_estado_cotizacion(
-                    d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
-                )
-                if tarifa_consolidada:
-                    titulo_emitida = (
-                        f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está en Envíos."
-                    )
-                    detalle_emitida = f"✅ {estado_doc}"
-                else:
-                    titulo_emitida = (
-                        f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
-                    )
-                    detalle_emitida = (
-                        f"⏳ {estado_doc}. Confírmela en Mis Cotizaciones para que no caduque; el PDF Tarifa quedará en Envíos."
-                    )
-
-                st.markdown(
-                    f"""
-                <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                        <span style="font-size: 1.4rem;">🎉</span>
-                        <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
-                    </div>
-                    <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
-                </div>
-                """,
-                    unsafe_allow_html=True,
-                )
-
-                if st.button(
-                    "Ver en Mis Cotizaciones",
-                    type="primary",
-                    key=f"btn_ver_mis_cotizaciones_{id_c}",
-                    use_container_width=True,
-                ):
-                    ir_a("Mis Cotizaciones", hub="china")
-
-                pdf_fab = generar_pdf_etiqueta_proveedor(
-                    casillero=casillero,
-                    nombre=nombre_completo,
-                    telefono=tel_cli,
-                    ciudad=ciu_cli,
-                    al=d_pdf.get("al", 0),
-                    an=d_pdf.get("an", 0),
-                    la=d_pdf.get("la", 0),
-                    pe_lb=d_pdf.get("peso_lb", 0),
-                    pe_kg=d_pdf.get("peso_kg", 0),
-                    vol_m3=d_pdf.get("vol_m3", 0),
-                    destino_entrega=dest_pdf,
-                    fecha_emision=fecha_doc,
-                )
-
-                st.download_button(
-                    "📥 PDF Fabricante",
-                    pdf_fab,
-                    f"Shipping_Label_Fabricante_{casillero}.pdf",
-                    "application/pdf",
-                    use_container_width=True,
-                )
-
-                texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
-                url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-                st.markdown(
-                    f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
-                    unsafe_allow_html=True,
-                )
             else:
-                st.session_state.pop("datos_pdf_confirmado", None)
-                st.rerun()
+                mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
+                mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
+                mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
+                mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
+                mismo_peso = abs(d_pdf.get("peso_lb", 0.0) - pe_lb) < 0.01
+                mismo_precio = abs(d_pdf.get("total_usd", 0.0) - tot) < 0.01
+
+                if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
+                    id_c = d_pdf.get("id_cot", 1)
+                    dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+                    fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
+                    estado_doc = texto_estado_cotizacion(
+                        d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
+                    )
+                    if tarifa_consolidada:
+                        titulo_emitida = (
+                            f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está en Envíos."
+                        )
+                        detalle_emitida = f"✅ {estado_doc}"
+                    else:
+                        titulo_emitida = (
+                            f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
+                        )
+                        detalle_emitida = (
+                            f"⏳ {estado_doc}. Confírmela en Mis Cotizaciones para que no caduque; el PDF Tarifa quedará en Envíos."
+                        )
+
+                    st.markdown(
+                        f"""
+                    <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                            <span style="font-size: 1.4rem;">🎉</span>
+                            <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
+                        </div>
+                        <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
+                    </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+
+                    if st.button(
+                        "Ver en Mis Cotizaciones",
+                        type="primary",
+                        key=f"btn_ver_mis_cotizaciones_{id_c}",
+                        use_container_width=True,
+                    ):
+                        ir_a("Mis Cotizaciones", hub="china")
+
+                    pdf_fab = generar_pdf_etiqueta_proveedor(
+                        casillero=casillero,
+                        nombre=nombre_completo,
+                        telefono=tel_cli,
+                        ciudad=ciu_cli,
+                        al=d_pdf.get("al", 0),
+                        an=d_pdf.get("an", 0),
+                        la=d_pdf.get("la", 0),
+                        pe_lb=d_pdf.get("peso_lb", 0),
+                        pe_kg=d_pdf.get("peso_kg", 0),
+                        vol_m3=d_pdf.get("vol_m3", 0),
+                        destino_entrega=dest_pdf,
+                        fecha_emision=fecha_doc,
+                    )
+
+                    st.download_button(
+                        "📥 PDF Fabricante",
+                        pdf_fab,
+                        f"Shipping_Label_Fabricante_{casillero}.pdf",
+                        "application/pdf",
+                        key=f"dl_pdf_fab_{id_c}",
+                        use_container_width=True,
+                    )
+
+                    texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
+                    url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
+                    st.markdown(
+                        f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.session_state.pop("datos_pdf_confirmado", None)
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
@@ -4033,4 +4049,3 @@ else:
     st.error("Rol no reconocido. Inicie sesión de nuevo.")
     if st.button("Volver al login"):
         logout()
-
