@@ -9,6 +9,8 @@ import string
 from datetime import datetime, timezone, timedelta
 import io
 import urllib.parse
+from functools import lru_cache
+from pathlib import Path
 
 try:
     from zoneinfo import ZoneInfo
@@ -28,7 +30,13 @@ st.set_page_config(
 )
 
 DB_NAME = "ccm_maritime_enterprise.db"
-LOGO_FILENAME = "logo centro y mas.jpg"
+LOGO_FILENAME = "logo_ccm_print.jpg"
+RUTAS_LOGO = (
+    Path(__file__).resolve().parent / "assets" / "logo_ccm_print.jpg",
+    Path(__file__).resolve().parent / "assets" / "logo_ccm.png",
+    Path(__file__).resolve().parent / "logo_ccm_print.jpg",
+    Path(__file__).resolve().parent / "logo centro y mas.jpg",
+)
 
 VIGENCIA_COTIZACION_HORAS = 24
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
@@ -552,9 +560,49 @@ def desplazar_a_cotizacion_pendiente():
 # ---------------------------------------------------------
 # 2. GENERADORES DE PDF NATIVOS CON HORA DE HONDURAS
 # ---------------------------------------------------------
+@lru_cache(maxsize=1)
+def cargar_logo_jpeg():
+    """JPEG del logo CCM para incrustar en todos los PDF imprimibles."""
+    for ruta in RUTAS_LOGO:
+        if not ruta.is_file():
+            continue
+        try:
+            from PIL import Image
+
+            with Image.open(ruta) as im:
+                rgb = im.convert("RGB")
+                if ruta.suffix.lower() == ".png":
+                    mascara = rgb.convert("L").point(lambda p: 0 if p > 248 else 255)
+                    recorte = mascara.getbbox()
+                    if recorte:
+                        rgb = rgb.crop(recorte)
+                    rgb.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    rgb.save(buf, format="JPEG", quality=88, optimize=True)
+                    return buf.getvalue(), rgb.size[0], rgb.size[1]
+                return ruta.read_bytes(), rgb.size[0], rgb.size[1]
+        except Exception:
+            continue
+    return None, 0, 0
+
+
+def _prefijo_logo_pdf(ancho_pt=118.0):
+    datos, pix_w, pix_h = cargar_logo_jpeg()
+    if not datos or not pix_w:
+        return b"", None, 0, 0
+    alto_pt = ancho_pt * (pix_h / float(pix_w))
+    x = (595.0 - ancho_pt) / 2.0
+    y = 842.0 - 18.0 - alto_pt
+    ops = f"q\n{ancho_pt:.2f} 0 0 {alto_pt:.2f} {x:.2f} {y:.2f} cm\n/Im1 Do\nQ\n".encode("ascii")
+    return ops, datos, pix_w, pix_h
+
+
 def compilar_pdf_simple(stream_content):
-    stream_bytes = stream_content.encode("latin-1", "replace")
+    texto = stream_content.encode("latin-1", "replace")
+    logo_ops, jpeg, pix_w, pix_h = _prefijo_logo_pdf()
+    stream_bytes = (logo_ops + texto) if jpeg else texto
     stream_len = len(stream_bytes)
+    con_logo = bool(jpeg)
 
     pdf_buffer = io.BytesIO()
     pdf_buffer.write(b"%PDF-1.4\n")
@@ -566,9 +614,16 @@ def compilar_pdf_simple(stream_content):
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
 
+    recursos = (
+        b"/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >>"
+        if con_logo
+        else b"/Resources << /Font << /F1 5 0 R >> >>"
+    )
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
+        + recursos
+        + b" >>\nendobj\n"
     )
 
     offsets.append(pdf_buffer.tell())
@@ -579,12 +634,24 @@ def compilar_pdf_simple(stream_content):
     offsets.append(pdf_buffer.tell())
     pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
 
+    if con_logo:
+        offsets.append(pdf_buffer.tell())
+        pdf_buffer.write(
+            (
+                f"6 0 obj\n<< /Type /XObject /Subtype /Image /Width {pix_w} /Height {pix_h} "
+                f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(jpeg)} >>\nstream\n"
+            ).encode("ascii")
+        )
+        pdf_buffer.write(jpeg)
+        pdf_buffer.write(b"\nendstream\nendobj\n")
+
     xref_offset = pdf_buffer.tell()
-    pdf_buffer.write(b"xref\n0 6\n0000000000 65535 f \n")
+    n_obj = 6 if con_logo else 5
+    pdf_buffer.write(f"xref\n0 {n_obj + 1}\n0000000000 65535 f \n".encode("ascii"))
     for off in offsets:
         pdf_buffer.write(f"{off:010d} 00000 n \n".encode("latin-1"))
 
-    pdf_buffer.write(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("latin-1"))
+    pdf_buffer.write(f"trailer\n<< /Size {n_obj + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("latin-1"))
     return pdf_buffer.getvalue()
 
 
@@ -610,7 +677,7 @@ def generar_pdf_etiqueta_proveedor(
 
     stream = f"""BT
 /F1 16 Tf
-40 790 Td
+40 728 Td
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
 /F1 9 Tf
 0 -16 Td
@@ -693,7 +760,7 @@ def generar_pdf_confirmacion_cotizacion(
 
     stream = f"""BT
 /F1 15 Tf
-40 790 Td
+40 728 Td
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
 /F1 10 Tf
 0 -16 Td
