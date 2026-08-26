@@ -6,7 +6,9 @@ import math
 import os
 import random
 import string
+import textwrap
 from datetime import datetime, timezone, timedelta
+import base64
 import io
 import urllib.parse
 from functools import lru_cache
@@ -36,6 +38,12 @@ RUTAS_LOGO = (
     Path(__file__).resolve().parent / "assets" / "logo_ccm.png",
     Path(__file__).resolve().parent / "logo_ccm_print.jpg",
     Path(__file__).resolve().parent / "logo centro y mas.jpg",
+)
+RUTAS_LOGO_HEADER = (
+    Path(__file__).resolve().parent / "assets" / "logo_ccm_header.png",
+    Path(__file__).resolve().parent / "assets" / "logo_ccm.png",
+    Path(__file__).resolve().parent / "assets" / "logo_ccm_print.jpg",
+    Path(__file__).resolve().parent / "logo_ccm_print.jpg",
 )
 
 VIGENCIA_COTIZACION_HORAS = 24
@@ -595,6 +603,42 @@ def _prefijo_logo_pdf(ancho_pt=118.0):
     y = 842.0 - 18.0 - alto_pt
     ops = f"q\n{ancho_pt:.2f} 0 0 {alto_pt:.2f} {x:.2f} {y:.2f} cm\n/Im1 Do\nQ\n".encode("ascii")
     return ops, datos, pix_w, pix_h
+
+
+@lru_cache(maxsize=1)
+def uri_logo_encabezado():
+    """Data URI del logo institucional para el banner azul (login, casillero y admin)."""
+    for ruta in RUTAS_LOGO_HEADER:
+        if not ruta.is_file():
+            continue
+        mime = "image/png" if ruta.suffix.lower() == ".png" else "image/jpeg"
+        return f"data:{mime};base64,{base64.b64encode(ruta.read_bytes()).decode('ascii')}"
+    return ""
+
+
+def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""):
+    """Banner azul: nombre centrado, logo a la derecha; saludo y datos debajo a la izquierda."""
+    src = uri_logo_encabezado()
+    logo = (
+        f'<img class="app-header-logo" src="{src}" alt="Centro de Cerámicas y Más" />'
+        if src
+        else ""
+    )
+    clases = "app-header-blue"
+    if extra_class:
+        clases = f"{clases} {extra_class}"
+    estilo = f' style="{extra_style}"' if extra_style else ""
+    cuerpo = textwrap.dedent(cuerpo_html or "").strip()
+    cuerpo_html_out = f'<div class="app-header-copy">{cuerpo}</div>' if cuerpo else ""
+    return (
+        f'<div class="{clases}"{estilo}>'
+        f'<div class="app-header-top">'
+        f'<div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>'
+        f"{logo}"
+        f"</div>"
+        f"{cuerpo_html_out}"
+        f"</div>"
+    )
 
 
 def compilar_pdf_simple(stream_content):
@@ -1942,15 +1986,66 @@ st.markdown(
         flex-direction: column !important;
         gap: 1px !important;
         container-type: inline-size;
+        overflow: hidden !important;
+        position: relative !important;
+        --header-logo-slot: 96px;
+    }
+
+    .app-header-top {
+        position: relative !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: clamp(45px, 11cqi, 60px) !important;
+        margin: 0 0 4px 0 !important;
+        padding: 0 0 6px 0 !important;
+        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
+        box-sizing: border-box !important;
+    }
+
+    .app-header-copy {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        gap: 1px !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        text-align: left !important;
+        text-align-last: left !important;
+    }
+
+    .app-header-logo {
+        position: absolute !important;
+        right: 0 !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        flex: 0 0 auto !important;
+        display: block !important;
+        height: clamp(45px, 11cqi, 60px) !important;
+        width: auto !important;
+        max-height: 60px !important;
+        max-width: var(--header-logo-slot) !important;
+        object-fit: contain !important;
+        background: #ffffff !important;
+        border-radius: 8px !important;
+        padding: 3px 6px !important;
+        box-sizing: content-box !important;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16) !important;
+        z-index: 2 !important;
     }
 
     .app-header-brand {
         display: block !important;
         width: 100% !important;
         max-width: 100% !important;
-        margin: 0 0 6px 0 !important;
-        padding: 0 0 6px 0 !important;
-        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
+        margin: 0 !important;
+        padding: 0 var(--header-logo-slot) !important;
+        box-sizing: border-box !important;
+        border-bottom: none !important;
         color: #ffffff !important;
         font-weight: 800 !important;
         text-transform: uppercase !important;
@@ -1960,8 +2055,9 @@ st.markdown(
         letter-spacing: 0.05em !important;
         word-spacing: normal !important;
         line-height: 1.2 !important;
-        font-size: clamp(0.92rem, 4.6cqi, 1.42rem) !important;
+        font-size: clamp(0.78rem, 4.2cqi, 1.32rem) !important;
         overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
 
     .st-key-sticky_top_header [data-testid="stMarkdown"],
@@ -1982,7 +2078,7 @@ st.markdown(
     }
 
     .app-header-login {
-        align-items: center !important;
+        align-items: stretch !important;
         text-align: center !important;
     }
     .app-header-login .app-greeting-sub {
@@ -2033,6 +2129,17 @@ st.markdown(
         .app-header-blue {
             border-radius: 11px !important;
             margin-bottom: 3px !important;
+            --header-logo-slot: 76px;
+        }
+        .app-header-logo {
+            height: 45px !important;
+            max-height: 45px !important;
+            max-width: 76px !important;
+            padding: 2px 4px !important;
+        }
+        .app-header-brand {
+            font-size: clamp(0.66rem, 3.4vw, 0.84rem) !important;
+            letter-spacing: 0.03em !important;
         }
         .inicio-placeholder { min-height: 260px; }
         .inicio-placeholder-body { min-height: 180px; }
@@ -2749,12 +2856,11 @@ if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         with st.container(key="login_header"):
             st.markdown(
-                """
-            <div class="app-header-blue app-header-login" style="margin-bottom: 2rem; border-radius: 16px;">
-                <div class="app-header-brand" style="display:block;width:100%;text-align:center;text-align-last:center;letter-spacing:0.05em;word-spacing:normal;white-space:nowrap;font-weight:800;">CENTRO DE CERÁMICAS Y MÁS</div>
-                <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
-            </div>
-            """,
+                html_encabezado_institucional(
+                    '<div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>',
+                    extra_class="app-header-login",
+                    extra_style="margin-bottom: 2rem; border-radius: 16px;",
+                ),
                 unsafe_allow_html=True,
             )
 
@@ -3095,14 +3201,11 @@ elif st.session_state["rol"] == "cliente":
 
     with st.container(key="sticky_top_header"):
         st.markdown(
-            f"""
-        <div class="app-header-blue">
-            <div class="app-header-brand" style="display:block;width:100%;text-align:center;text-align-last:center;letter-spacing:0.05em;word-spacing:normal;white-space:nowrap;font-weight:800;">CENTRO DE CERÁMICAS Y MÁS</div>
-            <h3 class="app-greeting-title">{saludo_horario}, {nombre_display}</h3>
-            <div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>
-            <div class="app-header-time">🕒 {fecha_hora_texto}</div>
-        </div>
-        """,
+            html_encabezado_institucional(
+                f'<div class="app-greeting-title">{saludo_horario}, {nombre_display}</div>'
+                f'<div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>'
+                f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
+            ),
             unsafe_allow_html=True,
         )
 
@@ -3945,13 +4048,11 @@ elif es_rol_admin():
     )
     titulo = "Panel de Superadministrador" if root else "Panel Administrativo"
     st.markdown(
-        f"""
-        <div class="app-header-blue" style="margin-bottom:12px;">
-            <div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>
-            <h3 class="app-greeting-title">{titulo}</h3>
-            <div class="app-greeting-sub">{st.session_state.get("nombre", "")} • {st.session_state.get("usuario", "")}</div>
-        </div>
-        """,
+        html_encabezado_institucional(
+            f'<div class="app-greeting-title">{titulo}</div>'
+            f'<div class="app-greeting-sub">{st.session_state.get("nombre", "")} • {st.session_state.get("usuario", "")}</div>',
+            extra_style="margin-bottom:12px;",
+        ),
         unsafe_allow_html=True,
     )
 
