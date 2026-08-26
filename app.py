@@ -1914,6 +1914,24 @@ st.markdown(
         letter-spacing: -0.2px !important;
     }
 
+    .app-header-login {
+        align-items: center !important;
+        text-align: center !important;
+    }
+    .app-header-login .app-greeting-sub {
+        text-align: center !important;
+        text-align-last: center !important;
+        width: 100% !important;
+        margin-top: 4px !important;
+    }
+    .st-key-login_header [data-testid="stMarkdown"],
+    .st-key-login_header [data-testid="stMarkdown"] p,
+    .st-key-login_header [data-testid="stMarkdownContainer"],
+    .st-key-login_header [data-testid="stMarkdownContainer"] h2 {
+        text-align: center !important;
+        text-align-last: center !important;
+    }
+
     .app-greeting-sub {
         font-size: var(--greeting-sub) !important;
         color: #dbeafe !important;
@@ -2662,15 +2680,16 @@ st.markdown(
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
-        st.markdown(
-            """
-        <div class="app-header-blue" style="margin-bottom: 2rem; border-radius: 16px;">
-            <h2 class="app-greeting-title">Centro de Cerámicas y Más</h2>
-            <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        with st.container(key="login_header"):
+            st.markdown(
+                """
+            <div class="app-header-blue app-header-login" style="margin-bottom: 2rem; border-radius: 16px;">
+                <div class="app-header-brand" style="display:block;width:100%;text-align:center;text-align-last:center;letter-spacing:0.05em;word-spacing:normal;white-space:nowrap;font-weight:800;">CENTRO DE CERÁMICAS Y MÁS</div>
+                <div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
 
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
         u_ident = st.text_input(
