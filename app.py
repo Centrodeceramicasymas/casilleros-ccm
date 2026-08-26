@@ -682,9 +682,11 @@ def pintar_coach_guia():
     aplicar_clase_guia_js()
     if not guia_esta_activa():
         return
+    if st.session_state.get("hub") != "china":
+        return
     with st.container(key="guia_coach"):
         st.markdown(html_globo_guia(), unsafe_allow_html=True)
-        if st.button("Omitir Guía", type="secondary", key="btn_omitir_guia", help="Cerrar Ayuda"):
+        if st.button("Omitir Guía", type="secondary", key="btn_omitir_guia"):
             omitir_guia_interactiva()
             st.rerun()
 
@@ -2636,12 +2638,69 @@ st.markdown(
         font-weight: 600;
     }
     .st-key-btn_omitir_guia button,
+    .st-key-btn_omitir_guia button[kind="secondary"],
     .st-key-btn_omitir_guia [data-testid^="stBaseButton"] {
         min-height: 36px !important;
         height: 36px !important;
         font-size: 0.78rem !important;
         font-weight: 700 !important;
         margin-top: 6px !important;
+        background: #e5e7eb !important;
+        background-color: #e5e7eb !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1px solid #d1d5db !important;
+        box-shadow: none !important;
+    }
+    .st-key-btn_omitir_guia button *,
+    .st-key-btn_omitir_guia button[kind="secondary"] * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+    .st-key-btn_omitir_guia button:hover,
+    .st-key-btn_omitir_guia button[kind="secondary"]:hover {
+        background: #d1d5db !important;
+        background-color: #d1d5db !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border-color: #9ca3af !important;
+        transform: none !important;
+    }
+
+    .st-key-btn_guia_rapida button,
+    .st-key-btn_guia_rapida button[kind="secondary"] {
+        width: var(--nav-btn-w) !important;
+        height: var(--nav-btn-h) !important;
+        min-height: 44px !important;
+        max-height: none !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        opacity: 1 !important;
+    }
+    .st-key-btn_guia_rapida button *,
+    .st-key-btn_guia_rapida button[kind="secondary"] * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+    .st-key-btn_guia_rapida button:hover,
+    .st-key-btn_guia_rapida button[kind="secondary"]:hover {
+        background: #f8fafc !important;
+        background-color: #f8fafc !important;
+        color: #004ac1 !important;
+        border-color: #004ac1 !important;
+        box-shadow: 0 4px 10px rgba(0,74,193,0.12) !important;
+    }
+    .st-key-btn_guia_rapida button:hover *,
+    .st-key-btn_guia_rapida button[kind="secondary"]:hover * {
+        color: #004ac1 !important;
+        fill: #004ac1 !important;
     }
 
     @keyframes guiaPulse {
@@ -3591,13 +3650,15 @@ elif st.session_state["rol"] == "cliente":
         hub_activo = st.session_state.get("hub")
         china_mods = modulos_china_nav()
         mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
+        mostrar_btn_guia = hub_activo == "china"
 
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
 
+            extra_guia = 1 if mostrar_btn_guia else 0
             if mostrar_subnav_china:
-                nav_cols = st.columns(3 + len(china_mods), gap="small")
+                nav_cols = st.columns(2 + extra_guia + len(china_mods), gap="small")
             else:
-                nav_cols = st.columns(3, gap="small")
+                nav_cols = st.columns(2 + extra_guia, gap="small")
 
             with nav_cols[0]:
                 if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
@@ -3612,22 +3673,15 @@ elif st.session_state["rol"] == "cliente":
                 ):
                     ir_a("Inicio", hub=None)
 
-            with nav_cols[2]:
-                if guia_esta_activa():
-                    if st.button("Cerrar Ayuda", type="secondary", key="btn_cerrar_ayuda_nav"):
-                        omitir_guia_interactiva()
-                        st.rerun()
-                else:
-                    if st.button("✨ Guía", type="secondary", key="btn_guia_rapida", help="Iniciar Guía Interactiva"):
+            if mostrar_btn_guia:
+                with nav_cols[2]:
+                    if st.button("Guía", type="secondary", key="btn_guia_rapida"):
                         iniciar_guia_interactiva(1)
-                        if st.session_state.get("hub") != "china":
-                            ir_a("Inicio", hub="china")
-                        else:
-                            st.rerun()
+                        st.rerun()
 
             if mostrar_subnav_china:
                 for idx, modulo in enumerate(china_mods):
-                    with nav_cols[3 + idx]:
+                    with nav_cols[2 + extra_guia + idx]:
                         activo = st.session_state["sub_tab_inicio"] == modulo["id"]
                         if st.button(
                             modulo["nav"],
@@ -3678,15 +3732,6 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
             st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones.")
-            if not guia_esta_activa():
-                if st.button(
-                    "✨ Iniciar Guía Interactiva",
-                    type="primary",
-                    key="btn_iniciar_guia_hub",
-                    use_container_width=True,
-                ):
-                    iniciar_guia_interactiva(1)
-                    st.rerun()
             mods = modulos_china_visibles()
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
@@ -3719,7 +3764,7 @@ elif st.session_state["rol"] == "cliente":
                 f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
                 f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
                 f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
-                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>✨ Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
+                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
                 f"</div>",
                 unsafe_allow_html=True,
             )
