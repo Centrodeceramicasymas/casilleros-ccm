@@ -536,6 +536,68 @@ def ir_a_cotizacion_emitida(id_cot):
     ir_a("Mis Cotizaciones", hub="china")
 
 
+PASOS_GUIA_RAPIDA = (
+    {
+        "num": "1",
+        "icon": "📐",
+        "titulo": "Generar la cotización",
+        "texto": "Entre a <b>Cotizador</b>. Complete destino de entrega, modalidad y medidas (alto, ancho, largo y peso). Pulse <b>Confirmar Tarifa &amp; Emitir Documentos</b>.",
+    },
+    {
+        "num": "2",
+        "icon": "📥",
+        "titulo": "PDF para el fabricante",
+        "texto": "Descargue <b>PDF Fabricante</b> y envíelo a la fábrica en origen para que lo imprima y lo pegue visible en la caja o bulto.",
+    },
+    {
+        "num": "3",
+        "icon": "✅",
+        "titulo": "Confirmar en el historial",
+        "texto": "Pulse <b>Ver en Mis Cotizaciones</b>. En la tarifa resaltada, pulse <b>Confirmar Cotización</b> antes de 24 horas para dejarla permanente.",
+    },
+    {
+        "num": "4",
+        "icon": "📦",
+        "titulo": "Seguimiento y documentos",
+        "texto": "Descargue <b>PDF Tarifa</b> (o Descargar PDF CCM-…). Pulse <b>Ir a Envíos</b> para la Ficha de Bodega y el comprobante de cada paquete.",
+    },
+)
+
+
+def html_pasos_guia_rapida():
+    bloques = [
+        f'<div class="guia-paso"><div class="guia-paso-head"><span class="guia-paso-num">{p["num"]}</span><span class="guia-paso-icon">{p["icon"]}</span><strong>{p["titulo"]}</strong></div><p class="guia-paso-txt">{p["texto"]}</p></div>'
+        for p in PASOS_GUIA_RAPIDA
+    ]
+    return (
+        '<div class="guia-rapida-box"><p class="guia-rapida-lead">Consolidación marítima China → Honduras, en 4 pasos.</p>'
+        + "".join(bloques)
+        + "</div>"
+    )
+
+
+def cerrar_guia_rapida():
+    st.session_state["abrir_guia_rapida"] = False
+
+
+@st.dialog("📖 ¿Cómo funciona el proceso?", width="large", on_dismiss=cerrar_guia_rapida)
+def dialogo_guia_rapida():
+    st.markdown(html_pasos_guia_rapida(), unsafe_allow_html=True)
+    if st.button("Entendido", type="primary", use_container_width=True, key="btn_guia_entendido"):
+        cerrar_guia_rapida()
+        st.rerun()
+
+
+def disparar_guia_china_si_aplica():
+    """Abre la guía al entrar al hub China por primera vez en la sesión."""
+    if st.session_state.get("hub") != "china":
+        return
+    if st.session_state.get("guia_china_auto_vista"):
+        return
+    st.session_state["guia_china_auto_vista"] = True
+    st.session_state["abrir_guia_rapida"] = True
+
+
 def sincronizar_altura_encabezado_fijo():
     """Mide el borde inferior del bloque congelado y actualiza --header-offset."""
     with st.container(key="header_offset_sync"):
@@ -1909,6 +1971,8 @@ def logout():
         "china_modulos_desbloqueados",
         "cotizacion_envio_foco",
         "cotizacion_historial_foco",
+        "abrir_guia_rapida",
+        "guia_china_auto_vista",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -2427,6 +2491,53 @@ st.markdown(
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div > div {
         min-width: 0 !important;
+    }
+
+    .guia-rapida-box { margin: 0; }
+    .guia-rapida-lead {
+        margin: 0 0 10px 0;
+        color: #334155;
+        font-size: 0.88rem;
+        font-weight: 700;
+        line-height: 1.35;
+    }
+    .guia-paso {
+        background: #ffffff;
+        border: 1px solid #dbe4f0;
+        border-radius: 12px;
+        padding: 10px 12px 8px 12px;
+        margin: 0 0 8px 0;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    }
+    .guia-paso-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 4px 0;
+        color: #0f172a;
+        font-size: 0.95rem;
+        font-weight: 800;
+    }
+    .guia-paso-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        background: #004ac1;
+        color: #ffffff;
+        font-size: 0.75rem;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+    .guia-paso-icon { flex-shrink: 0; }
+    .guia-paso-txt {
+        margin: 0;
+        color: #334155;
+        font-size: 0.82rem;
+        line-height: 1.4;
+        font-weight: 600;
     }
 
     @keyframes pulseBlink {
@@ -3341,9 +3452,9 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
 
             if mostrar_subnav_china:
-                nav_cols = st.columns(2 + len(china_mods), gap="small")
+                nav_cols = st.columns(3 + len(china_mods), gap="small")
             else:
-                nav_cols = st.columns(2, gap="small")
+                nav_cols = st.columns(3, gap="small")
 
             with nav_cols[0]:
                 if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
@@ -3358,9 +3469,19 @@ elif st.session_state["rol"] == "cliente":
                 ):
                     ir_a("Inicio", hub=None)
 
+            with nav_cols[2]:
+                if st.button(
+                    "📖 Guía",
+                    type="secondary",
+                    key="btn_guia_rapida",
+                    help="¿Cómo funciona el proceso?",
+                ):
+                    st.session_state["abrir_guia_rapida"] = True
+                    st.rerun()
+
             if mostrar_subnav_china:
                 for idx, modulo in enumerate(china_mods):
-                    with nav_cols[2 + idx]:
+                    with nav_cols[3 + idx]:
                         activo = st.session_state["sub_tab_inicio"] == modulo["id"]
                         if st.button(
                             modulo["nav"],
@@ -3382,6 +3503,9 @@ elif st.session_state["rol"] == "cliente":
                 )
 
     sincronizar_altura_encabezado_fijo()
+    disparar_guia_china_si_aplica()
+    if st.session_state.get("abrir_guia_rapida"):
+        dialogo_guia_rapida()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
@@ -3407,7 +3531,7 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
             mods = modulos_china_visibles()
-            st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones.")
+            st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones. Pulse 📖 Guía si necesita los 4 pasos.")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -3437,6 +3561,7 @@ elif st.session_state["rol"] == "cliente":
                 f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
                 f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
                 f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
+                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">La <b>📖 Guía</b> del menú explica el flujo operativo China → Honduras.</div>'
                 f"</div>",
                 unsafe_allow_html=True,
             )
