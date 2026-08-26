@@ -536,66 +536,170 @@ def ir_a_cotizacion_emitida(id_cot):
     ir_a("Mis Cotizaciones", hub="china")
 
 
-PASOS_GUIA_RAPIDA = (
+PASOS_GUIA_INTERACTIVA = (
     {
-        "num": "1",
-        "icon": "📐",
-        "titulo": "Generar la cotización",
-        "texto": "Entre a <b>Cotizador</b>. Complete destino de entrega, modalidad y medidas (alto, ancho, largo y peso). Pulse <b>Confirmar Tarifa &amp; Emitir Documentos</b>.",
+        "paso": 1,
+        "titulo": "Acceso al Cotizador",
+        "texto": "Pulse <b>Cotizador</b> en el menú (o en las tarjetas) para calcular el flete de su carga.",
     },
     {
-        "num": "2",
-        "icon": "📥",
-        "titulo": "PDF para el fabricante",
-        "texto": "Descargue <b>PDF Fabricante</b> y envíelo a la fábrica en origen para que lo imprima y lo pegue visible en la caja o bulto.",
+        "paso": 2,
+        "titulo": "Emisión de la tarifa",
+        "texto": "Complete medidas y peso. Luego pulse <b>Confirmar Tarifa &amp; Emitir Documentos</b> para generar la tarifa.",
     },
     {
-        "num": "3",
-        "icon": "✅",
-        "titulo": "Confirmar en el historial",
-        "texto": "Pulse <b>Ver en Mis Cotizaciones</b>. En la tarifa resaltada, pulse <b>Confirmar Cotización</b> antes de 24 horas para dejarla permanente.",
+        "paso": 3,
+        "titulo": "Documento del proveedor",
+        "texto": "Descarga este archivo y envíalo a tu proveedor en China para rotular el paquete.",
     },
     {
-        "num": "4",
-        "icon": "📦",
-        "titulo": "Seguimiento y documentos",
-        "texto": "Descargue <b>PDF Tarifa</b> (o Descargar PDF CCM-…). Pulse <b>Ir a Envíos</b> para la Ficha de Bodega y el comprobante de cada paquete.",
+        "paso": 4,
+        "titulo": "Traslado al historial",
+        "texto": "Pasa a tus cotizaciones para asegurar tu tarifa antes de 24 horas.",
+    },
+    {
+        "paso": 5,
+        "titulo": "Consolidación de tarifa",
+        "texto": "Pulse <b>Confirmar Cotización</b> en la tarifa resaltada para dejarla permanente en su casillero.",
+    },
+    {
+        "paso": 6,
+        "titulo": "Gestión en Envíos",
+        "texto": "¡Listo! Ahora puedes dar seguimiento a tu paquete y descargar tu ficha/etiqueta y comprobante de tarifa.",
     },
 )
 
 
-def html_pasos_guia_rapida():
-    bloques = [
-        f'<div class="guia-paso"><div class="guia-paso-head"><span class="guia-paso-num">{p["num"]}</span><span class="guia-paso-icon">{p["icon"]}</span><strong>{p["titulo"]}</strong></div><p class="guia-paso-txt">{p["texto"]}</p></div>'
-        for p in PASOS_GUIA_RAPIDA
-    ]
-    return (
-        '<div class="guia-rapida-box"><p class="guia-rapida-lead">Consolidación marítima China → Honduras, en 4 pasos.</p>'
-        + "".join(bloques)
-        + "</div>"
-    )
+def guia_esta_activa():
+    return bool(st.session_state.get("guia_activa"))
 
 
-def cerrar_guia_rapida():
+def guia_paso_actual():
+    try:
+        return int(st.session_state.get("guia_paso") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def iniciar_guia_interactiva(paso=1):
+    st.session_state["guia_activa"] = True
+    st.session_state["guia_omitida"] = False
+    st.session_state["guia_completada"] = False
+    st.session_state["guia_paso"] = int(paso)
+    st.session_state["guia_china_auto_vista"] = True
+    st.session_state["abrir_guia_rapida"] = False
+    for clave in list(st.session_state.keys()):
+        if str(clave).startswith("dl_pdf_fab_"):
+            st.session_state[clave] = False
+
+
+def omitir_guia_interactiva():
+    st.session_state["guia_activa"] = False
+    st.session_state["guia_omitida"] = True
+    st.session_state["guia_paso"] = 0
     st.session_state["abrir_guia_rapida"] = False
 
 
-@st.dialog("📖 ¿Cómo funciona el proceso?", width="large", on_dismiss=cerrar_guia_rapida)
-def dialogo_guia_rapida():
-    st.markdown(html_pasos_guia_rapida(), unsafe_allow_html=True)
-    if st.button("Entendido", type="primary", use_container_width=True, key="btn_guia_entendido"):
-        cerrar_guia_rapida()
-        st.rerun()
+def completar_guia_interactiva():
+    st.session_state["guia_activa"] = False
+    st.session_state["guia_completada"] = True
+    st.session_state["guia_paso"] = 0
+
+
+def avanzar_guia_si(paso_esperado, siguiente=None, completar=False):
+    if not guia_esta_activa() or guia_paso_actual() != int(paso_esperado):
+        return
+    if completar:
+        completar_guia_interactiva()
+        return
+    if siguiente is not None:
+        st.session_state["guia_paso"] = int(siguiente)
+
+
+def detectar_avance_descarga_guia():
+    if not guia_esta_activa() or guia_paso_actual() != 3:
+        return
+    for clave in list(st.session_state.keys()):
+        if str(clave).startswith("dl_pdf_fab_") and st.session_state.get(clave):
+            avanzar_guia_si(3, 4)
+            return
+
+
+def html_globo_guia():
+    actual = guia_paso_actual()
+    dato = next((p for p in PASOS_GUIA_INTERACTIVA if p["paso"] == actual), None)
+    if not dato:
+        return ""
+    return (
+        f'<div class="guia-globo">'
+        f'<div class="guia-globo-kicker">Paso {dato["paso"]} de 6</div>'
+        f'<div class="guia-globo-titulo">{dato["titulo"]}</div>'
+        f'<p class="guia-globo-txt">{dato["texto"]}</p>'
+        f"</div>"
+    )
+
+
+def aplicar_clase_guia_js():
+    paso = guia_paso_actual() if guia_esta_activa() else 0
+    components.html(
+        f"""
+        <script>
+        (function () {{
+          const doc = window.parent.document;
+          const aplicar = () => {{
+            const app = doc.querySelector(".stApp") || doc.body;
+            if (!app) return;
+            for (let n = 1; n <= 6; n++) app.classList.remove("guia-paso-" + n);
+            app.classList.toggle("guia-activa", {str(paso > 0).lower()});
+            if ({paso}) app.classList.add("guia-paso-{paso}");
+            doc.querySelectorAll(".ccm-guia-pulse").forEach((el) => el.classList.remove("ccm-guia-pulse"));
+            const mapa = {{
+              1: [".st-key-mod_cotizador button", ".st-key-nav_mod_cotizador button", "[class*='st-key-mod_cotizador'] button", "[class*='st-key-nav_mod_cotizador'] button"],
+              2: [".st-key-guia_foco_tarifa button", ".st-key-btn_confirmar_tarifa button", "[class*='btn_confirmar_tarifa'] button"],
+              3: [".st-key-guia_foco_pdf_fab button", "[class*='dl_pdf_fab_'] button"],
+              4: [".st-key-guia_foco_ver_cot button", "[class*='btn_ver_mis_cotizaciones_'] button"],
+              5: ["[class*='st-key-foco_confirmar_'] button", "[class*='btn_confirmar_cot_'] button"],
+              6: ["[class*='st-key-foco_ir_envios_'] button", "[class*='btn_ir_envios_'] button"]
+            }};
+            (mapa[{paso}] || []).forEach((sel) => {{
+              doc.querySelectorAll(sel).forEach((el) => el.classList.add("ccm-guia-pulse"));
+            }});
+          }};
+          aplicar();
+          setTimeout(aplicar, 80);
+          setTimeout(aplicar, 280);
+          setTimeout(aplicar, 800);
+        }})();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
+
+def pintar_coach_guia():
+    detectar_avance_descarga_guia()
+    aplicar_clase_guia_js()
+    if not guia_esta_activa():
+        return
+    with st.container(key="guia_coach"):
+        st.markdown(html_globo_guia(), unsafe_allow_html=True)
+        if st.button("Omitir Guía", type="secondary", key="btn_omitir_guia", help="Cerrar Ayuda"):
+            omitir_guia_interactiva()
+            st.rerun()
 
 
 def disparar_guia_china_si_aplica():
-    """Abre la guía al entrar al hub China por primera vez en la sesión."""
+    """Activa la guía interactiva al entrar a China por primera vez en la sesión."""
     if st.session_state.get("hub") != "china":
         return
     if st.session_state.get("guia_china_auto_vista"):
         return
+    if st.session_state.get("guia_omitida") or st.session_state.get("guia_completada"):
+        st.session_state["guia_china_auto_vista"] = True
+        return
     st.session_state["guia_china_auto_vista"] = True
-    st.session_state["abrir_guia_rapida"] = True
+    iniciar_guia_interactiva(1)
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -1973,6 +2077,10 @@ def logout():
         "cotizacion_historial_foco",
         "abrir_guia_rapida",
         "guia_china_auto_vista",
+        "guia_activa",
+        "guia_paso",
+        "guia_omitida",
+        "guia_completada",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -2493,51 +2601,86 @@ st.markdown(
         min-width: 0 !important;
     }
 
-    .guia-rapida-box { margin: 0; }
-    .guia-rapida-lead {
-        margin: 0 0 10px 0;
-        color: #334155;
-        font-size: 0.88rem;
-        font-weight: 700;
-        line-height: 1.35;
+    .st-key-guia_coach {
+        position: sticky !important;
+        top: var(--header-offset) !important;
+        z-index: 998 !important;
+        background: #fffbeb !important;
+        border: 1.5px solid #f59e0b !important;
+        border-radius: 12px !important;
+        padding: 10px 12px 8px 12px !important;
+        margin: 0 0 12px 0 !important;
+        box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18) !important;
+        box-sizing: border-box !important;
     }
-    .guia-paso {
-        background: #ffffff;
-        border: 1px solid #dbe4f0;
-        border-radius: 12px;
-        padding: 10px 12px 8px 12px;
-        margin: 0 0 8px 0;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-    }
-    .guia-paso-head {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+    .guia-globo { margin: 0; }
+    .guia-globo-kicker {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #b45309;
         margin: 0 0 4px 0;
+    }
+    .guia-globo-titulo {
+        font-size: 0.98rem;
+        font-weight: 800;
         color: #0f172a;
-        font-size: 0.95rem;
-        font-weight: 800;
+        margin: 0 0 4px 0;
     }
-    .guia-paso-num {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 22px;
-        height: 22px;
-        border-radius: 999px;
-        background: #004ac1;
-        color: #ffffff;
-        font-size: 0.75rem;
-        font-weight: 800;
-        flex-shrink: 0;
-    }
-    .guia-paso-icon { flex-shrink: 0; }
-    .guia-paso-txt {
+    .guia-globo-txt {
         margin: 0;
         color: #334155;
-        font-size: 0.82rem;
+        font-size: 0.84rem;
         line-height: 1.4;
         font-weight: 600;
+    }
+    .st-key-btn_omitir_guia button,
+    .st-key-btn_omitir_guia [data-testid^="stBaseButton"] {
+        min-height: 36px !important;
+        height: 36px !important;
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
+        margin-top: 6px !important;
+    }
+
+    @keyframes guiaPulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.50);
+            outline: 2px solid #f59e0b;
+        }
+        50% {
+            box-shadow: 0 0 0 10px rgba(245, 158, 11, 0.12);
+            outline: 3px solid #d97706;
+        }
+    }
+    .stApp.guia-paso-1 .st-key-mod_cotizador button,
+    .stApp.guia-paso-1 .st-key-mod_cotizador [data-testid^="stBaseButton"],
+    .stApp.guia-paso-1 .st-key-nav_mod_cotizador button,
+    .stApp.guia-paso-1 .st-key-nav_mod_cotizador [data-testid^="stBaseButton"],
+    .stApp.guia-paso-2 .st-key-guia_foco_tarifa button,
+    .stApp.guia-paso-2 .st-key-guia_foco_tarifa [data-testid^="stBaseButton"],
+    .stApp.guia-paso-2 .st-key-btn_confirmar_tarifa button,
+    .stApp.guia-paso-2 .st-key-btn_confirmar_tarifa [data-testid^="stBaseButton"],
+    .stApp.guia-paso-3 .st-key-guia_foco_pdf_fab button,
+    .stApp.guia-paso-3 .st-key-guia_foco_pdf_fab [data-testid^="stBaseButton"],
+    .stApp.guia-paso-3 [class*="st-key-dl_pdf_fab_"] button,
+    .stApp.guia-paso-3 [class*="st-key-dl_pdf_fab_"] [data-testid^="stBaseButton"],
+    .stApp.guia-paso-4 .st-key-guia_foco_ver_cot button,
+    .stApp.guia-paso-4 .st-key-guia_foco_ver_cot [data-testid^="stBaseButton"],
+    .stApp.guia-paso-4 [class*="st-key-btn_ver_mis_cotizaciones_"] button,
+    .stApp.guia-paso-4 [class*="st-key-btn_ver_mis_cotizaciones_"] [data-testid^="stBaseButton"],
+    .stApp.guia-paso-5 [class*="st-key-foco_confirmar_"] button,
+    .stApp.guia-paso-5 [class*="st-key-foco_confirmar_"] [data-testid^="stBaseButton"],
+    .stApp.guia-paso-5 [class*="st-key-btn_confirmar_cot_"] button,
+    .stApp.guia-paso-6 [class*="st-key-foco_ir_envios_"] button,
+    .stApp.guia-paso-6 [class*="st-key-foco_ir_envios_"] [data-testid^="stBaseButton"],
+    .stApp.guia-paso-6 [class*="st-key-btn_ir_envios_"] button,
+    .stApp.guia-paso-6 [class*="st-key-btn_ir_envios_"] [data-testid^="stBaseButton"],
+    button.ccm-guia-pulse,
+    [data-testid^="stBaseButton"].ccm-guia-pulse {
+        animation: guiaPulse 1.2s ease-in-out infinite !important;
+        z-index: 2 !important;
     }
 
     @keyframes pulseBlink {
@@ -3470,14 +3613,17 @@ elif st.session_state["rol"] == "cliente":
                     ir_a("Inicio", hub=None)
 
             with nav_cols[2]:
-                if st.button(
-                    "📖 Guía",
-                    type="secondary",
-                    key="btn_guia_rapida",
-                    help="¿Cómo funciona el proceso?",
-                ):
-                    st.session_state["abrir_guia_rapida"] = True
-                    st.rerun()
+                if guia_esta_activa():
+                    if st.button("Cerrar Ayuda", type="secondary", key="btn_cerrar_ayuda_nav"):
+                        omitir_guia_interactiva()
+                        st.rerun()
+                else:
+                    if st.button("✨ Guía", type="secondary", key="btn_guia_rapida", help="Iniciar Guía Interactiva"):
+                        iniciar_guia_interactiva(1)
+                        if st.session_state.get("hub") != "china":
+                            ir_a("Inicio", hub="china")
+                        else:
+                            st.rerun()
 
             if mostrar_subnav_china:
                 for idx, modulo in enumerate(china_mods):
@@ -3488,6 +3634,8 @@ elif st.session_state["rol"] == "cliente":
                             type="primary" if activo else "secondary",
                             key=f"nav_{modulo['btn_key']}",
                         ):
+                            if modulo["id"] == "Cotizador":
+                                avanzar_guia_si(1, 2)
                             ir_a(modulo["id"], hub="china")
 
         if mostrar_subnav_china and st.session_state["sub_tab_inicio"] != "Cotizador":
@@ -3504,8 +3652,7 @@ elif st.session_state["rol"] == "cliente":
 
     sincronizar_altura_encabezado_fijo()
     disparar_guia_china_si_aplica()
-    if st.session_state.get("abrir_guia_rapida"):
-        dialogo_guia_rapida()
+    pintar_coach_guia()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
@@ -3530,8 +3677,17 @@ elif st.session_state["rol"] == "cliente":
             hub_china = HUBS["china"]
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
+            st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones.")
+            if not guia_esta_activa():
+                if st.button(
+                    "✨ Iniciar Guía Interactiva",
+                    type="primary",
+                    key="btn_iniciar_guia_hub",
+                    use_container_width=True,
+                ):
+                    iniciar_guia_interactiva(1)
+                    st.rerun()
             mods = modulos_china_visibles()
-            st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones. Pulse 📖 Guía si necesita los 4 pasos.")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -3547,6 +3703,8 @@ elif st.session_state["rol"] == "cliente":
                                 key=modulo["btn_key"],
                                 use_container_width=True,
                             ):
+                                if modulo["id"] == "Cotizador":
+                                    avanzar_guia_si(1, 2)
                                 ir_a(modulo["id"], hub="china")
                             st.markdown(
                                 f'<div class="mod-detalle">{modulo["detalle"]}</div>',
@@ -3561,7 +3719,7 @@ elif st.session_state["rol"] == "cliente":
                 f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
                 f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
                 f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
-                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">La <b>📖 Guía</b> del menú explica el flujo operativo China → Honduras.</div>'
+                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>✨ Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -3641,13 +3799,25 @@ elif st.session_state["rol"] == "cliente":
                 if consolidada:
                     col_env, col_pdf = st.columns(2)
                     with col_env:
-                        if st.button(
-                            "📦 Ir a Envíos",
-                            type="primary",
-                            key=f"btn_ir_envios_{id_cot_item}",
-                            use_container_width=True,
-                        ):
-                            ir_a_envios_de_cotizacion(id_cot_item)
+                        es_foco_envios_guia = bool(
+                            guia_esta_activa()
+                            and guia_paso_actual() == 6
+                            and int(st.session_state.get("cotizacion_envio_foco") or 0) == int(id_cot_item)
+                        )
+                        env_ctx = (
+                            st.container(key=f"foco_ir_envios_{id_cot_item}")
+                            if es_foco_envios_guia
+                            else st.container()
+                        )
+                        with env_ctx:
+                            if st.button(
+                                "📦 Ir a Envíos",
+                                type="primary",
+                                key=f"btn_ir_envios_{id_cot_item}",
+                                use_container_width=True,
+                            ):
+                                avanzar_guia_si(6, completar=True)
+                                ir_a_envios_de_cotizacion(id_cot_item)
                     with col_pdf:
                         st.download_button(
                             f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
@@ -3677,6 +3847,7 @@ elif st.session_state["rol"] == "cliente":
                                     st.session_state["cotizacion_envio_foco"] = int(id_cot_item)
                                     if int(st.session_state.get("cotizacion_historial_foco") or 0) == int(id_cot_item):
                                         st.session_state.pop("cotizacion_historial_foco", None)
+                                    avanzar_guia_si(5, 6)
                                     st.rerun()
                     with col_pdf:
                         st.download_button(
@@ -4021,42 +4192,48 @@ elif st.session_state["rol"] == "cliente":
             detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
 
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
-            ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
-            f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
-            with get_db() as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    """
-                    INSERT INTO cotizaciones (
-                        codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
-                        total_usd, fecha, confirmada, fecha_creacion
+        with st.container(key="guia_foco_tarifa"):
+            if st.button(
+                "🤝 Confirmar Tarifa & Emitir Documentos",
+                type="primary",
+                key="btn_confirmar_tarifa",
+            ):
+                ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
+                f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
+                with get_db() as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        """
+                        INSERT INTO cotizaciones (
+                            codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
+                            total_usd, fecha, confirmada, fecha_creacion
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                        """,
+                        (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql, f_hoy_sql),
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                    """,
-                    (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql, f_hoy_sql),
-                )
-                id_generado = cur.lastrowid
+                    id_generado = cur.lastrowid
 
-            st.session_state["ultima_cot_id"] = id_generado
-            st.session_state["datos_pdf_confirmado"] = {
-                "tipo_carga": modalidad_pdf,
-                "al": al_val,
-                "an": an_val,
-                "la": la_val,
-                "peso_lb": pe_lb,
-                "peso_kg": pe_kg,
-                "vol_m3": vol_m3_val,
-                "vol_ft3": vol_ft3_val,
-                "total_usd": tot,
-                "detalle_tarifa": detalle_pdf,
-                "id_cot": id_generado,
-                "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
-                "fecha_hora_doc": f_hoy_doc,
-                "fecha_sql": f_hoy_sql,
-            }
-            st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
-            st.rerun()
+                st.session_state["ultima_cot_id"] = id_generado
+                st.session_state["datos_pdf_confirmado"] = {
+                    "tipo_carga": modalidad_pdf,
+                    "al": al_val,
+                    "an": an_val,
+                    "la": la_val,
+                    "peso_lb": pe_lb,
+                    "peso_kg": pe_kg,
+                    "vol_m3": vol_m3_val,
+                    "vol_ft3": vol_ft3_val,
+                    "total_usd": tot,
+                    "detalle_tarifa": detalle_pdf,
+                    "id_cot": id_generado,
+                    "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
+                    "fecha_hora_doc": f_hoy_doc,
+                    "fecha_sql": f_hoy_sql,
+                }
+                st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
+                avanzar_guia_si(2, 3)
+                st.rerun()
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
@@ -4108,14 +4285,6 @@ elif st.session_state["rol"] == "cliente":
                         unsafe_allow_html=True,
                     )
 
-                    if st.button(
-                        "Ver en Mis Cotizaciones",
-                        type="primary",
-                        key=f"btn_ver_mis_cotizaciones_{id_c}",
-                        use_container_width=True,
-                    ):
-                        ir_a_cotizacion_emitida(id_c)
-
                     pdf_fab = generar_pdf_etiqueta_proveedor(
                         casillero=casillero,
                         nombre=nombre_completo,
@@ -4131,14 +4300,27 @@ elif st.session_state["rol"] == "cliente":
                         fecha_emision=fecha_doc,
                     )
 
-                    st.download_button(
-                        "📥 PDF Fabricante",
-                        pdf_fab,
-                        f"Shipping_Label_Fabricante_{casillero}.pdf",
-                        "application/pdf",
-                        key=f"dl_pdf_fab_{id_c}",
-                        use_container_width=True,
-                    )
+                    with st.container(key="guia_foco_pdf_fab"):
+                        if st.download_button(
+                            "📥 PDF Fabricante",
+                            pdf_fab,
+                            f"Shipping_Label_Fabricante_{casillero}.pdf",
+                            "application/pdf",
+                            key=f"dl_pdf_fab_{id_c}",
+                            use_container_width=True,
+                        ):
+                            avanzar_guia_si(3, 4)
+
+                    with st.container(key="guia_foco_ver_cot"):
+                        if st.button(
+                            "Ver en Mis Cotizaciones",
+                            type="primary",
+                            key=f"btn_ver_mis_cotizaciones_{id_c}",
+                            use_container_width=True,
+                        ):
+                            if guia_paso_actual() in (3, 4):
+                                st.session_state["guia_paso"] = 5
+                            ir_a_cotizacion_emitida(id_c)
 
                     texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                     url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
