@@ -12,12 +12,800 @@ import io
 import urllib.parse
 from functools import lru_cache
 from pathlib import Path
+import base64
+import hmac
+import json
 
-from aliexpress_client import (
-    buscar_aliexpress_imagen,
-    buscar_aliexpress_texto,
-    credenciales_configuradas,
+import requests
+
+st.set_page_config(
+    page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
+
+# Cliente AliExpress inlined: Streamlit Cloud a veces no incluye módulos extra.
+APP_KEY_DEFAULT = "544082"
+GATEWAY_DEFAULT = "https://api-sg.aliexpress.com/sync"
+TIMEOUT_S = 25
+PAGE_SIZE = 20
+TZ_CN = timezone(timedelta(hours=8))
+
+ORDEN_API = {
+    "Más vendidos": "LAST_VOLUME_DESC",
+    "Mejor precio": "SALE_PRICE_ASC",
+    "Calificación": "EVALUATE_RATE_DESC",
+}
+
+MENSAJES_ERROR = {
+    "7": "Se alcanzó el límite de peticiones de AliExpress. Intente de nuevo en unos minutos.",
+    "11": "La aplicación no tiene permiso para este método de AliExpress.",
+    "15": "El servicio remoto de AliExpress no está disponible en este momento.",
+    "25": "La firma de la API no es válida. Verifique ALIEXPRESS_APP_SECRET.",
+    "27": "Falta el parámetro de sesión (autorización Dropshipper).",
+    "29": "La App Key de AliExpress no es válida.",
+    "40": "Falta un parámetro obligatorio en la consulta a AliExpress.",
+    "41": "Un parámetro de la consulta a AliExpress no es válido.",
+}
+
+
+class AliExpressError(Exception):
+    def __init__(self, mensaje, codigo=None):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.mensaje = mensaje
+
+
+def _leer_secrets_aliexpress():
+    try:
+        import streamlit as st
+
+        seccion = st.secrets.get("aliexpress", {})
+        if hasattr(seccion, "to_dict"):
+            return dict(seccion)
+        return dict(seccion) if seccion else {}
+    except Exception:
+        return {}
+
+
+def credenciales_aliexpress():
+    secrets = _leer_secrets_aliexpress()
+    app_key = (
+        os.environ.get("ALIEXPRESS_APP_KEY")
+        or str(secrets.get("APP_KEY") or secrets.get("app_key") or "")
+        or APP_KEY_DEFAULT
+    ).strip()
+    app_secret = (
+        os.environ.get("ALIEXPRESS_APP_SECRET")
+        or str(secrets.get("APP_SECRET") or secrets.get("app_secret") or "")
+    ).strip()
+    tracking_id = (
+        os.environ.get("ALIEXPRESS_TRACKING_ID")
+        or str(secrets.get("TRACKING_ID") or secrets.get("tracking_id") or "")
+    ).strip()
+    gateway = (
+        os.environ.get("ALIEXPRESS_GATEWAY")
+        or str(secrets.get("GATEWAY") or secrets.get("gateway") or "")
+        or GATEWAY_DEFAULT
+    ).strip()
+    return {
+        "app_key": app_key,
+        "app_secret": app_secret,
+        "tracking_id": tracking_id,
+        "gateway": gateway.rstrip("/") or GATEWAY_DEFAULT,
+    }
+
+
+def credenciales_configuradas():
+    creds = credenciales_aliexpress()
+    return bool(creds["app_key"] and creds["app_secret"])
+
+
+def firmar_top(params, secret, sign_method="md5"):
+    """Firma TOP: orden alfabética de claves, concatenación key+value, MD5 o HMAC-MD5."""
+    partes = []
+    for clave in sorted(params):
+        if clave == "sign":
+            continue
+        valor = params[clave]
+        if valor is None or valor == "":
+            continue
+        if isinstance(valor, (bytes, bytearray)):
+            continue
+        partes.append(f"{clave}{valor}")
+    concatenado = "".join(partes).encode("utf-8")
+    secreto = (secret or "").encode("utf-8")
+    metodo = (sign_method or "md5").lower()
+    if metodo == "hmac":
+        return hmac.new(secreto, concatenado, hashlib.md5).hexdigest().upper()
+    return hashlib.md5(secreto + concatenado + secreto).hexdigest().upper()
+
+
+def timestamp_top(ahora=None):
+    dt = ahora or datetime.now(TZ_CN)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=TZ_CN)
+    else:
+        dt = dt.astimezone(TZ_CN)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _params_sistema(method, app_key, sign_method="md5"):
+    return {
+        "method": method,
+        "app_key": str(app_key),
+        "timestamp": timestamp_top(),
+        "format": "json",
+        "v": "2.0",
+        "sign_method": sign_method,
+    }
+
+
+def _codigo_error(payload):
+    if not isinstance(payload, dict):
+        return None, ""
+    err = payload.get("error_response") or payload.get("error") or {}
+    if isinstance(err, dict) and err:
+        codigo = err.get("code") or err.get("sub_code") or err.get("error_code")
+        msg = err.get("msg") or err.get("sub_msg") or err.get("message") or ""
+        return str(codigo) if codigo is not None else None, str(msg)
+    for clave in ("code", "error_code", "sub_code"):
+        if payload.get(clave) not in (None, "", 0, "0"):
+            return str(payload.get(clave)), str(payload.get("msg") or payload.get("sub_msg") or "")
+    return None, ""
+
+
+def mensaje_error_ae(codigo, detalle=""):
+    base = MENSAJES_ERROR.get(str(codigo or ""), "")
+    extra = str(detalle or "").strip()
+    if base and extra:
+        return f"{base} ({extra})"
+    if base:
+        return base
+    if extra:
+        return f"AliExpress devolvió un error: {extra}"
+    return "No se pudo completar la consulta a AliExpress."
+
+
+def llamar_aliexpress(method, biz_params, image_bytes=None, sign_method="md5"):
+    creds = credenciales_aliexpress()
+    if not creds["app_secret"]:
+        raise AliExpressError(
+            "Falta ALIEXPRESS_APP_SECRET. Configure el secreto para consultas en vivo.",
+            codigo="no_secret",
+        )
+    params = _params_sistema(method, creds["app_key"], sign_method=sign_method)
+    for clave, valor in (biz_params or {}).items():
+        if valor is None or valor == "":
+            continue
+        params[clave] = str(valor)
+    params["sign"] = firmar_top(params, creds["app_secret"], sign_method=sign_method)
+    headers = {"Accept": "application/json"}
+    try:
+        if image_bytes:
+            archivos = {"image_bytes": ("consulta.jpg", image_bytes, "image/jpeg")}
+            resp = requests.post(
+                creds["gateway"],
+                data=params,
+                files=archivos,
+                headers=headers,
+                timeout=TIMEOUT_S,
+            )
+        else:
+            resp = requests.post(
+                creds["gateway"],
+                data=params,
+                headers=headers,
+                timeout=TIMEOUT_S,
+            )
+    except requests.Timeout as exc:
+        raise AliExpressError("La consulta a AliExpress superó el tiempo de espera.", codigo="timeout") from exc
+    except requests.RequestException as exc:
+        raise AliExpressError(f"No se pudo conectar con AliExpress: {exc}", codigo="network") from exc
+
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise AliExpressError(
+            f"AliExpress devolvió una respuesta no válida (HTTP {resp.status_code}).",
+            codigo="http",
+        ) from exc
+
+    codigo, detalle = _codigo_error(payload)
+    if codigo:
+        raise AliExpressError(mensaje_error_ae(codigo, detalle), codigo=codigo)
+    if resp.status_code >= 400:
+        raise AliExpressError(
+            mensaje_error_ae(str(resp.status_code), f"HTTP {resp.status_code}"),
+            codigo=str(resp.status_code),
+        )
+    return payload
+
+
+def _es_producto(item):
+    if not isinstance(item, dict):
+        return False
+    claves = {str(k).lower() for k in item}
+    return bool(
+        claves & {
+            "product_id",
+            "productid",
+            "product_title",
+            "product_main_image_url",
+            "target_sale_price",
+            "sale_price",
+            "item_id",
+        }
+    )
+
+
+def extraer_lista_productos(payload):
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        if payload and all(_es_producto(x) for x in payload if isinstance(x, dict)):
+            return [x for x in payload if isinstance(x, dict)]
+        encontrados = []
+        for item in payload:
+            encontrados.extend(extraer_lista_productos(item))
+        return encontrados
+    if not isinstance(payload, dict):
+        return []
+
+    rutas = (
+        ("aliexpress_affiliate_product_query_response", "resp_result", "result", "products", "product"),
+        ("aliexpress_affiliate_product_query_response", "resp_result", "result", "products"),
+        ("resp_result", "result", "products", "product"),
+        ("resp_result", "result", "products"),
+        ("result", "products", "product"),
+        ("result", "products"),
+        ("data", "products", "product"),
+        ("data", "products"),
+        ("aliexpress_ds_image_search_response", "result", "products", "product"),
+        ("aliexpress_ds_image_search_response", "result", "products"),
+        ("aliexpress_ds_image_search_response", "data", "products"),
+        ("aliexpress_ds_product_get_response", "result"),
+        ("products", "product"),
+        ("products",),
+    )
+    for ruta in rutas:
+        nodo = payload
+        ok = True
+        for clave in ruta:
+            if isinstance(nodo, dict) and clave in nodo:
+                nodo = nodo[clave]
+            else:
+                ok = False
+                break
+        if not ok:
+            continue
+        if isinstance(nodo, dict) and _es_producto(nodo):
+            return [nodo]
+        if isinstance(nodo, list):
+            return [x for x in nodo if isinstance(x, dict)]
+    # Recorrido amplio como último recurso.
+    hallados = []
+    for valor in payload.values():
+        if isinstance(valor, (dict, list)):
+            hallados.extend(extraer_lista_productos(valor))
+    vistos = set()
+    unicos = []
+    for item in hallados:
+        marca = id(item)
+        if marca in vistos:
+            continue
+        vistos.add(marca)
+        if _es_producto(item):
+            unicos.append(item)
+    return unicos
+
+
+def _numero(valor, default=0.0):
+    if valor is None or valor == "":
+        return default
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    texto = str(valor).strip().replace(",", "")
+    for token in ("USD", "US $", "US$", "$", "%"):
+        texto = texto.replace(token, "")
+    texto = texto.strip()
+    try:
+        return float(texto)
+    except ValueError:
+        return default
+
+
+def _texto(valor, default=""):
+    if valor is None:
+        return default
+    return str(valor).strip() or default
+
+
+def _calificacion(valor):
+    if valor is None or valor == "":
+        return None
+    numero = _numero(valor, default=-1)
+    if numero < 0:
+        return None
+    texto = str(valor)
+    if "%" in texto or numero > 5:
+        # evaluate_rate suele venir como 95.0% → 4.75 / 5
+        return round(min(5.0, max(0.0, numero / 20.0)), 2) if numero > 5 else round(numero, 2)
+    return round(min(5.0, numero), 2)
+
+
+def _enlace_producto(item, product_id):
+    for clave in (
+        "promotion_link",
+        "product_detail_url",
+        "product_url",
+        "item_url",
+        "detail_url",
+        "enlace",
+        "url",
+    ):
+        url = _texto(item.get(clave))
+        if url.startswith("http"):
+            return url
+    if product_id:
+        return f"https://www.aliexpress.com/item/{product_id}.html"
+    return "https://www.aliexpress.com"
+
+
+def _imagen_producto(item):
+    for clave in (
+        "product_main_image_url",
+        "product_small_image_urls",
+        "imagen_url",
+        "image_url",
+        "product_image",
+        "main_image",
+        "image",
+        "pic_url",
+    ):
+        valor = item.get(clave)
+        if isinstance(valor, dict):
+            valor = valor.get("string") or valor.get("url") or valor.get("image")
+        if isinstance(valor, list) and valor:
+            valor = valor[0]
+        url = _texto(valor)
+        if url.startswith("//"):
+            url = "https:" + url
+        if url.startswith("http"):
+            return url
+    return ""
+
+
+def _stock_disponible(item):
+    for clave in ("stock", "available_stock", "product_stock", "inventory", "sku_stock"):
+        if clave in item and item[clave] not in (None, ""):
+            try:
+                return float(item[clave]) > 0
+            except (TypeError, ValueError):
+                continue
+    estado = _texto(item.get("stock_status") or item.get("status") or "").lower()
+    if estado in {"out_of_stock", "sold_out", "unavailable", "0"}:
+        return False
+    return True
+
+
+def normalizar_producto_ae(item, origen="api"):
+    if not isinstance(item, dict):
+        return None
+    product_id = _texto(
+        item.get("product_id")
+        or item.get("productId")
+        or item.get("item_id")
+        or item.get("itemId")
+        or item.get("id")
+    )
+    titulo = _texto(
+        item.get("product_title")
+        or item.get("product_name")
+        or item.get("title")
+        or item.get("name")
+        or item.get("titulo")
+        or "Producto AliExpress"
+    )
+    precio = None
+    for clave in (
+        "target_sale_price",
+        "target_app_sale_price",
+        "sale_price",
+        "product_price",
+        "precio_usd",
+        "price",
+        "target_original_price",
+        "original_price",
+    ):
+        if item.get(clave) not in (None, ""):
+            precio = _numero(item.get(clave), default=-1)
+            if precio >= 0:
+                break
+            precio = None
+    if precio is None:
+        precio = 0.0
+    # Algunos listados envían centavos.
+    if precio >= 1000 and str(item.get("target_sale_price") or "").isdigit():
+        precio = precio / 100.0
+    peso = _numero(item.get("product_weight") or item.get("weight") or item.get("peso_kg"), default=0.8)
+    if peso <= 0:
+        peso = 0.8
+    volumen = _numero(item.get("volume") or item.get("volumen_m3"), default=0.004)
+    if volumen <= 0:
+        volumen = 0.004
+    ventas = int(
+        _numero(
+            item.get("lastest_volume")
+            or item.get("latest_volume")
+            or item.get("volume_sales")
+            or item.get("volumen_ventas")
+            or 0
+        )
+    )
+    return {
+        "product_id": product_id or f"ae-{abs(hash(titulo)) % 10_000_000}",
+        "titulo": titulo[:180],
+        "precio_usd": round(float(precio), 2),
+        "imagen_url": _imagen_producto(item),
+        "calificacion": _calificacion(
+            item.get("evaluate_rate")
+            or item.get("evaluateRate")
+            or item.get("rating")
+            or item.get("calificacion")
+        ),
+        "enlace": _enlace_producto(item, product_id),
+        "volumen_ventas": ventas,
+        "peso_kg": round(peso, 3),
+        "volumen_m3": round(volumen, 4),
+        "origen": origen,
+        "en_stock": _stock_disponible(item),
+        "sku": f"AE-{product_id}" if product_id else f"AE-{abs(hash(titulo)) % 10_000_000}",
+    }
+
+
+def filtrar_y_ordenar(productos, min_usd=0, max_usd=0, orden="Más vendidos"):
+    filtrados = []
+    for prod in productos or []:
+        if not prod:
+            continue
+        if prod.get("en_stock") is False:
+            continue
+        precio = _numero(prod.get("precio_usd"), default=0)
+        if min_usd and precio < float(min_usd):
+            continue
+        if max_usd and precio > float(max_usd):
+            continue
+        filtrados.append(prod)
+    clave_orden = orden or "Más vendidos"
+    if clave_orden == "Mejor precio":
+        filtrados.sort(key=lambda p: (p.get("precio_usd") is None, p.get("precio_usd") or 0))
+    elif clave_orden == "Calificación":
+        filtrados.sort(key=lambda p: (-(p.get("calificacion") or 0), -(p.get("volumen_ventas") or 0)))
+    else:
+        filtrados.sort(key=lambda p: (-(p.get("volumen_ventas") or 0), p.get("precio_usd") or 0))
+    return filtrados
+
+
+def catalogo_demostracion(keyword="", imagen=False):
+    kw = (keyword or "").strip()
+    base = [
+        {
+            "product_id": "1005007011110001",
+            "titulo": "Auriculares Bluetooth TWS con cancelación de ruido",
+            "precio_usd": 18.90,
+            "imagen_url": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.8,
+            "enlace": "https://www.aliexpress.com/item/1005007011110001.html",
+            "volumen_ventas": 18420,
+            "peso_kg": 0.28,
+            "volumen_m3": 0.002,
+        },
+        {
+            "product_id": "1005007011110002",
+            "titulo": "Kit piezas CNC aluminio 6061 para router",
+            "precio_usd": 42.50,
+            "imagen_url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.6,
+            "enlace": "https://www.aliexpress.com/item/1005007011110002.html",
+            "volumen_ventas": 3210,
+            "peso_kg": 1.85,
+            "volumen_m3": 0.012,
+        },
+        {
+            "product_id": "1005007011110003",
+            "titulo": "Juego de herramientas manuales 108 piezas",
+            "precio_usd": 29.99,
+            "imagen_url": "https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.7,
+            "enlace": "https://www.aliexpress.com/item/1005007011110003.html",
+            "volumen_ventas": 9600,
+            "peso_kg": 2.40,
+            "volumen_m3": 0.015,
+        },
+        {
+            "product_id": "1005007011110004",
+            "titulo": "Taladro inalámbrico 21V con 2 baterías",
+            "precio_usd": 54.20,
+            "imagen_url": "https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.5,
+            "enlace": "https://www.aliexpress.com/item/1005007011110004.html",
+            "volumen_ventas": 7420,
+            "peso_kg": 2.10,
+            "volumen_m3": 0.018,
+        },
+        {
+            "product_id": "1005007011110005",
+            "titulo": "Porcelanato 60x120 acabado mármol (muestra)",
+            "precio_usd": 16.40,
+            "imagen_url": "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.4,
+            "enlace": "https://www.aliexpress.com/item/1005007011110005.html",
+            "volumen_ventas": 2100,
+            "peso_kg": 4.80,
+            "volumen_m3": 0.022,
+        },
+        {
+            "product_id": "1005007011110006",
+            "titulo": "Cámara de acción 4K resistente al agua",
+            "precio_usd": 37.80,
+            "imagen_url": "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.3,
+            "enlace": "https://www.aliexpress.com/item/1005007011110006.html",
+            "volumen_ventas": 12880,
+            "peso_kg": 0.45,
+            "volumen_m3": 0.003,
+        },
+        {
+            "product_id": "1005007011110007",
+            "titulo": "Lámpara LED de escritorio recargable",
+            "precio_usd": 12.75,
+            "imagen_url": "https://images.unsplash.com/photo-1507473883501-cd55bddb99de?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.6,
+            "enlace": "https://www.aliexpress.com/item/1005007011110007.html",
+            "volumen_ventas": 22100,
+            "peso_kg": 0.62,
+            "volumen_m3": 0.005,
+        },
+        {
+            "product_id": "1005007011110008",
+            "titulo": "Organizador de herramientas para taller",
+            "precio_usd": 23.10,
+            "imagen_url": "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=600&q=80",
+            "calificacion": 4.2,
+            "enlace": "https://www.aliexpress.com/item/1005007011110008.html",
+            "volumen_ventas": 1540,
+            "peso_kg": 1.20,
+            "volumen_m3": 0.010,
+        },
+    ]
+    productos = []
+    for raw in base:
+        prod = normalizar_producto_ae(raw, origen="demo")
+        if prod:
+            productos.append(prod)
+    if imagen:
+        for prod in productos[:6]:
+            prod["titulo"] = f"Coincidencia visual · {prod['titulo']}"
+        return productos[:6]
+    if not kw:
+        return productos
+    needle = kw.lower()
+    coincidencias = [p for p in productos if needle in p["titulo"].lower()]
+    if coincidencias:
+        return coincidencias
+    extra = normalizar_producto_ae(
+        {
+            "product_id": str(1005008000000 + abs(hash(kw)) % 900000),
+            "product_title": f"{kw.strip().title()} — envío a EE. UU.",
+            "target_sale_price": 19.90 + (abs(hash(kw)) % 40),
+            "product_main_image_url": f"https://picsum.photos/seed/ae{abs(hash(kw)) % 10000}/600/400",
+            "evaluate_rate": "4.5",
+            "product_detail_url": "https://www.aliexpress.com",
+            "lastest_volume": 800 + abs(hash(kw)) % 4000,
+            "peso_kg": 0.9,
+            "volumen_m3": 0.006,
+        },
+        origen="demo",
+    )
+    return ([extra] if extra else []) + productos[:5]
+
+
+def preparar_imagen_busqueda(file_bytes, max_lado=800):
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(file_bytes))
+    img = img.convert("RGB")
+    img.thumbnail((max_lado, max_lado))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=82)
+    return buf.getvalue()
+
+
+def _params_busqueda_texto(keyword, min_usd, max_usd, orden, tracking_id, page_size=PAGE_SIZE):
+    sort = ORDEN_API.get(orden, "LAST_VOLUME_DESC")
+    params = {
+        "keywords": keyword,
+        "target_currency": "USD",
+        "target_language": "ES",
+        "ship_to_country": "US",
+        "page_no": "1",
+        "page_size": str(page_size),
+        "sort": sort,
+        "fields": (
+            "commission_rate,sale_price,product_id,product_title,"
+            "product_main_image_url,product_detail_url,evaluate_rate,"
+            "lastest_volume,shop_id,promotion_link"
+        ),
+    }
+    if tracking_id:
+        params["tracking_id"] = tracking_id
+    if min_usd and float(min_usd) > 0:
+        params["min_sale_price"] = f"{float(min_usd):.2f}"
+    if max_usd and float(max_usd) > 0:
+        params["max_sale_price"] = f"{float(max_usd):.2f}"
+    return params
+
+
+def _params_busqueda_imagen(image_b64, min_usd, max_usd, orden, tracking_id):
+    sort = ORDEN_API.get(orden, "LAST_VOLUME_DESC")
+    params = {
+        "image_base64": image_b64,
+        "target_currency": "USD",
+        "target_language": "ES",
+        "ship_to_country": "US",
+        "shpt_to": "US",
+        "currency": "USD",
+        "lang": "ES",
+        "sort": sort,
+        "sort_type": sort,
+        "product_cnt": str(PAGE_SIZE),
+        "page_size": str(PAGE_SIZE),
+    }
+    if tracking_id:
+        params["tracking_id"] = tracking_id
+    if min_usd and float(min_usd) > 0:
+        params["min_sale_price"] = f"{float(min_usd):.2f}"
+    if max_usd and float(max_usd) > 0:
+        params["max_sale_price"] = f"{float(max_usd):.2f}"
+    return params
+
+
+def _normalizar_lote(crudos, origen="api"):
+    productos = []
+    vistos = set()
+    for item in crudos or []:
+        prod = normalizar_producto_ae(item, origen=origen)
+        if not prod:
+            continue
+        if prod["product_id"] in vistos:
+            continue
+        vistos.add(prod["product_id"])
+        productos.append(prod)
+    return productos
+
+
+def _resultado(productos, error=None, aviso=None, fuente="api", metodo=""):
+    return {
+        "productos": productos or [],
+        "error": error,
+        "aviso": aviso,
+        "fuente": fuente,
+        "metodo": metodo,
+    }
+
+
+def _llamar_con_reintentos(method, biz_params, image_bytes=None):
+    ultimo = None
+    for sign_method in ("md5", "hmac"):
+        try:
+            return llamar_aliexpress(method, biz_params, image_bytes=image_bytes, sign_method=sign_method)
+        except AliExpressError as exc:
+            ultimo = exc
+            if str(exc.codigo) == "25" and sign_method == "md5":
+                continue
+            raise
+    raise ultimo or AliExpressError("No se pudo firmar la consulta a AliExpress.")
+
+
+def buscar_aliexpress_texto(keyword, min_usd=0, max_usd=0, orden="Más vendidos"):
+    kw = (keyword or "").strip()
+    if not kw:
+        return _resultado([], error="Escriba una palabra clave para buscar en AliExpress.", fuente="none")
+
+    demo = filtrar_y_ordenar(catalogo_demostracion(kw, imagen=False), min_usd, max_usd, orden)
+    if not credenciales_configuradas():
+        return _resultado(
+            demo,
+            aviso="Consultas en vivo desactivadas: configure ALIEXPRESS_APP_SECRET. Se muestra un catálogo de demostración con envío a EE. UU.",
+            fuente="demo",
+            metodo="demo",
+        )
+
+    creds = credenciales_aliexpress()
+    params = _params_busqueda_texto(kw, min_usd, max_usd, orden, creds["tracking_id"])
+    try:
+        payload = _llamar_con_reintentos("aliexpress.affiliate.product.query", params)
+    except AliExpressError as exc:
+        if "tracking" in (exc.mensaje or "").lower() and creds["tracking_id"]:
+            params.pop("tracking_id", None)
+            try:
+                payload = _llamar_con_reintentos("aliexpress.affiliate.product.query", params)
+            except AliExpressError as exc2:
+                return _resultado(demo, error=exc2.mensaje, aviso="Se muestran resultados de demostración.", fuente="demo", metodo="aliexpress.affiliate.product.query")
+        else:
+            return _resultado(demo, error=exc.mensaje, aviso="Se muestran resultados de demostración.", fuente="demo", metodo="aliexpress.affiliate.product.query")
+
+    productos = filtrar_y_ordenar(_normalizar_lote(extraer_lista_productos(payload)), min_usd, max_usd, orden)
+    if not productos:
+        return _resultado(
+            [],
+            aviso="No hay stock disponible para los filtros indicados.",
+            fuente="api",
+            metodo="aliexpress.affiliate.product.query",
+        )
+    return _resultado(productos, fuente="api", metodo="aliexpress.affiliate.product.query")
+
+
+def buscar_aliexpress_imagen(image_bytes, min_usd=0, max_usd=0, orden="Más vendidos"):
+    if not image_bytes:
+        return _resultado([], error="Cargue una imagen JPG o PNG del producto.", fuente="none")
+
+    demo = filtrar_y_ordenar(catalogo_demostracion(imagen=True), min_usd, max_usd, orden)
+    if not credenciales_configuradas():
+        return _resultado(
+            demo,
+            aviso="Consultas en vivo desactivadas: configure ALIEXPRESS_APP_SECRET. Se muestran coincidencias visuales de demostración.",
+            fuente="demo",
+            metodo="demo",
+        )
+
+    try:
+        jpeg = preparar_imagen_busqueda(image_bytes)
+    except Exception:
+        jpeg = image_bytes
+    image_b64 = base64.b64encode(jpeg).decode("ascii")
+    creds = credenciales_aliexpress()
+    params = _params_busqueda_imagen(image_b64, min_usd, max_usd, orden, creds["tracking_id"])
+
+    intentos = [
+        (params, jpeg),
+        ({k: v for k, v in params.items() if k != "image_base64"}, jpeg),
+        (params, None),
+    ]
+    ultimo_error = None
+    for biz, archivo in intentos:
+        try:
+            payload = _llamar_con_reintentos(
+                "aliexpress.ds.image.search",
+                biz,
+                image_bytes=archivo,
+            )
+            productos = filtrar_y_ordenar(
+                _normalizar_lote(extraer_lista_productos(payload)),
+                min_usd,
+                max_usd,
+                orden,
+            )
+            if productos:
+                return _resultado(productos, fuente="api", metodo="aliexpress.ds.image.search")
+            ultimo_error = AliExpressError("No hay stock disponible para los filtros indicados.")
+        except AliExpressError as exc:
+            ultimo_error = exc
+            continue
+
+    aviso = "La búsqueda por imagen no está autorizada o falló. Se muestran coincidencias de demostración."
+    error = ultimo_error.mensaje if ultimo_error else None
+    return _resultado(demo, error=error, aviso=aviso, fuente="demo", metodo="aliexpress.ds.image.search")
+
+
+def serializar_payload_debug(payload):
+    try:
+        return json.dumps(payload, ensure_ascii=False)[:4000]
+    except TypeError:
+        return str(payload)[:4000]
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -29,13 +817,6 @@ except Exception:
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
-st.set_page_config(
-    page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
-    page_icon="🏠",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
 DB_NAME = "ccm_maritime_enterprise.db"
 LOGO_FILENAME = "logo_ccm_print.jpg"
 RUTAS_LOGO = (
