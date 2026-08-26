@@ -274,7 +274,7 @@ DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
-# Hubs y módulos base siguen abiertos; Envíos y Fichas solo se ven dentro de Mis Cotizaciones.
+# Hubs y módulos base siguen abiertos; Envíos solo se ve en la barra al abrir Mis Cotizaciones.
 PERMISOS_ABIERTOS_TEMPORAL = True
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
@@ -441,12 +441,12 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
 
 
 def vista_muestra_envios_fichas():
-    """Envíos y Fichas solo en la barra cuando el usuario está en Mis Cotizaciones (o ya en esos módulos)."""
-    return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+    """Envíos solo en la barra cuando el usuario está en Mis Cotizaciones o Envíos."""
+    return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos")
 
 
 def china_seguimiento_habilitado():
-    """Compatibilidad: Envíos y Fichas se habilitan al abrir Mis Cotizaciones."""
+    """Compatibilidad: Envíos se habilita al abrir Mis Cotizaciones."""
     habilitado = vista_muestra_envios_fichas()
     st.session_state["china_modulos_desbloqueados"] = habilitado
     return habilitado
@@ -461,9 +461,9 @@ def modulos_china_visibles():
 
 
 def modulos_china_nav():
-    """Barra superior: Envíos y Fichas solo en Mis Cotizaciones / Envíos / Fichas. Nunca se ocultan con CSS."""
+    """Barra superior: Envíos solo en Mis Cotizaciones / Envíos. Fichas no va en el menú."""
     mods = HUBS["china"]["modulos"]
-    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
+    permitidos = [m for m in mods if usuario_puede_modulo(m["id"]) and m["id"] != "Etiqueta"]
     if vista_muestra_envios_fichas():
         return permitidos
     bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
@@ -3247,7 +3247,7 @@ elif st.session_state["rol"] == "cliente":
                             ir_a(modulo["id"], hub="china")
 
         if mostrar_subnav_china and st.session_state["sub_tab_inicio"] != "Cotizador":
-            if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
+            if st.session_state["sub_tab_inicio"] == "Mis Envíos":
                 st.markdown(
                     '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
                     unsafe_allow_html=True,
@@ -3282,7 +3282,7 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
             mods = modulos_china_visibles()
-            st.caption("Envíos y Fichas aparecen en la barra superior al abrir Mis Cotizaciones.")
+            st.caption("Envíos aparece en la barra superior al abrir Mis Cotizaciones.")
             with st.container(key="china_modulos"):
                 for fila in range(0, len(mods), 2):
                     cols_mod = st.columns(2, gap="small")
@@ -3441,7 +3441,7 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info(
                 "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
-                "tiene 24 horas para confirmarla y habilitar Envíos y Fichas."
+                "tiene 24 horas para confirmarla y habilitar Envíos."
             )
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
@@ -3924,8 +3924,8 @@ elif st.session_state["rol"] == "cliente":
         else:
             st.info("No tienes paquetes registrados en travesía.")
 
-        st.markdown("#### 📄 PDF Tarifa de cotizaciones confirmadas")
-        st.caption("Descargue el comprobante de tarifa de cada cotización consolidada en cualquier momento.")
+        st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
+        st.caption("Descargue la ficha de bodega y el PDF Tarifa de cada cotización consolidada.")
         cotizaciones_despacho = ordenar_cotizaciones_desc(
             [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
         )
@@ -3950,7 +3950,7 @@ elif st.session_state["rol"] == "cliente":
                 if es_foco:
                     st.success(
                         f"CCM-COT-{id_e:05d} está lista para seguimiento. "
-                        "Descargue el PDF Tarifa de esta cotización consolidada."
+                        "Descargue la Ficha y el PDF Tarifa de esta cotización consolidada."
                     )
                 st.markdown(
                     f"""
@@ -3961,6 +3961,28 @@ elif st.session_state["rol"] == "cliente":
                 </div>
                 """,
                     unsafe_allow_html=True,
+                )
+                pdf_ficha_env = generar_pdf_etiqueta_proveedor(
+                    casillero=casillero,
+                    nombre=nombre_completo,
+                    telefono=tel_cli,
+                    ciudad=ciu_cli,
+                    al=al_e,
+                    an=an_e,
+                    la=la_e,
+                    pe_lb=pe_e,
+                    pe_kg=pe_e / 2.20462,
+                    vol_m3=vol_e,
+                    destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+                    fecha_emision=fec_e,
+                )
+                st.download_button(
+                    f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
+                    pdf_ficha_env,
+                    f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
+                    "application/pdf",
+                    key=f"dl_ficha_env_{id_e}",
+                    use_container_width=True,
                 )
                 pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
                     casillero=casillero,
@@ -3991,48 +4013,10 @@ elif st.session_state["rol"] == "cliente":
                 )
                 st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
         else:
-            st.info("Confirme una cotización para consultar y descargar el PDF Tarifa en este módulo.")
+            st.info("Confirme una cotización para consultar y descargar la Ficha y el PDF Tarifa en este módulo.")
 
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
-        st.markdown("#### 🏷️ Ficha de Envío Bodega Guangzhou")
-        st.caption(f"Dirección de Entrega vinculada: **{st.session_state['modalidad_envio_seleccionada']}**")
-
-        f_etiqueta_actual = obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
-        pdf_bytes = generar_pdf_etiqueta_proveedor(
-            casillero=casillero,
-            nombre=nombre_completo,
-            telefono=tel_cli,
-            ciudad=ciu_cli,
-            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
-            fecha_emision=f_etiqueta_actual,
-        )
-        st.download_button(
-            "📄 Descargar Etiqueta para Proveedor (PDF)",
-            pdf_bytes,
-            f"Shipping_Label_{casillero}.pdf",
-            "application/pdf",
-        )
-
-        destino_pantalla = (
-            str(st.session_state["modalidad_envio_seleccionada"])
-            .replace("📍", "")
-            .replace("📦", "")
-            .replace("🏬", "")
-            .strip()
-        )
-        st.markdown(
-            f"""
-        <div class="china-address-box" style="margin-top:10px;">
-<strong>CLIENT CODE / CASILLERO:</strong> {casillero}<br>
-<strong>DESTINATION / ENTREGA:</strong> {destino_pantalla.upper()}, HONDURAS<br>
-<strong>FECHA DE EMISIÓN:</strong> {f_etiqueta_actual}<br>
-<strong>ATTN:</strong> CHILAT / {casillero}<br>
-<strong>ADDRESS:</strong> CHILAT Logistics Warehouse, District B, Port Area, Guangzhou<br>
-<strong>ADDRESS (中文):</strong> 广东省广州市白云区集运仓 / 转 {casillero}
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        ir_a("Mis Envíos", hub="china")
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
