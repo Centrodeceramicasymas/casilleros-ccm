@@ -8,7 +8,6 @@ import random
 import string
 import textwrap
 from datetime import datetime, timezone, timedelta
-import base64
 import io
 import urllib.parse
 from functools import lru_cache
@@ -38,12 +37,6 @@ RUTAS_LOGO = (
     Path(__file__).resolve().parent / "assets" / "logo_ccm.png",
     Path(__file__).resolve().parent / "logo_ccm_print.jpg",
     Path(__file__).resolve().parent / "logo centro y mas.jpg",
-)
-RUTAS_LOGO_HEADER = (
-    Path(__file__).resolve().parent / "assets" / "logo_ccm_header.png",
-    Path(__file__).resolve().parent / "assets" / "logo_ccm.png",
-    Path(__file__).resolve().parent / "assets" / "logo_ccm_print.jpg",
-    Path(__file__).resolve().parent / "logo_ccm_print.jpg",
 )
 
 VIGENCIA_COTIZACION_HORAS = 24
@@ -605,25 +598,8 @@ def _prefijo_logo_pdf(ancho_pt=118.0):
     return ops, datos, pix_w, pix_h
 
 
-@lru_cache(maxsize=1)
-def uri_logo_encabezado():
-    """Data URI del logo institucional para el banner azul (login, casillero y admin)."""
-    for ruta in RUTAS_LOGO_HEADER:
-        if not ruta.is_file():
-            continue
-        mime = "image/png" if ruta.suffix.lower() == ".png" else "image/jpeg"
-        return f"data:{mime};base64,{base64.b64encode(ruta.read_bytes()).decode('ascii')}"
-    return ""
-
-
 def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""):
-    """Banner azul: nombre centrado, logo a la derecha; saludo y datos debajo a la izquierda."""
-    src = uri_logo_encabezado()
-    logo = (
-        f'<img class="app-header-logo" src="{src}" alt="Centro de Cerámicas y Más" />'
-        if src
-        else ""
-    )
+    """Banner azul tipográfico: nombre centrado a todo el ancho; datos debajo."""
     clases = "app-header-blue"
     if extra_class:
         clases = f"{clases} {extra_class}"
@@ -634,7 +610,6 @@ def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""
         f'<div class="{clases}"{estilo}>'
         f'<div class="app-header-top">'
         f'<div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>'
-        f"{logo}"
         f"</div>"
         f"{cuerpo_html_out}"
         f"</div>"
@@ -1880,7 +1855,7 @@ st.markdown(
         --nav-btn-h: 44px;
         --header-blue-pad-y: 8px;
         --header-blue-pad-x: 12px;
-        --brand-size: clamp(0.72rem, 0.42rem + 2.35cqi, 1.5rem);
+        --brand-size: clamp(1.05rem, 0.55rem + 2.6vw, 1.2rem);
         --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
@@ -1992,7 +1967,6 @@ st.markdown(
         container-type: inline-size;
         overflow: hidden !important;
         position: relative !important;
-        --header-logo-slot: 96px;
     }
 
     .app-header-top {
@@ -2004,9 +1978,8 @@ st.markdown(
         justify-content: center !important;
         width: 100% !important;
         min-width: 0 !important;
-        min-height: clamp(45px, 11cqi, 60px) !important;
-        margin: 0 0 4px 0 !important;
-        padding: 0 0 6px 0 !important;
+        margin: 0 0 6px 0 !important;
+        padding: 2px 0 8px 0 !important;
         border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
         box-sizing: border-box !important;
     }
@@ -2022,32 +1995,12 @@ st.markdown(
         text-align-last: left !important;
     }
 
-    .app-header-logo {
-        position: absolute !important;
-        right: 0 !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
-        flex: 0 0 auto !important;
-        display: block !important;
-        height: clamp(45px, 11cqi, 60px) !important;
-        width: auto !important;
-        max-height: 60px !important;
-        max-width: var(--header-logo-slot) !important;
-        object-fit: contain !important;
-        background: #ffffff !important;
-        border-radius: 8px !important;
-        padding: 3px 6px !important;
-        box-sizing: content-box !important;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16) !important;
-        z-index: 2 !important;
-    }
-
     .app-header-brand {
         display: block !important;
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 !important;
-        padding: 0 var(--header-logo-slot) !important;
+        padding: 0 2px !important;
         box-sizing: border-box !important;
         border-bottom: none !important;
         color: #ffffff !important;
@@ -2057,9 +2010,9 @@ st.markdown(
         text-wrap: nowrap !important;
         text-align: center !important;
         text-align-last: center !important;
-        letter-spacing: 0.03em !important;
-        word-spacing: 0 !important;
-        line-height: 1.15 !important;
+        letter-spacing: 0.04em !important;
+        word-spacing: 0.02em !important;
+        line-height: 1.2 !important;
         font-size: var(--brand-size) !important;
         overflow: hidden !important;
         text-overflow: clip !important;
@@ -2149,22 +2102,12 @@ st.markdown(
         .app-header-blue {
             border-radius: 11px !important;
             margin-bottom: 3px !important;
-            --header-logo-slot: 46px;
-        }
-        .app-header-logo {
-            height: 36px !important;
-            max-height: 36px !important;
-            max-width: 46px !important;
-            padding: 2px 3px !important;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
-            font-size: min(0.92rem, 3.9cqi) !important;
-            letter-spacing: 0 !important;
-            word-spacing: 0 !important;
-            padding-left: 46px !important;
-            padding-right: 46px !important;
+            font-size: clamp(1.05rem, 0.55rem + 2.6vw, 1.2rem) !important;
+            letter-spacing: 0.02em !important;
         }
         .app-greeting-sub {
             display: flex !important;
@@ -2199,13 +2142,12 @@ st.markdown(
         }
         .app-header-blue {
             border-radius: 14px !important;
-            --header-logo-slot: 52px;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
-            font-size: min(1.05rem, 4.2cqi) !important;
-            letter-spacing: 0.01em !important;
+            font-size: clamp(1.12rem, 0.7rem + 1.8vw, 1.25rem) !important;
+            letter-spacing: 0.035em !important;
         }
     }
 
@@ -2221,6 +2163,10 @@ st.markdown(
             --sticky-h: 194px;
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
+        .app-header-brand {
+            font-size: clamp(1.25rem, 0.85rem + 1.1vw, 1.4rem) !important;
+            letter-spacing: 0.045em !important;
+        }
         .app-greeting-sub {
             white-space: nowrap !important;
             overflow: hidden !important;
@@ -2244,6 +2190,10 @@ st.markdown(
             --sticky-h: 184px;
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
+        .app-header-brand {
+            font-size: clamp(1.45rem, 1.05rem + 0.7vw, 1.65rem) !important;
+            letter-spacing: 0.05em !important;
+        }
         .app-greeting-sub {
             white-space: nowrap !important;
             overflow: hidden !important;
