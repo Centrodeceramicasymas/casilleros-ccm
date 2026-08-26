@@ -13,6 +13,12 @@ import urllib.parse
 from functools import lru_cache
 from pathlib import Path
 
+from aliexpress_client import (
+    buscar_aliexpress_imagen,
+    buscar_aliexpress_texto,
+    credenciales_configuradas,
+)
+
 try:
     from zoneinfo import ZoneInfo
 
@@ -252,8 +258,8 @@ HUBS = {
     "eeuu": {
         "label": "EE. UU.",
         "icon": "🇺🇸",
-        "descripcion": "Módulo en preparación para envíos desde Estados Unidos",
-        "activo": False,
+        "descripcion": "Búsqueda y cotización AliExpress con envío a Estados Unidos",
+        "activo": True,
         "modulos": [],
     },
     "honduras": {
@@ -1959,6 +1965,263 @@ def buscar_productos_1688_imagen(image_bytes):
     ]
 
 
+def agregar_producto_ae_a_casillero(casillero, producto, cantidad=1):
+    cas = formatear_casillero(casillero)
+    sku = producto.get("sku") or f"AE-{producto.get('product_id')}"
+    _, fecha = estampa_tiempo_honduras()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, cantidad FROM carrito_catalogo WHERE codigo_casillero = ? AND sku = ?",
+            (cas, sku),
+        )
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                """
+                UPDATE carrito_catalogo
+                SET cantidad = ?, precio_unitario_usd = ?, nombre = ?, imagen_url = ?,
+                    peso_unitario_kg = ?, volumen_unitario_m3 = ?, fecha = ?
+                WHERE id = ?
+                """,
+                (
+                    int(row[1]) + int(cantidad or 1),
+                    float(producto.get("precio_usd") or 0),
+                    producto.get("titulo") or sku,
+                    producto.get("imagen_url") or "",
+                    float(producto.get("peso_kg") or 0.8),
+                    float(producto.get("volumen_m3") or 0.004),
+                    fecha,
+                    row[0],
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO carrito_catalogo (
+                    codigo_casillero, sku, nombre, cantidad, precio_unitario_usd,
+                    peso_unitario_kg, volumen_unitario_m3, imagen_url, fecha
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cas,
+                    sku,
+                    producto.get("titulo") or sku,
+                    int(cantidad or 1),
+                    float(producto.get("precio_usd") or 0),
+                    float(producto.get("peso_kg") or 0.8),
+                    float(producto.get("volumen_m3") or 0.004),
+                    producto.get("imagen_url") or "",
+                    fecha,
+                ),
+            )
+        conn.commit()
+    return sku
+
+
+def listar_carrito_ae(casillero):
+    cas = formatear_casillero(casillero)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT sku, nombre, cantidad, precio_unitario_usd, imagen_url, fecha
+            FROM carrito_catalogo
+            WHERE codigo_casillero = ? AND sku LIKE 'AE-%'
+            ORDER BY id DESC
+            """,
+            (cas,),
+        )
+        return cur.fetchall()
+
+
+def _ejecutar_busqueda_aliexpress(modo, keyword, imagen_bytes, min_usd, max_usd, orden):
+    if modo == "imagen":
+        return buscar_aliexpress_imagen(imagen_bytes, min_usd=min_usd, max_usd=max_usd, orden=orden)
+    return buscar_aliexpress_texto(keyword, min_usd=min_usd, max_usd=max_usd, orden=orden)
+
+
+def pintar_modulo_aliexpress_eeuu(casillero):
+    st.markdown("#### 🇺🇸 EE. UU.")
+    st.caption("Búsqueda y cotización AliExpress con destino / envío a Estados Unidos.")
+    st.markdown(
+        f'<div class="ae-casillero-chip">Casillero activo: {casillero}</div>',
+        unsafe_allow_html=True,
+    )
+    if credenciales_configuradas():
+        st.caption("API AliExpress Open Platform · moneda USD · país de destino US · idioma ES.")
+    else:
+        st.info(
+            "Configure `ALIEXPRESS_APP_SECRET` (y opcionalmente `ALIEXPRESS_TRACKING_ID`) "
+            "en secretos o variables de entorno para resultados en vivo. "
+            "Mientras tanto se usa un catálogo de demostración con envío a EE. UU."
+        )
+
+    flash = st.session_state.pop("ae_flash", None)
+    if flash:
+        st.success(flash)
+
+    meta_prev = st.session_state.get("ae_busqueda_meta") or {}
+    if meta_prev.get("error"):
+        st.error(meta_prev["error"])
+    if meta_prev.get("aviso"):
+        st.warning(meta_prev["aviso"])
+
+    f1, f2, f3 = st.columns([1, 1, 1.2])
+    with f1:
+        min_usd = st.number_input(
+            "Precio mín. (USD)",
+            min_value=0.0,
+            max_value=100000.0,
+            value=0.0,
+            step=1.0,
+            key="ae_min_usd",
+        )
+    with f2:
+        max_usd = st.number_input(
+            "Precio máx. (USD)",
+            min_value=0.0,
+            max_value=100000.0,
+            value=0.0,
+            step=1.0,
+            key="ae_max_usd",
+        )
+    with f3:
+        orden = st.selectbox(
+            "Ordenar por",
+            ["Más vendidos", "Mejor precio", "Calificación"],
+            key="ae_orden",
+        )
+
+    tab_kw, tab_img = st.tabs(["Búsqueda por Palabra Clave", "Búsqueda por Imagen"])
+    with tab_kw:
+        keyword = st.text_input(
+            "Término de búsqueda",
+            placeholder="Ej. piezas cnc, auriculares, herramientas",
+            key="ae_keyword",
+        )
+        buscar_kw = st.button(
+            "🔍 Buscar en AliExpress",
+            type="primary",
+            key="btn_ae_buscar_kw",
+            use_container_width=True,
+        )
+        if buscar_kw:
+            with st.spinner("Buscando productos en AliExpress..."):
+                resultado = _ejecutar_busqueda_aliexpress(
+                    "texto", keyword, None, min_usd, max_usd, orden
+                )
+            st.session_state["ae_resultados"] = resultado.get("productos") or []
+            st.session_state["ae_busqueda_meta"] = resultado
+            st.rerun()
+    with tab_img:
+        img_up = st.file_uploader(
+            "Foto del producto (JPG o PNG)",
+            type=["jpg", "jpeg", "png"],
+            key="ae_img_upload",
+        )
+        buscar_img = st.button(
+            "🔍 Buscar en AliExpress",
+            type="primary",
+            key="btn_ae_buscar_img",
+            use_container_width=True,
+        )
+        if buscar_img:
+            imagen_bytes = img_up.getvalue() if img_up else None
+            with st.spinner("Buscando productos en AliExpress..."):
+                resultado = _ejecutar_busqueda_aliexpress(
+                    "imagen", "", imagen_bytes, min_usd, max_usd, orden
+                )
+            st.session_state["ae_resultados"] = resultado.get("productos") or []
+            st.session_state["ae_busqueda_meta"] = resultado
+            st.rerun()
+
+    resultados = st.session_state.get("ae_resultados") or []
+    meta = st.session_state.get("ae_busqueda_meta")
+    if not meta:
+        st.markdown(
+            '<div class="hub-empty-box ae-empty-hint">'
+            "<div style='font-weight:800;color:#0f172a;margin-bottom:6px;'>AliExpress · envío a EE. UU.</div>"
+            "<div style='font-size:0.86rem;font-weight:600;'>"
+            "Escriba un término (piezas CNC, auriculares, herramientas) o suba una foto del producto."
+            "</div>"
+            "<div style='font-size:0.78rem;margin-top:10px;color:#94a3b8;'>"
+            "Los resultados muestran precio en USD, calificación y enlace de compra. "
+            "Use Cotizar importación / Agregar a casillero para vincular el artículo a su casillero."
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+    elif not resultados:
+        if not meta.get("error"):
+            st.warning("No hay stock disponible para los filtros indicados.")
+    else:
+        fuente = (st.session_state.get("ae_busqueda_meta") or {}).get("fuente")
+        n_prod = len(resultados)
+        etiqueta_fuente = "AliExpress" if fuente == "api" else "demostración"
+        st.caption(f"{n_prod} producto{'s' if n_prod != 1 else ''} · {etiqueta_fuente} · destino US · USD")
+        n_cols = 3
+        for fila in range(0, n_prod, n_cols):
+            cols = st.columns(n_cols, gap="small")
+            for offset, col in enumerate(cols):
+                idx = fila + offset
+                if idx >= n_prod:
+                    break
+                prod = resultados[idx]
+                with col:
+                    pintar_tarjeta_aliexpress(prod, casillero, idx)
+
+    carrito = listar_carrito_ae(casillero)
+    st.markdown("##### Artículos AliExpress en el casillero")
+    if not carrito:
+        st.caption("Aún no hay productos de AliExpress vinculados a este casillero.")
+        return
+    for sku, nombre, cantidad, precio, _imagen, fecha in carrito:
+        st.markdown(
+            f"- **{nombre}** · `{sku}` · {int(cantidad)} ud. · "
+            f"**${float(precio):.2f} USD** · {fecha}"
+        )
+
+
+def pintar_tarjeta_aliexpress(prod, casillero, idx):
+    titulo = (prod.get("titulo") or "Producto AliExpress").strip()
+    if len(titulo) > 78:
+        titulo_corto = titulo[:75].rstrip() + "…"
+    else:
+        titulo_corto = titulo
+    precio = float(prod.get("precio_usd") or 0)
+    calif = prod.get("calificacion")
+    enlace = prod.get("enlace") or "https://www.aliexpress.com"
+    imagen = prod.get("imagen_url") or ""
+    calc = calcular_costo_puesto_honduras(
+        precio,
+        float(prod.get("peso_kg") or 0.8),
+        float(prod.get("volumen_m3") or 0.004),
+        1,
+    )
+    with st.container(border=True):
+        if imagen:
+            st.image(imagen, use_container_width=True)
+        st.markdown(f"**{titulo_corto}**")
+        if calif:
+            st.caption(f"★ {calif:.1f} · ID {prod.get('product_id')}")
+        else:
+            st.caption(f"ID {prod.get('product_id')}")
+        st.markdown(f'<div class="ae-price">${precio:.2f} USD</div>', unsafe_allow_html=True)
+        st.caption(f"Est. puesto en Honduras: ${calc['total_estimado_usd']:.2f} USD")
+        st.link_button("Ver en AliExpress", enlace, use_container_width=True)
+        if st.button(
+            "Cotizar importación / Agregar a casillero",
+            key=f"ae_add_{prod.get('product_id')}_{idx}",
+            use_container_width=True,
+        ):
+            sku = agregar_producto_ae_a_casillero(casillero, prod)
+            st.session_state["ae_flash"] = (
+                f"Artículo vinculado al casillero {casillero} (`{sku}`). "
+                f"Precio AliExpress ${precio:.2f} USD."
+            )
+            st.rerun()
+
+
 # ---------------------------------------------------------
 # 5. GESTIÓN DE SESIÓN PERSISTENTE MEDIANTE QUERY_PARAMS
 # ---------------------------------------------------------
@@ -2925,6 +3188,25 @@ st.markdown(
         color: #64748b;
         margin-top: 8px;
     }
+    .ae-casillero-chip {
+        display: inline-block;
+        background: #e8eef9;
+        color: #003399;
+        font-weight: 700;
+        font-size: 0.78rem;
+        padding: 4px 12px;
+        border-radius: 999px;
+        margin: 4px 0 12px 0;
+    }
+    .ae-price {
+        font-weight: 800;
+        color: #003399;
+        font-size: 1.12rem;
+        margin: 2px 0 6px 0;
+    }
+    .ae-empty-hint {
+        text-align: left;
+    }
     .china-address-box {
         background-color: #0f172a;
         border: 2px dashed #0052cc;
@@ -3755,6 +4037,8 @@ elif st.session_state["rol"] == "cliente":
                                 f'<div class="mod-detalle">{modulo["detalle"]}</div>',
                                 unsafe_allow_html=True,
                             )
+        elif hub_sel == "eeuu":
+            pintar_modulo_aliexpress_eeuu(casillero)
         elif hub_sel in HUBS:
             hub_vacio = HUBS[hub_sel]
             st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
