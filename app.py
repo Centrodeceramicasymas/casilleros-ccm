@@ -1877,12 +1877,13 @@ st.markdown(
         --app-max-width: 520px;
         --app-pad: 0.7rem;
         --nav-btn-w: 108px;
-        --nav-btn-h: 40px;
+        --nav-btn-h: 44px;
         --header-blue-pad-y: 8px;
         --header-blue-pad-x: 12px;
-        --greeting-title: 0.95rem;
-        --greeting-sub: 0.68rem;
-        --greeting-time: 0.62rem;
+        --brand-size: clamp(1.1rem, 0.88rem + 1.35vw, 1.5rem);
+        --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
+        --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
+        --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --sticky-h: 176px;
         --sticky-delivery: 0px;
     }
@@ -1915,10 +1916,12 @@ st.markdown(
 
     .stApp {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        overflow: visible !important;
+        overflow-x: hidden !important;
+        overflow-y: visible !important;
         height: auto !important;
         min-height: 100% !important;
         color-scheme: light !important;
+        max-width: 100% !important;
     }
 
     #MainMenu, footer, header, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
@@ -1969,7 +1972,8 @@ st.markdown(
         box-sizing: border-box !important;
         border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
-        overflow: visible !important;
+        overflow-x: clip !important;
+        overflow-y: visible !important;
     }
 
     .app-header-blue {
@@ -2049,15 +2053,16 @@ st.markdown(
         color: #ffffff !important;
         font-weight: 800 !important;
         text-transform: uppercase !important;
-        white-space: nowrap !important;
+        white-space: normal !important;
+        text-wrap: balance !important;
         text-align: center !important;
         text-align-last: center !important;
-        letter-spacing: 0.05em !important;
+        letter-spacing: 0.04em !important;
         word-spacing: normal !important;
-        line-height: 1.2 !important;
-        font-size: clamp(0.78rem, 4.2cqi, 1.32rem) !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
+        line-height: 1.15 !important;
+        font-size: var(--brand-size) !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
     }
 
     .st-key-sticky_top_header [data-testid="stMarkdown"],
@@ -2073,8 +2078,12 @@ st.markdown(
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
-        line-height: 1.2 !important;
+        line-height: 1.25 !important;
         letter-spacing: -0.2px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 100% !important;
     }
 
     .app-header-login {
@@ -2100,15 +2109,29 @@ st.markdown(
         color: #dbeafe !important;
         margin-top: 0 !important;
         font-weight: 500 !important;
-        line-height: 1.25 !important;
+        line-height: 1.35 !important;
+        white-space: normal !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        max-width: 100% !important;
+    }
+
+    .app-header-casillero,
+    .app-header-cots {
+        display: inline !important;
+    }
+    .app-header-sep {
+        display: inline !important;
     }
 
     .app-header-time {
         font-size: var(--greeting-time) !important;
         color: #bfdbfe !important;
-        margin-top: 1px !important;
+        margin-top: 2px !important;
         font-weight: 600 !important;
-        line-height: 1.2 !important;
+        line-height: 1.35 !important;
+        white-space: normal !important;
+        max-width: 100% !important;
     }
 
     /* iPhone / Android compacto */
@@ -2116,30 +2139,36 @@ st.markdown(
         :root {
             --app-max-width: 100vw;
             --app-pad: 0.55rem;
-            --nav-btn-w: 102px;
-            --nav-btn-h: 38px;
+            --nav-btn-w: 104px;
+            --nav-btn-h: 44px;
             --header-blue-pad-y: 8px;
             --header-blue-pad-x: 12px;
-            --greeting-title: 0.92rem;
-            --greeting-sub: 0.66rem;
-            --greeting-time: 0.60rem;
             --sticky-h: 168px;
             --sticky-delivery: 0px;
         }
         .app-header-blue {
             border-radius: 11px !important;
             margin-bottom: 3px !important;
-            --header-logo-slot: 76px;
+            --header-logo-slot: 72px;
         }
         .app-header-logo {
             height: 45px !important;
             max-height: 45px !important;
-            max-width: 76px !important;
+            max-width: 72px !important;
             padding: 2px 4px !important;
         }
-        .app-header-brand {
-            font-size: clamp(0.66rem, 3.4vw, 0.84rem) !important;
-            letter-spacing: 0.03em !important;
+        .app-greeting-sub {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 2px !important;
+        }
+        .app-header-sep {
+            display: none !important;
+        }
+        .app-header-casillero,
+        .app-header-cots {
+            display: block !important;
         }
         .inicio-placeholder { min-height: 260px; }
         .inicio-placeholder-body { min-height: 180px; }
@@ -2154,12 +2183,9 @@ st.markdown(
             --app-max-width: 560px;
             --app-pad: 0.75rem;
             --nav-btn-w: 112px;
-            --nav-btn-h: 42px;
+            --nav-btn-h: 44px;
             --header-blue-pad-y: 11px;
             --header-blue-pad-x: 14px;
-            --greeting-title: 1.05rem;
-            --greeting-sub: 0.74rem;
-            --greeting-time: 0.68rem;
             --sticky-h: 182px;
         }
         .app-header-blue { border-radius: 14px !important; }
@@ -2174,12 +2200,16 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
-            --greeting-title: 1.22rem;
-            --greeting-sub: 0.84rem;
-            --greeting-time: 0.74rem;
             --sticky-h: 194px;
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
+        .app-greeting-sub {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+        }
         .card-box { padding: 1.35rem; }
         .inicio-placeholder { min-height: 380px; }
     }
@@ -2193,12 +2223,16 @@ st.markdown(
             --nav-btn-h: 46px;
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
-            --greeting-title: 1.35rem;
-            --greeting-sub: 0.90rem;
-            --greeting-time: 0.78rem;
             --sticky-h: 184px;
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
+        .app-greeting-sub {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+        }
         .card-box { padding: 1.5rem; border-radius: 16px; }
         .inicio-placeholder { min-height: 420px; }
         .swipe-indicator-bar { display: none; }
@@ -2257,7 +2291,7 @@ st.markdown(
         min-width: 100% !important;
         margin: 0 auto !important;
         padding-right: 0 !important;
-        gap: 12px !important;
+        gap: 8px !important;
     }
 
     .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div,
@@ -2282,11 +2316,11 @@ st.markdown(
         width: var(--nav-btn-w) !important;
         min-width: var(--nav-btn-w) !important;
         height: var(--nav-btn-h) !important;
-        min-height: var(--nav-btn-h) !important;
-        max-height: var(--nav-btn-h) !important;
+        min-height: 44px !important;
+        max-height: none !important;
         border-radius: 10px !important;
         padding: 0 8px !important;
-        font-size: 0.76rem !important;
+        font-size: clamp(0.72rem, 0.64rem + 0.35vw, 0.82rem) !important;
         font-weight: 700 !important;
         white-space: nowrap !important;
         overflow: hidden !important;
@@ -2742,8 +2776,8 @@ st.markdown(
     .st-key-btn_logout_cliente button[kind="secondary"] {
         width: var(--nav-btn-w) !important;
         height: var(--nav-btn-h) !important;
-        min-height: var(--nav-btn-h) !important;
-        max-height: var(--nav-btn-h) !important;
+        min-height: 44px !important;
+        max-height: none !important;
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -3203,7 +3237,7 @@ elif st.session_state["rol"] == "cliente":
         st.markdown(
             html_encabezado_institucional(
                 f'<div class="app-greeting-title">{saludo_horario}, {nombre_display}</div>'
-                f'<div class="app-greeting-sub">Casillero: <b>{casillero}</b> &bull; {total_cotizaciones} Cotizaciones</div>'
+                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
                 f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
             ),
             unsafe_allow_html=True,
