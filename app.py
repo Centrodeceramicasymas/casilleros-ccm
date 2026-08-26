@@ -536,26 +536,103 @@ def ir_a_cotizacion_emitida(id_cot):
     ir_a("Mis Cotizaciones", hub="china")
 
 
-def desplazar_a_cotizacion_pendiente():
-    """Auto-scroll suave hasta la tarjeta que hay que confirmar (bajo el header sticky)."""
+def sincronizar_altura_encabezado_fijo():
+    """Mide el borde inferior del bloque congelado y actualiza --header-offset."""
+    with st.container(key="header_offset_sync"):
+        components.html(
+            """
+            <script>
+            (function () {
+              const doc = window.parent.document;
+              const win = window.parent;
+              const nodosHeader = () => {
+                const exactos = Array.from(doc.querySelectorAll('[class~="st-key-sticky_top_header"]'));
+                return exactos.length ? exactos : Array.from(doc.querySelectorAll(".st-key-sticky_top_header"));
+              };
+              const medir = () => {
+                let bottom = 0;
+                nodosHeader().forEach((nodo) => {
+                  const r = nodo.getBoundingClientRect();
+                  if (r.bottom > bottom) bottom = r.bottom;
+                });
+                if (bottom < 40) return;
+                const estilos = win.getComputedStyle(doc.documentElement);
+                const gapRaw = estilos.getPropertyValue("--header-gap").trim();
+                const gap = Number.parseFloat(gapRaw) || 16;
+                const offset = Math.ceil(bottom + gap) + "px";
+                const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
+                destinos.forEach((nodo) => {
+                  if (nodo && nodo.style) nodo.style.setProperty("--header-offset", offset);
+                });
+              };
+              win.__ccmMedirHeader = medir;
+              medir();
+              if (win.__ccmHeaderOffsetRO) {
+                try { win.__ccmHeaderOffsetRO.disconnect(); } catch (e) {}
+              }
+              if (typeof win.ResizeObserver === "function") {
+                const ro = new win.ResizeObserver(medir);
+                nodosHeader().forEach((nodo) => ro.observe(nodo));
+                win.__ccmHeaderOffsetRO = ro;
+              }
+              if (!win.__ccmHeaderOffsetBound) {
+                win.__ccmHeaderOffsetBound = true;
+                win.addEventListener("resize", medir, { passive: true });
+                win.addEventListener("orientationchange", medir, { passive: true });
+              }
+              setTimeout(medir, 80);
+              setTimeout(medir, 280);
+              setTimeout(medir, 800);
+            })();
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
+    st.markdown('<div class="ccm-header-spacer" aria-hidden="true"></div>', unsafe_allow_html=True)
+
+
+def desplazar_a_ancla(element_id):
+    """Auto-scroll suave hasta un ancla, dejando el encabezado congelado por encima."""
+    eid = str(element_id or "").replace("\\", "").replace('"', "")
+    if not eid:
+        return
     components.html(
-        """
+        f"""
         <script>
-        (function () {
-          const ir = () => {
+        (function () {{
+          const ir = () => {{
             const doc = window.parent.document;
-            const el = doc.getElementById("cotizacion-foco-pendiente");
+            const win = window.parent;
+            const el = doc.getElementById("{eid}");
             if (!el) return;
-            el.scrollIntoView({ behavior: "smooth", block: "start" });
-          };
+            if (typeof win.__ccmMedirHeader === "function") win.__ccmMedirHeader();
+            let bottom = 0;
+            doc.querySelectorAll('[class~="st-key-sticky_top_header"], .st-key-sticky_top_header').forEach((nodo) => {{
+              const r = nodo.getBoundingClientRect();
+              if (r.bottom > bottom) bottom = r.bottom;
+            }});
+            const estilos = win.getComputedStyle(doc.documentElement);
+            const gapRaw = estilos.getPropertyValue("--header-gap").trim();
+            const gap = Number.parseFloat(gapRaw) || 16;
+            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 196);
+            el.style.scrollMarginTop = margen + "px";
+            el.scrollIntoView({{ behavior: "smooth", block: "start" }});
+          }};
           setTimeout(ir, 180);
           setTimeout(ir, 480);
-        })();
+          setTimeout(ir, 900);
+        }})();
         </script>
         """,
         height=0,
         scrolling=False,
     )
+
+
+def desplazar_a_cotizacion_pendiente():
+    """Auto-scroll suave hasta la tarjeta que hay que confirmar (bajo el encabezado fijo)."""
+    desplazar_a_ancla("cotizacion-foco-pendiente")
 
 
 # ---------------------------------------------------------
@@ -1859,8 +1936,10 @@ st.markdown(
         --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
-        --sticky-h: 176px;
+        --sticky-h: 196px;
         --sticky-delivery: 0px;
+        --header-offset: var(--sticky-h);
+        --header-gap: 16px;
     }
 
     html, body {
@@ -1930,25 +2009,65 @@ st.markdown(
     }
 
     .st-key-sticky_top_header,
-    div[class*="st-key-sticky_top_header"] {
-        position: sticky !important;
+    div[class~="st-key-sticky_top_header"] {
+        position: fixed !important;
         top: 0 !important;
-        left: auto !important;
-        right: auto !important;
-        width: 100% !important;
-        max-width: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+        transform: none !important;
+        width: min(100%, var(--app-max-width)) !important;
+        max-width: var(--app-max-width) !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
         z-index: 999 !important;
         background-color: #f8fafc !important;
+        background: #f8fafc !important;
+        background-image: none !important;
+        opacity: 1 !important;
         padding-top: max(0.35rem, env(safe-area-inset-top, 0px)) !important;
-        padding-bottom: 0.35rem !important;
-        margin: 0 0 0.35rem 0 !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
+        padding-bottom: 0.45rem !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-left: var(--app-pad) !important;
+        padding-right: var(--app-pad) !important;
         box-sizing: border-box !important;
-        border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
-        overflow-x: clip !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12) !important;
+        overflow-x: visible !important;
         overflow-y: visible !important;
+        isolation: isolate !important;
+    }
+
+    .ccm-header-spacer {
+        display: block !important;
+        height: var(--header-offset) !important;
+        min-height: var(--header-offset) !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+
+    .st-key-header_offset_sync {
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+    }
+
+    [id="cotizacion-foco-pendiente"],
+    [id="cotizacion-envio-foco"],
+    [id^="cotizacion-ccm-"],
+    [id^="cotizacion-env-"],
+    .cotizacion-pendiente-foco,
+    [data-testid="stHeading"],
+    [data-testid="stCaptionContainer"],
+    .stApp:has(.st-key-sticky_top_header) .block-container > div > div {
+        scroll-margin-top: var(--header-offset) !important;
     }
 
     .app-header-blue {
@@ -2096,8 +2215,9 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 8px;
             --header-blue-pad-x: 12px;
-            --sticky-h: 168px;
+            --sticky-h: 280px;
             --sticky-delivery: 0px;
+            --header-offset: var(--sticky-h);
         }
         .app-header-blue {
             border-radius: 11px !important;
@@ -2138,7 +2258,8 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 11px;
             --header-blue-pad-x: 14px;
-            --sticky-h: 182px;
+            --sticky-h: 240px;
+            --header-offset: var(--sticky-h);
         }
         .app-header-blue {
             border-radius: 14px !important;
@@ -2160,7 +2281,8 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
-            --sticky-h: 194px;
+            --sticky-h: 220px;
+            --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
         .app-header-brand {
@@ -2187,7 +2309,8 @@ st.markdown(
             --nav-btn-h: 46px;
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
-            --sticky-h: 184px;
+            --sticky-h: 200px;
+            --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
         .app-header-brand {
@@ -2333,7 +2456,7 @@ st.markdown(
 
     .cotizacion-pendiente-foco {
         animation: cotPulseBorde 1.55s ease-in-out infinite;
-        scroll-margin-top: 12.5rem;
+        scroll-margin-top: var(--header-offset) !important;
     }
     .cotizacion-badge-pendiente {
         display: inline-block;
@@ -3258,6 +3381,8 @@ elif st.session_state["rol"] == "cliente":
                     unsafe_allow_html=True,
                 )
 
+    sincronizar_altura_encabezado_fijo()
+
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
 
@@ -3948,13 +4073,16 @@ elif st.session_state["rol"] == "cliente":
                 borde = "#004ac1" if es_foco else "#e2e8f0"
                 fondo = "#eff6ff" if es_foco else "#f8fafc"
                 if es_foco:
+                    st.markdown('<div id="cotizacion-envio-foco"></div>', unsafe_allow_html=True)
                     st.success(
                         f"CCM-COT-{id_e:05d} está lista para seguimiento. "
                         "Descargue la Ficha y el PDF Tarifa de esta cotización consolidada."
                     )
+                    desplazar_a_ancla("cotizacion-envio-foco")
+                id_ancla_env = f'id="cotizacion-env-{id_e}"'
                 st.markdown(
                     f"""
-                <div style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
                     <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_e)}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
                     <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
                     <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
