@@ -987,6 +987,9 @@ if "vista_activa" not in st.session_state:
 if "hub" not in st.session_state:
     st.session_state["hub"] = None
 
+if "mostrar_guia" not in st.session_state:
+    st.session_state["mostrar_guia"] = False
+
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
@@ -1552,6 +1555,7 @@ def ir_a_mas():
 
 def iniciar_guia_desde_mas():
     """Activa la guía interactiva y abre Inicio (China) para el recorrido."""
+    st.session_state["mostrar_guia"] = True
     iniciar_guia_interactiva(1)
     ir_a("Inicio", hub="china")
 
@@ -1664,6 +1668,7 @@ def iniciar_guia_interactiva(paso=1):
 
 def omitir_guia_interactiva():
     st.session_state["guia_activa"] = False
+    st.session_state["mostrar_guia"] = False
     st.session_state["guia_omitida"] = True
     st.session_state["guia_paso"] = 0
     st.session_state["abrir_guia_rapida"] = False
@@ -1671,6 +1676,7 @@ def omitir_guia_interactiva():
 
 def completar_guia_interactiva():
     st.session_state["guia_activa"] = False
+    st.session_state["mostrar_guia"] = False
     st.session_state["guia_completada"] = True
     st.session_state["guia_paso"] = 0
 
@@ -1700,7 +1706,7 @@ def html_globo_guia():
     if not dato:
         return ""
     return (
-        f'<div class="guia-globo">'
+        f'<div class="guia-globo ccm-guia-card">'
         f'<div class="guia-globo-kicker">Paso {dato["paso"]} de 6</div>'
         f'<div class="guia-globo-titulo">{dato["titulo"]}</div>'
         f'<p class="guia-globo-txt">{dato["texto"]}</p>'
@@ -1746,34 +1752,34 @@ def aplicar_clase_guia_js():
     )
 
 
+def guia_tarjeta_visible():
+    """La tarjeta instructiva solo vive en Inicio/China y bajo demanda desde Más → Guía."""
+    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
+    return bool(
+        st.session_state.get("mostrar_guia")
+        and guia_esta_activa()
+        and not st.session_state.get("guia_omitida")
+        and not st.session_state.get("guia_completada")
+        and vista_actual == "Inicio"
+        and st.session_state.get("hub") == "china"
+    )
+
+
 @st.fragment
 def pintar_coach_guia():
-    detectar_avance_descarga_guia()
     aplicar_clase_guia_js()
-    if not guia_esta_activa():
-        return
-    if st.session_state.get("hub") != "china":
-        return
-    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
-    if vista_actual == "Más":
-        return
     with st.container(key="guia_coach"):
+        if not guia_tarjeta_visible():
+            st.markdown('<div class="ccm-guia-vacia" aria-hidden="true"></div>', unsafe_allow_html=True)
+            return
         st.markdown(html_globo_guia(), unsafe_allow_html=True)
         if st.button("Omitir Guía", type="secondary", key="btn_omitir_guia", on_click=omitir_guia_interactiva):
             pass
 
 
 def disparar_guia_china_si_aplica():
-    """Activa la guía interactiva al entrar a China por primera vez en la sesión."""
-    if st.session_state.get("hub") != "china":
-        return
-    if st.session_state.get("guia_china_auto_vista"):
-        return
-    if st.session_state.get("guia_omitida") or st.session_state.get("guia_completada"):
-        st.session_state["guia_china_auto_vista"] = True
-        return
-    st.session_state["guia_china_auto_vista"] = True
-    iniciar_guia_interactiva(1)
+    """La guía ya no arranca sola al entrar a China; solo desde Más → Guía."""
+    return
 
 
 def proximo_cierre_contenedor(ahora=None):
@@ -2150,6 +2156,7 @@ def anclar_barra_inferior():
                   }
                 }
                 const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
+                const inicio = doc.querySelector('[class~="st-key-vista_inicio"]') || doc.querySelector(".st-key-vista_inicio");
                 const catalogo = doc.querySelector('[class~="st-key-vista_catalogo"]') || doc.querySelector(".st-key-vista_catalogo");
                 const cotizador = doc.querySelector('[class~="st-key-vista_cotizador"]') || doc.querySelector(".st-key-vista_cotizador");
                 const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
@@ -2163,10 +2170,14 @@ def anclar_barra_inferior():
                   doc.querySelector(".st-key-btn_escanear_catalogo");
                 const vistaModulo = catalogo || cotizador;
                 const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                const hueco = (mas || vistaModulo) ? "0px" : "calc(200px + env(safe-area-inset-bottom, 0px))";
+                const hueco = (mas || vistaModulo || inicio) ? "0px" : "calc(200px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
+                if (inicio) {
+                  inicio.style.setProperty("padding-bottom", "180px", "important");
+                  inicio.style.setProperty("box-sizing", "border-box", "important");
+                }
                 const GAP_OBJETIVO = 12;
                 const esVistaMas = (nodo) =>
                   !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
@@ -4040,6 +4051,7 @@ def logout():
         "guia_paso",
         "guia_omitida",
         "guia_completada",
+        "mostrar_guia",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -4616,8 +4628,24 @@ st.markdown(
     .stMainBlockContainer:has(.st-key-vista_catalogo),
     .block-container:has(.st-key-vista_cotizador),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_cotizador),
-    .stMainBlockContainer:has(.st-key-vista_cotizador) {
+    .stMainBlockContainer:has(.st-key-vista_cotizador),
+    .block-container:has(.st-key-vista_inicio),
+    [data-testid="stMainBlockContainer"]:has(.st-key-vista_inicio),
+    .stMainBlockContainer:has(.st-key-vista_inicio) {
         padding-bottom: 0 !important;
+    }
+    .st-key-vista_inicio {
+        display: block !important;
+        padding-bottom: 180px !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }
+    .st-key-vista_inicio > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_inicio > [data-testid="stVerticalBlock"] {
+        gap: 8px !important;
+        margin-top: 0 !important;
     }
     .block-container:has(.st-key-vista_mas),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_mas),
@@ -5252,10 +5280,35 @@ st.markdown(
         border: 1.5px solid #f59e0b !important;
         border-radius: 12px !important;
         padding: 10px 12px 8px 12px !important;
-        margin: 12px 0 16px 0 !important;
+        margin: 4px 0 12px 0 !important;
         box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18) !important;
         box-sizing: border-box !important;
         overflow: visible !important;
+    }
+    .st-key-guia_coach:not(:has(.ccm-guia-card)),
+    .st-key-guia_coach:has(.ccm-guia-vacia) {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        visibility: hidden !important;
+    }
+    [data-testid="stElementContainer"]:has(.st-key-guia_coach:not(:has(.ccm-guia-card))),
+    [data-testid="stLayoutWrapper"]:has(.st-key-guia_coach:not(:has(.ccm-guia-card))),
+    [data-testid="stElementContainer"]:has(.ccm-guia-vacia),
+    [data-testid="stLayoutWrapper"]:has(.ccm-guia-vacia) {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
     }
     .guia-globo { margin: 0; }
     .guia-globo-kicker {
@@ -6436,52 +6489,51 @@ elif st.session_state["rol"] == "cliente":
         )
 
     sincronizar_altura_encabezado_fijo()
-    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
-    if vista_actual != "Más":
-        disparar_guia_china_si_aplica()
-        pintar_coach_guia()
+    detectar_avance_descarga_guia()
+    aplicar_clase_guia_js()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
-
-        if not hub_sel:
-            st.markdown("#### 🏠 Inicio")
-            st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
-            visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
-            if not visibles_hub:
-                st.info("Su cuenta no tiene hubs habilitados. Contacte al administrador.")
-            for hub_id, hub in HUBS.items():
-                if not usuario_puede_hub(hub_id):
-                    continue
-                if st.button(
-                    f"{hub['icon']}  {hub['label']}",
-                    type="secondary",
-                    key=f"hub_{hub_id}",
-                    use_container_width=True,
-                    on_click=ir_a,
-                    args=("Inicio", hub_id),
-                ):
-                    pass
-        elif hub_sel == "china":
-            hub_china = HUBS["china"]
-            st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
-            st.caption("Consolidación marítima China ➔ Honduras")
-            pintar_banner_promocional_china(casillero)
-        elif hub_sel == "eeuu":
-            pintar_modulo_aliexpress_eeuu(casillero)
-        elif hub_sel in HUBS:
-            hub_vacio = HUBS[hub_sel]
-            st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
-            st.markdown(
-                f'<div class="hub-empty-box">'
-                f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
-                f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
-                f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
-                f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
-                f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+        with st.container(key="vista_inicio"):
+            if not hub_sel:
+                st.markdown("#### 🏠 Inicio")
+                st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+                visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
+                if not visibles_hub:
+                    st.info("Su cuenta no tiene hubs habilitados. Contacte al administrador.")
+                for hub_id, hub in HUBS.items():
+                    if not usuario_puede_hub(hub_id):
+                        continue
+                    if st.button(
+                        f"{hub['icon']}  {hub['label']}",
+                        type="secondary",
+                        key=f"hub_{hub_id}",
+                        use_container_width=True,
+                        on_click=ir_a,
+                        args=("Inicio", hub_id),
+                    ):
+                        pass
+            elif hub_sel == "china":
+                pintar_coach_guia()
+                hub_china = HUBS["china"]
+                st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
+                st.caption("Consolidación marítima China ➔ Honduras")
+                pintar_banner_promocional_china(casillero)
+            elif hub_sel == "eeuu":
+                pintar_modulo_aliexpress_eeuu(casillero)
+            elif hub_sel in HUBS:
+                hub_vacio = HUBS[hub_sel]
+                st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
+                st.markdown(
+                    f'<div class="hub-empty-box">'
+                    f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
+                    f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
+                    f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
+                    f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
+                    f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
     if st.session_state["sub_tab_inicio"] == "Más":
         pintar_vista_mas()
