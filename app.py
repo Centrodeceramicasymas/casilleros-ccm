@@ -1348,11 +1348,73 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     return True
 
 
+def firma_parametros_cotizador(al, an, la, peso_lb, destino, tipo_carga):
+    """Huella de los parámetros que definen una tarifa emitida."""
+    return (
+        round(float(al or 0), 4),
+        round(float(an or 0), 4),
+        round(float(la or 0), 4),
+        round(float(peso_lb or 0), 4),
+        str(destino or "").strip(),
+        str(tipo_carga or "").strip(),
+    )
+
+
+def firma_desde_emision(d_pdf):
+    if not isinstance(d_pdf, dict):
+        return None
+    guardada = d_pdf.get("firma_params")
+    if isinstance(guardada, (list, tuple)) and len(guardada) == 6:
+        return tuple(guardada)
+    return firma_parametros_cotizador(
+        d_pdf.get("al"),
+        d_pdf.get("an"),
+        d_pdf.get("la"),
+        d_pdf.get("peso_lb"),
+        d_pdf.get("destino_entrega"),
+        d_pdf.get("tipo_carga"),
+    )
+
+
+def invalidar_emision_visible_cotizador():
+    """Oculta la tarjeta verde y los PDFs de la última emisión (el pendiente en historial se conserva)."""
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.session_state.pop("_ccm_scroll_emit", None)
+    st.session_state.pop("_ccm_emit_error", None)
+    for clave in list(st.session_state.keys()):
+        ks = str(clave)
+        if ks.startswith("dl_pdf_fab_") or ks.startswith("btn_ver_mis_cotizaciones_"):
+            st.session_state.pop(clave, None)
+
+
+def sincronizar_emision_con_formulario(firma_actual):
+    """Si el formulario ya no coincide con la tarifa emitida, oculta documentos y código anteriores."""
+    d_pdf = st.session_state.get("datos_pdf_confirmado")
+    if not isinstance(d_pdf, dict):
+        return False
+    if firma_desde_emision(d_pdf) != tuple(firma_actual):
+        invalidar_emision_visible_cotizador()
+        return True
+    return False
+
+
 def emitir_tarifa_desde_snapshot():
     """on_click: guarda la tarifa en SQLite y en st.session_state['cotizaciones']."""
     snap = st.session_state.get("_cot_emit_snapshot")
     casillero = formatear_casillero(st.session_state.get("casillero") or "")
     if not isinstance(snap, dict) or not casillero:
+        return
+    firma_snap = snap.get("firma_params") or firma_parametros_cotizador(
+        snap.get("al"),
+        snap.get("an"),
+        snap.get("la"),
+        snap.get("peso_lb"),
+        snap.get("destino"),
+        snap.get("tipo_carga"),
+    )
+    firma_snap = tuple(firma_snap)
+    d_emitida = st.session_state.get("datos_pdf_confirmado")
+    if isinstance(d_emitida, dict) and firma_desde_emision(d_emitida) == firma_snap:
         return
     ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
     f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
@@ -1428,6 +1490,7 @@ def emitir_tarifa_desde_snapshot():
         "destino_entrega": snap.get("destino"),
         "fecha_hora_doc": f_hoy_doc,
         "fecha_sql": f_hoy_sql,
+        "firma_params": list(firma_snap),
     }
     st.session_state["china_modulos_desbloqueados"] = True
     st.session_state.pop("_ccm_emit_error", None)
@@ -1498,6 +1561,7 @@ def selector_modalidad_entrega(opciones_modalidad):
     mod_elegida = st.selectbox(
         "🏪 ¿Cómo deseas recibir tu compra?",
         opciones_modalidad,
+        on_change=invalidar_emision_visible_cotizador,
         **sel_kwargs,
     )
     previa = st.session_state.get("modalidad_envio_seleccionada")
@@ -1507,7 +1571,7 @@ def selector_modalidad_entrega(opciones_modalidad):
         and previa is not None
         and mod_elegida != previa
     ):
-        st.session_state.pop("datos_pdf_confirmado", None)
+        invalidar_emision_visible_cotizador()
     st.session_state["_mod_entrega_lista"] = True
 
 
@@ -3605,7 +3669,10 @@ def limites_peso(unidad_peso, paqueteria):
     }
 
 
-def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
+def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato, on_change=None):
+    kwargs = {}
+    if on_change is not None:
+        kwargs["on_change"] = on_change
     if clave in st.session_state:
         try:
             actual = float(st.session_state[clave])
@@ -3621,6 +3688,7 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
             step=float(paso),
             format=formato,
             key=clave,
+            **kwargs,
         )
     return st.number_input(
         label,
@@ -3630,6 +3698,7 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato):
         step=float(paso),
         format=formato,
         key=clave,
+        **kwargs,
     )
 
 
@@ -7231,7 +7300,7 @@ elif st.session_state["rol"] == "cliente":
                 f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
                 "🚢 Carga Comercial por CBM (hasta contenedor 40')",
             ]
-            tipo_kwargs = {"key": "sb_tipo_carga_select"}
+            tipo_kwargs = {"key": "sb_tipo_carga_select", "on_change": invalidar_emision_visible_cotizador}
             if "sb_tipo_carga_select" not in st.session_state:
                 tipo_kwargs["index"] = 0
             tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
@@ -7241,10 +7310,18 @@ elif st.session_state["rol"] == "cliente":
             c_u1, c_u2 = st.columns(2)
             with c_u1:
                 unidad_medida = st.selectbox(
-                    "Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida"
+                    "Unidad de Medida:",
+                    ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"],
+                    key="sb_unidad_medida",
+                    on_change=invalidar_emision_visible_cotizador,
                 )
             with c_u2:
-                unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
+                unidad_peso = st.selectbox(
+                    "Unidad de Peso:",
+                    ["Libras (lb)", "Kilogramos (kg)"],
+                    key="sb_unidad_peso",
+                    on_change=invalidar_emision_visible_cotizador,
+                )
 
             es_paqueteria = "Paquetería Menor" in tipo_carga
             dim = limites_dimensiones(unidad_medida, comercial=not es_paqueteria)
@@ -7273,6 +7350,7 @@ elif st.session_state["rol"] == "cliente":
                     dim["step"],
                     f"in_al_{pref}_{dim['codigo']}",
                     dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
                 )
             with c2:
                 an_input = campo_numerico(
@@ -7283,6 +7361,7 @@ elif st.session_state["rol"] == "cliente":
                     dim["step"],
                     f"in_an_{pref}_{dim['codigo']}",
                     dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
                 )
             with c3:
                 la_input = campo_numerico(
@@ -7293,6 +7372,7 @@ elif st.session_state["rol"] == "cliente":
                     dim["step"],
                     f"in_la_{pref}_{dim['codigo']}",
                     dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
                 )
             with c4:
                 pe_input = campo_numerico(
@@ -7303,6 +7383,7 @@ elif st.session_state["rol"] == "cliente":
                     pes["step"],
                     f"in_pe_{pref}_{pes['codigo']}",
                     pes["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
                 )
 
             if "Pulgadas" in unidad_medida:
@@ -7365,6 +7446,15 @@ elif st.session_state["rol"] == "cliente":
                 modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
                 detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
 
+            firma_actual = firma_parametros_cotizador(
+                al_val,
+                an_val,
+                la_val,
+                pe_lb,
+                st.session_state["modalidad_envio_seleccionada"],
+                modalidad_pdf,
+            )
+            sincronizar_emision_con_formulario(firma_actual)
             st.session_state["_cot_emit_snapshot"] = {
                 "al": al_val,
                 "an": an_val,
@@ -7377,6 +7467,7 @@ elif st.session_state["rol"] == "cliente":
                 "tipo_carga": modalidad_pdf,
                 "detalle_tarifa": detalle_pdf,
                 "destino": st.session_state["modalidad_envio_seleccionada"],
+                "firma_params": list(firma_actual),
             }
             with st.container(key="guia_foco_tarifa"):
                 pulso_confirmar = st.button(
