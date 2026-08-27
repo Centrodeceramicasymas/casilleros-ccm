@@ -1665,31 +1665,51 @@ def persistir_perfil_usuario(casillero, nombre, telefono, departamento, ciudad, 
     return True, "¡Datos actualizados exitosamente!"
 
 
-@st.dialog("Editar perfil", width="large")
+@st.dialog("Editar Perfil", width="large")
 def dialogo_editar_perfil():
     perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
     if not perfil:
         st.error("No se encontró el perfil de este casillero.")
         return
-    st.caption("El correo y el código de casillero no se pueden modificar.")
-    nom = st.text_input("Nombre completo", value=perfil["nombre"], key="perfil_nom")
-    tel = st.text_input("Teléfono / WhatsApp", value=perfil["telefono"], key="perfil_tel")
-    dep = st.text_input("Departamento", value=perfil["departamento"], key="perfil_dep")
-    ciu = st.text_input("Ciudad", value=perfil["ciudad"], key="perfil_ciu")
-    dir_e = st.text_area("Dirección de entrega", value=perfil["direccion"], key="perfil_dir")
-    dni = st.text_input("Número de Identidad / DNI", value=perfil["dni"], key="perfil_dni")
-    st.text_input("Correo electrónico", value=perfil["correo"], disabled=True, key="perfil_mail")
-    st.text_input("Código de casillero", value=perfil["casillero"], disabled=True, key="perfil_cas")
-    if st.button("💾 Guardar Cambios", type="primary", key="perfil_guardar", use_container_width=True):
-        ok, msg = persistir_perfil_usuario(
-            perfil["casillero"], nom, tel, dep, ciu, dir_e, dni
+    with st.container(key="dialogo_perfil"):
+        st.markdown(
+            '<p class="perfil-dialog-nota">El correo electrónico y el código de casillero no se pueden modificar.</p>',
+            unsafe_allow_html=True,
         )
-        if ok:
-            st.session_state["flash_perfil"] = msg
-            for k in CLAVES_WIDGET_PERFIL:
-                st.session_state.pop(k, None)
-            st.rerun()
-        st.error(msg)
+        c_nom, c_tel = st.columns(2, gap="medium")
+        with c_nom:
+            nom = st.text_input("Nombre completo", value=perfil["nombre"], key="perfil_nom")
+        with c_tel:
+            tel = st.text_input("Teléfono / WhatsApp", value=perfil["telefono"], key="perfil_tel")
+        c_dep, c_ciu = st.columns(2, gap="medium")
+        with c_dep:
+            dep = st.text_input("Departamento", value=perfil["departamento"], key="perfil_dep")
+        with c_ciu:
+            ciu = st.text_input("Ciudad", value=perfil["ciudad"], key="perfil_ciu")
+        dir_e = st.text_area("Dirección de entrega", value=perfil["direccion"], key="perfil_dir")
+        dni = st.text_input("Número de Identidad / DNI", value=perfil["dni"], key="perfil_dni")
+        c_mail, c_cas = st.columns(2, gap="medium")
+        with c_mail:
+            st.text_input("Correo electrónico", value=perfil["correo"], disabled=True, key="perfil_mail")
+        with c_cas:
+            st.text_input("Código de casillero", value=perfil["casillero"], disabled=True, key="perfil_cas")
+        c_cancel, c_ok = st.columns(2, gap="small")
+        with c_cancel:
+            if st.button("Cancelar", type="secondary", key="perfil_cancelar", use_container_width=True):
+                for k in CLAVES_WIDGET_PERFIL:
+                    st.session_state.pop(k, None)
+                st.rerun()
+        with c_ok:
+            if st.button("Guardar Cambios", type="primary", key="perfil_guardar", use_container_width=True):
+                ok, msg = persistir_perfil_usuario(
+                    perfil["casillero"], nom, tel, dep, ciu, dir_e, dni
+                )
+                if ok:
+                    st.session_state["flash_perfil"] = msg
+                    for k in CLAVES_WIDGET_PERFIL:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+                st.error(msg)
 
 
 def abrir_dialogo_editar_perfil():
@@ -1837,8 +1857,8 @@ def anclar_barra_inferior():
                   '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
                   '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
                   '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
-                  '[data-testid="stBaseButton-header"], [data-testid="stBaseButton-headerNoPadding"],' +
-                  'button[kind="header"], button[kind="headerNoPadding"], button[title="Deploy"],' +
+                  '[data-testid="stHeader"] [data-testid="stBaseButton-header"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],' +
+                  '[data-testid="stHeader"] button[title="Deploy"],' +
                   'iframe[title*="streamlit status" i] { display:none !important; visibility:hidden !important;' +
                   ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
                 const inyectarCss = (rootDoc) => {
@@ -1860,8 +1880,9 @@ def anclar_barra_inferior():
                 docs.forEach((rootDoc) => {
                   inyectarCss(rootDoc);
                   rootDoc.querySelectorAll(
-                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stBaseButton-headerNoPadding"], button[title="Deploy"], iframe[title*="streamlit status" i]'
+                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], iframe[title*="streamlit status" i]'
                   ).forEach((el) => {
+                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
                     el.style.setProperty("display", "none", "important");
                     el.style.setProperty("visibility", "hidden", "important");
                     el.style.setProperty("pointer-events", "none", "important");
@@ -1870,6 +1891,7 @@ def anclar_barra_inferior():
                   const vista = rootDoc.defaultView || win;
                   rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
                     if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
+                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
                     const stilo = vista.getComputedStyle(el);
                     if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
                     const r = el.getBoundingClientRect();
@@ -3599,6 +3621,10 @@ st.markdown(
         color: #0f172a !important;
         color-scheme: light !important;
     }
+    [data-st-overlay-root="true"] {
+        color-scheme: light !important;
+        color: #0f172a !important;
+    }
 
     .stApp,
     [data-testid="stAppViewContainer"],
@@ -3627,7 +3653,7 @@ st.markdown(
         max-width: 100% !important;
     }
 
-    #MainMenu, footer, header,
+    #MainMenu, footer,
     [data-testid="stHeader"],
     [data-testid="stToolbar"],
     [data-testid="stDecoration"],
@@ -3647,9 +3673,10 @@ st.markdown(
     [data-testid="stToolbarActions"],
     [data-testid="stHostToolbar"],
     [data-testid="stHostHeader"],
-    button[kind="header"],
-    button[kind="headerNoPadding"],
-    button[title="Deploy"],
+    [data-testid="stHeader"] button[kind="header"],
+    [data-testid="stHeader"] [data-testid="stBaseButton-header"],
+    [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],
+    [data-testid="stToolbar"] button[title="Deploy"],
     a[href*="streamlit.io"],
     a[href*="share.streamlit.io"] {
         display: none !important;
@@ -4127,6 +4154,142 @@ st.markdown(
         font-weight: 700 !important;
         box-shadow: none !important;
         margin-bottom: 4px !important;
+    }
+
+    [data-st-overlay-root="true"],
+    [data-testid="stDialog"],
+    .stDialog {
+        color-scheme: light !important;
+        z-index: 100000 !important;
+    }
+    [data-testid="stDialog"] {
+        background: rgba(15, 23, 42, 0.38) !important;
+        padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px)) 12px !important;
+    }
+    [data-testid="stDialog"] > div {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        color-scheme: light !important;
+        border-radius: 20px !important;
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16) !important;
+        border: 1px solid #e2e8f0 !important;
+        max-width: min(720px, calc(100vw - 24px)) !important;
+        width: min(720px, calc(100vw - 24px)) !important;
+        margin: auto !important;
+        overflow: auto !important;
+        max-height: min(92vh, 860px) !important;
+    }
+    [data-testid="stDialog"] h1,
+    [data-testid="stDialog"] h2,
+    [data-testid="stDialog"] h3,
+    [data-testid="stDialog"] [slot="title"],
+    [data-testid="stDialog"] [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stDialog"] [data-testid="stHeading"] {
+        color: #004ac1 !important;
+        -webkit-text-fill-color: #004ac1 !important;
+        font-weight: 800 !important;
+        font-size: clamp(1.15rem, 2.4vw, 1.45rem) !important;
+        letter-spacing: -0.02em !important;
+    }
+    [data-testid="stDialog"] p,
+    [data-testid="stDialog"] label,
+    [data-testid="stDialog"] [data-testid="stWidgetLabel"],
+    [data-testid="stDialog"] [data-testid="stWidgetLabel"] p {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+    }
+    .perfil-dialog-nota {
+        color: #64748b !important;
+        font-size: clamp(0.82rem, 2.4vw, 0.92rem);
+        font-weight: 500;
+        line-height: 1.4;
+        margin: 0 0 12px 0;
+    }
+    .st-key-dialogo_perfil {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        padding-bottom: 8px !important;
+    }
+    .st-key-dialogo_perfil [data-testid="stTextInput"] input,
+    .st-key-dialogo_perfil [data-testid="stTextArea"] textarea {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        min-height: 44px !important;
+        font-size: clamp(0.92rem, 2.6vw, 1rem) !important;
+    }
+    .st-key-perfil_mail [data-testid="stTextInput"] input,
+    .st-key-perfil_cas [data-testid="stTextInput"] input,
+    .st-key-dialogo_perfil input:disabled,
+    .st-key-dialogo_perfil textarea:disabled {
+        background: #f1f5f9 !important;
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
+        border-color: #e2e8f0 !important;
+        cursor: not-allowed !important;
+    }
+    .st-key-perfil_guardar div.stButton > button,
+    .st-key-perfil_guardar [data-testid^="stBaseButton"] {
+        background: #004ac1 !important;
+        background-color: #004ac1 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        min-height: 46px !important;
+        font-weight: 800 !important;
+        font-size: clamp(0.92rem, 2.5vw, 1rem) !important;
+    }
+    .st-key-perfil_cancelar div.stButton > button,
+    .st-key-perfil_cancelar [data-testid^="stBaseButton"] {
+        background: #f1f5f9 !important;
+        background-color: #f1f5f9 !important;
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        min-height: 46px !important;
+        font-weight: 700 !important;
+        font-size: clamp(0.92rem, 2.5vw, 1rem) !important;
+    }
+
+    @media (max-width: 640px) {
+        [data-testid="stDialog"] {
+            padding: 0 !important;
+            align-items: stretch !important;
+        }
+        [data-testid="stDialog"] > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: 100% !important;
+            max-height: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        .st-key-dialogo_perfil [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            gap: 0 !important;
+        }
+        .st-key-dialogo_perfil [data-testid="stHorizontalBlock"] > div,
+        .st-key-dialogo_perfil [data-testid="stColumn"] {
+            width: 100% !important;
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+    }
+
+    @media (min-width: 641px) {
+        [data-testid="stDialog"] > div {
+            border-radius: 20px !important;
+        }
+        .st-key-dialogo_perfil {
+            padding: 4px 4px 8px 4px !important;
+        }
     }
     .st-key-mas_envios div.stButton > button,
     .st-key-mas_fichas div.stButton > button,
