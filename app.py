@@ -1550,8 +1550,30 @@ def modulos_china_nav():
     return [m for m in permitidos if m["id"] not in bloqueados]
 
 
+def al_cambiar_modalidad_entrega():
+    """on_change del select de entrega: sincroniza la modalidad ANTES de decidir la vista.
+
+    Sin esto, elegir «Crear Nueva Dirección» solo mostraba el texto seleccionado y el
+    formulario aparecía hasta la siguiente interacción.
+    """
+    invalidar_emision_visible_cotizador()
+    nueva = st.session_state.get("sb_modalidad_entrega")
+    if nueva:
+        st.session_state["modalidad_envio_seleccionada"] = nueva
+
+
+def seleccionar_modalidad_entrega(opcion):
+    """Fija la modalidad activa; el widget se actualiza en el siguiente run, antes de instanciarse."""
+    st.session_state["modalidad_envio_seleccionada"] = opcion
+    st.session_state["_mod_entrega_pendiente"] = opcion
+
+
 def selector_modalidad_entrega(opciones_modalidad):
     """Select de entrega en el cuerpo del Cotizador (fuera del header sticky, sin CSS sobre Baseweb)."""
+    pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
+    if pendiente in opciones_modalidad:
+        st.session_state["sb_modalidad_entrega"] = pendiente
+        st.session_state["modalidad_envio_seleccionada"] = pendiente
     idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
     sel_kwargs = {"key": "sb_modalidad_entrega"}
     if "sb_modalidad_entrega" not in st.session_state:
@@ -1561,7 +1583,7 @@ def selector_modalidad_entrega(opciones_modalidad):
     mod_elegida = st.selectbox(
         "🏪 ¿Cómo deseas recibir tu compra?",
         opciones_modalidad,
-        on_change=invalidar_emision_visible_cotizador,
+        on_change=al_cambiar_modalidad_entrega,
         **sel_kwargs,
     )
     previa = st.session_state.get("modalidad_envio_seleccionada")
@@ -4209,8 +4231,10 @@ def logout():
         "_ccm_scroll_emit",
         "_ccm_emit_error",
         "_mod_entrega_lista",
+        "_mod_entrega_pendiente",
         "modalidad_envio_seleccionada",
         "sb_modalidad_entrega",
+        "direcciones_usuario",
         "sub_tab_inicio",
         "vista_activa",
         "hub",
@@ -6924,6 +6948,10 @@ elif st.session_state["rol"] == "cliente":
     lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = cargar_direcciones_db(casillero)
+    st.session_state.setdefault("direcciones_usuario", {})[casillero] = [
+        {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
+        for d in direcciones_guardadas
+    ]
 
     opciones_modalidad = [OPCION_PREDETERMINADA]
     for d in direcciones_guardadas:
@@ -7201,7 +7229,8 @@ elif st.session_state["rol"] == "cliente":
                                         (id_dir, casillero),
                                     )
                                     conn.commit()
-                                st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                                cargar_direcciones_db.clear()
+                                seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
                                 st.session_state.pop("datos_pdf_confirmado", None)
                                 st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
                                 st.rerun()
@@ -7244,15 +7273,24 @@ elif st.session_state["rol"] == "cliente":
                                 ),
                             )
                             conn.commit()
-                        st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
-                        st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
-                        st.session_state.pop("datos_pdf_confirmado", None)
                         cargar_direcciones_db.clear()
+                        bolsa_dir = st.session_state.setdefault("direcciones_usuario", {}).setdefault(casillero, [])
+                        bolsa_dir.append(
+                            {
+                                "etiqueta": etiqueta_in,
+                                "receptor": receptor_in,
+                                "ciudad": ciu_dir_in,
+                                "direccion": dir_exacta_in,
+                            }
+                        )
+                        seleccionar_modalidad_entrega(f"📍 {etiqueta_in} - {ciu_dir_in}")
+                        st.session_state.pop("datos_pdf_confirmado", None)
+                        st.toast(f"✅ Dirección '{etiqueta_in}' guardada y seleccionada.")
                         st.rerun()
                     else:
                         st.error("Completa todos los campos obligatorios (*).")
                 if st.button("Cancelar", type="secondary", key="btn_cancelar_dir", use_container_width=True):
-                    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
                     st.session_state.pop("datos_pdf_confirmado", None)
                     st.rerun()
 
