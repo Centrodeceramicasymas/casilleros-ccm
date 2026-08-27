@@ -2187,7 +2187,9 @@ def anclar_barra_inferior():
                   doc.querySelector(".st-key-btn_escanear_catalogo");
                 const vistaModulo = catalogo || cotizador;
                 const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                const hueco = (mas || vistaModulo || inicio) ? "0px" : "calc(200px + env(safe-area-inset-bottom, 0px))";
+                let hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
+                if (mas || vistaModulo || inicio) hueco = "0px";
+                else if (historial) hueco = "calc(var(--ccm-nav-clearance, 109px) + 16px)";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
@@ -4694,7 +4696,17 @@ st.markdown(
         padding: 0 !important;
         overflow: hidden !important;
     }
-    .st-key-safe_historial,
+    .st-key-safe_historial {
+        display: block !important;
+        height: 16px !important;
+        min-height: 16px !important;
+        max-height: 16px !important;
+        width: 100% !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
     .st-key-safe_envios,
     .st-key-safe_fichas {
         display: block !important;
@@ -4746,7 +4758,9 @@ st.markdown(
     .stApp:has(.ccm-vista-historial) .block-container,
     .block-container:has(.st-key-vista_historial),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_historial),
-    .stMainBlockContainer:has(.st-key-vista_historial),
+    .stMainBlockContainer:has(.st-key-vista_historial) {
+        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+    }
     .block-container:has(.st-key-vista_envios),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_envios),
     .stMainBlockContainer:has(.st-key-vista_envios),
@@ -4755,7 +4769,6 @@ st.markdown(
     .stMainBlockContainer:has(.st-key-vista_fichas) {
         padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
     }
-    .st-key-vista_historial,
     .st-key-vista_envios,
     .st-key-vista_fichas {
         display: block !important;
@@ -4763,12 +4776,45 @@ st.markdown(
         min-height: 0 !important;
         overflow: visible !important;
     }
-    [data-testid="stElementContainer"]:has(.st-key-safe_historial),
-    [data-testid="stElementContainer"]:has(.st-key-safe_envios),
-    [data-testid="stElementContainer"]:has(.st-key-safe_fichas),
-    [data-testid="stLayoutWrapper"]:has(.st-key-safe_historial),
-    [data-testid="stLayoutWrapper"]:has(.st-key-safe_envios),
-    [data-testid="stLayoutWrapper"]:has(.st-key-safe_fichas) {
+    .st-key-vista_historial {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        min-height: 0 !important;
+        height: auto !important;
+        max-height: none !important;
+        flex: 0 0 auto !important;
+        overflow: visible !important;
+    }
+    .st-key-vista_historial > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_historial > [data-testid="stVerticalBlock"],
+    .st-key-vista_historial > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        flex: 0 0 auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+        width: 100% !important;
+    }
+    .st-key-vista_historial [data-testid="stElementContainer"]:has(> .st-key-safe_historial),
+    .st-key-vista_historial [data-testid="stLayoutWrapper"]:has(> .st-key-safe_historial) {
+        height: 16px !important;
+        min-height: 16px !important;
+        max-height: 16px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        flex: 0 0 auto !important;
+    }
+    [data-testid="stElementContainer"]:has(> .st-key-safe_envios),
+    [data-testid="stElementContainer"]:has(> .st-key-safe_fichas),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_envios),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_fichas) {
         height: 200px !important;
         min-height: 200px !important;
         max-height: none !important;
@@ -5596,35 +5642,91 @@ st.markdown(
         animation: cotPulseBorde 1.55s ease-in-out infinite;
         scroll-margin-top: var(--header-offset) !important;
     }
-    [class*="st-key-tarjeta_cot_"] {
-        background: #f8fafc !important;
-        border: 1.5px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        padding: 12px 12px 14px 12px !important;
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
         margin: 0 0 14px 0 !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
         overflow: visible !important;
         box-sizing: border-box !important;
+        flex: 0 0 auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
     }
-    [class*="st-key-tarjeta_cot_"]:has(.cotizacion-pendiente-foco) {
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stVerticalBlock"],
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stLayoutWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        flex: 0 0 auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        width: 100% !important;
+    }
+    [class*="st-key-tarjeta_cot_info_"] {
+        background: #ffffff !important;
+        border: 1.5px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 12px 12px 10px 12px !important;
+        margin: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+        flex: 0 0 auto !important;
+        box-shadow: none !important;
+    }
+    [class*="st-key-tarjeta_cot_info_"]:has(.cotizacion-pendiente-caja),
+    [class*="st-key-tarjeta_cot_info_"]:has(.cotizacion-pendiente-foco) {
         background: #fffbeb !important;
-        border-color: #f59e0b !important;
+        border-color: #c9a227 !important;
+    }
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stVerticalBlock"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stElementContainer"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stLayoutWrapper"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stMarkdown"] {
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        flex: 0 0 auto !important;
+        background: transparent !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     [class*="st-key-tarjeta_cot_"] .cot-card-body {
-        margin: 0 0 10px 0;
+        margin: 0;
         padding: 0;
         font-size: 0.85rem;
         overflow: visible;
-    }
-    [class*="st-key-tarjeta_cot_"] [data-testid="stElementContainer"],
-    [class*="st-key-tarjeta_cot_"] [data-testid="stLayoutWrapper"],
-    [class*="st-key-tarjeta_cot_"] [data-testid="stDownloadButton"],
-    [class*="st-key-tarjeta_cot_"] div.stButton {
         height: auto !important;
+        min-height: 0 !important;
+        background: transparent !important;
+        border: none !important;
+    }
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) [data-testid="stElementContainer"],
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) [data-testid="stLayoutWrapper"],
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) [data-testid="stDownloadButton"],
+    [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) div.stButton,
+    [class*="st-key-foco_confirmar_"] {
+        height: auto !important;
+        min-height: 0 !important;
         overflow: visible !important;
-        margin-bottom: 8px !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        flex: 0 0 auto !important;
     }
     [class*="st-key-tarjeta_cot_"] div.stButton > button,
     [class*="st-key-tarjeta_cot_"] [data-testid^="stBaseButton"],
@@ -5633,6 +5735,7 @@ st.markdown(
         height: auto !important;
         min-height: 44px !important;
         max-height: none !important;
+        margin: 0 !important;
         white-space: normal !important;
         box-sizing: border-box !important;
         overflow: hidden !important;
@@ -6793,23 +6896,25 @@ elif st.session_state["rol"] == "cliente":
                     es_foco_hist = bool(foco_hist and int(id_cot_item) == foco_hist)
                     pendiente_foco = es_foco_hist and not consolidada
                     clase_foco = "cotizacion-pendiente-foco" if pendiente_foco else ""
+                    clase_pendiente = "cotizacion-pendiente-caja" if not consolidada else ""
                     id_ancla = 'id="cotizacion-foco-pendiente"' if pendiente_foco else f'id="cotizacion-ccm-{id_cot_item}"'
                     insignia = (
                         '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
-                        if pendiente_foco
+                        if not consolidada
                         else ""
                     )
                     with st.container(key=f"tarjeta_cot_{id_cot_item}"):
-                        st.markdown(
-                            f"""
-                        <div {id_ancla} class="cot-card-body {clase_foco}">
+                        with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
+                            st.markdown(
+                                f"""
+                        <div {id_ancla} class="cot-card-body {clase_pendiente} {clase_foco}">
                             <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)} {insignia}<br>
                             <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
                             <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
                         </div>
                         """,
-                            unsafe_allow_html=True,
-                        )
+                                unsafe_allow_html=True,
+                            )
                         if pendiente_foco and not scroll_pendiente_hecho:
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
