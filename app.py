@@ -5648,7 +5648,7 @@ st.markdown(
         box-shadow: none !important;
         border-radius: 0 !important;
         padding: 0 !important;
-        margin: 0 0 14px 0 !important;
+        margin: 0 0 16px 0 !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
@@ -5658,13 +5658,14 @@ st.markdown(
         display: flex !important;
         flex-direction: column !important;
         justify-content: flex-start !important;
-        gap: 12px !important;
+        gap: 10px !important;
     }
     [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stVerticalBlockBorderWrapper"],
     [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stVerticalBlock"],
     [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) > [data-testid="stLayoutWrapper"] {
         background: transparent !important;
         border: none !important;
+        box-shadow: none !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
@@ -5672,49 +5673,73 @@ st.markdown(
         display: flex !important;
         flex-direction: column !important;
         justify-content: flex-start !important;
-        gap: 12px !important;
+        gap: 10px !important;
         width: 100% !important;
     }
-    [class*="st-key-tarjeta_cot_info_"] {
-        background: #ffffff !important;
-        border: 1.5px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        padding: 12px 12px 10px 12px !important;
+    [class*="st-key-tarjeta_cot_info_"],
+    [class*="st-key-tarjeta_cot_info_"] > [data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stVerticalBlock"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stElementContainer"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stLayoutWrapper"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stMarkdown"],
+    [class*="st-key-tarjeta_cot_info_"] [data-testid="stMarkdownContainer"] {
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
         margin: 0 !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
         overflow: visible !important;
-        box-sizing: border-box !important;
         flex: 0 0 auto !important;
-        box-shadow: none !important;
     }
-    [class*="st-key-tarjeta_cot_info_"]:has(.cotizacion-pendiente-caja),
-    [class*="st-key-tarjeta_cot_info_"]:has(.cotizacion-pendiente-foco) {
-        background: #fffbeb !important;
-        border-color: #c9a227 !important;
-    }
-    [class*="st-key-tarjeta_cot_info_"] [data-testid="stVerticalBlock"],
-    [class*="st-key-tarjeta_cot_info_"] [data-testid="stElementContainer"],
-    [class*="st-key-tarjeta_cot_info_"] [data-testid="stLayoutWrapper"],
-    [class*="st-key-tarjeta_cot_info_"] [data-testid="stMarkdown"] {
+    [class*="st-key-tarjeta_cot_"] .cot-card-body {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        margin: 0 !important;
+        padding: 12px 14px !important;
+        font-size: 0.85rem !important;
+        line-height: 1.45 !important;
+        background: #ffffff !important;
+        border: 1.5px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
-        flex: 0 0 auto !important;
-        background: transparent !important;
+        width: 100% !important;
+    }
+    [class*="st-key-tarjeta_cot_"] .cot-card-body.cotizacion-pendiente-caja,
+    [class*="st-key-tarjeta_cot_"] .cot-card-body.cotizacion-pendiente-foco {
+        background: #fffbeb !important;
+        border-color: #c9a227 !important;
+    }
+    [class*="st-key-tarjeta_cot_"] .cot-card-head {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 6px 8px !important;
+        margin: 0 !important;
+    }
+    [class*="st-key-tarjeta_cot_"] .cot-card-id,
+    [class*="st-key-tarjeta_cot_"] .cot-card-meta,
+    [class*="st-key-tarjeta_cot_"] .cot-card-vigencia {
         margin: 0 !important;
         padding: 0 !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere !important;
     }
-    [class*="st-key-tarjeta_cot_"] .cot-card-body {
-        margin: 0;
-        padding: 0;
-        font-size: 0.85rem;
-        overflow: visible;
-        height: auto !important;
-        min-height: 0 !important;
-        background: transparent !important;
-        border: none !important;
+    [class*="st-key-tarjeta_cot_"] .cot-card-vigencia {
+        font-weight: 700 !important;
+    }
+    [class*="st-key-tarjeta_cot_"] .cot-card-body p {
+        margin: 0 !important;
     }
     [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) [data-testid="stElementContainer"],
     [class*="st-key-tarjeta_cot_"]:not([class*="tarjeta_cot_info"]) [data-testid="stLayoutWrapper"],
@@ -5727,6 +5752,21 @@ st.markdown(
         margin-top: 0 !important;
         margin-bottom: 0 !important;
         flex: 0 0 auto !important;
+    }
+    .st-key-vista_historial [data-testid="stCustomComponentV1"],
+    .st-key-vista_historial [data-testid="stElementContainer"]:has(> [data-testid="stCustomComponentV1"]),
+    .st-key-vista_historial [data-testid="stLayoutWrapper"]:has(> [data-testid="stCustomComponentV1"]),
+    [class*="st-key-tarjeta_cot_"] [data-testid="stCustomComponentV1"],
+    [class*="st-key-tarjeta_cot_"] iframe {
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
     }
     [class*="st-key-tarjeta_cot_"] div.stButton > button,
     [class*="st-key-tarjeta_cot_"] [data-testid^="stBaseButton"],
@@ -5802,18 +5842,21 @@ st.markdown(
         padding-top: 12px !important;
     }
     .cotizacion-badge-pendiente {
-        display: inline-block;
-        margin-left: 6px;
-        background: #fffbeb;
+        display: inline-flex;
+        align-items: center;
+        margin: 0;
+        background: #fff7ed;
         color: #b45309;
-        border: 1.5px solid #f59e0b;
+        border: 1px solid #f59e0b;
         border-radius: 999px;
-        padding: 2px 9px;
+        padding: 2px 8px;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.01em;
         animation: cotPulseInsignia 1.2s ease-in-out infinite;
         vertical-align: middle;
+        flex: 0 0 auto;
+        white-space: nowrap;
     }
     [class*="st-key-foco_confirmar_"] button,
     [class*="st-key-foco_confirmar_"] [data-testid^="stBaseButton"] {
@@ -6906,18 +6949,16 @@ elif st.session_state["rol"] == "cliente":
                     with st.container(key=f"tarjeta_cot_{id_cot_item}"):
                         with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
                             st.markdown(
-                                f"""
-                        <div {id_ancla} class="cot-card-body {clase_pendiente} {clase_foco}">
-                            <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)} {insignia}<br>
-                            <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
-                            <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
-                        </div>
-                        """,
+                                f'<div {id_ancla} class="cot-card-body {clase_pendiente} {clase_foco}">'
+                                f'<div class="cot-card-head">'
+                                f'<span class="cot-card-id">🔖 CCM-COT-{id_cot_item:05d} • Fecha: {formatear_fecha_pantalla(fec_c)}</span>'
+                                f"{insignia}"
+                                f"</div>"
+                                f'<div class="cot-card-meta">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></div>'
+                                f'<div class="cot-card-vigencia" style="color:{color_estado};">{icono_estado} {estado_txt}</div>'
+                                f"</div>",
                                 unsafe_allow_html=True,
                             )
-                        if pendiente_foco and not scroll_pendiente_hecho:
-                            desplazar_a_cotizacion_pendiente()
-                            scroll_pendiente_hecho = True
 
                         pdf_historial = generar_pdf_confirmacion_cotizacion(
                             casillero=casillero,
@@ -6989,7 +7030,9 @@ elif st.session_state["rol"] == "cliente":
                                 key=f"dl_cot_{id_cot_item}",
                                 use_container_width=True,
                             )
-            else:
+                        if pendiente_foco and not scroll_pendiente_hecho:
+                            desplazar_a_cotizacion_pendiente()
+                            scroll_pendiente_hecho = True
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
                     "tiene 24 horas para confirmarla y habilitar Envíos."
