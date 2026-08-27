@@ -1541,7 +1541,7 @@ def pintar_vista_mas():
 
 
 def pintar_barra_inferior(total_cotizaciones=0):
-    """Píldora flotante: Inicio, Catálogo, Mis cotizaciones, Cotizador y Más."""
+    """Píldora flotante iOS: Inicio, Catálogo, Mis cotizaciones, Cotizador y Más."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
     catalogo_activo = vista == "Catálogo"
@@ -1558,7 +1558,7 @@ def pintar_barra_inferior(total_cotizaciones=0):
     items = (
         ("inicio", "🏠", "Inicio", inicio_activo),
         ("catalogo", "🔍", "Catálogo", catalogo_activo),
-        ("cotizaciones", "📄", "Mis cotizaciones", cot_activo),
+        ("cotizaciones", "📄", "Cotiz.", cot_activo),
         ("cotizador", "🧮", "Cotizador", cotizador_activo),
         ("mas", "☰", "Más", mas_activo),
     )
@@ -1583,6 +1583,49 @@ def pintar_barra_inferior(total_cotizaciones=0):
                         ir_a("Cotizador", hub="china")
                     elif dest == "mas":
                         ir_a("Más")
+    anclar_barra_inferior()
+
+
+def anclar_barra_inferior():
+    """Aplica position:fixed a la píldora sin mover nodos del DOM (evita errores de React)."""
+    with st.container(key="bottom_nav_pin"):
+        components.html(
+            """
+            <script>
+            (function () {
+              const doc = window.parent.document;
+              const win = window.parent;
+              const nodoNav = () =>
+                doc.querySelector('[class~="st-key-bottom_nav"]') ||
+                doc.querySelector(".st-key-bottom_nav");
+              const anclar = () => {
+                const nav = nodoNav();
+                if (!nav) return;
+                nav.style.setProperty("position", "fixed", "important");
+                nav.style.setProperty("bottom", "calc(12px + env(safe-area-inset-bottom, 0px))", "important");
+                nav.style.setProperty("left", "12px", "important");
+                nav.style.setProperty("right", "12px", "important");
+                nav.style.setProperty("margin", "0 auto", "important");
+                nav.style.setProperty("transform", "none", "important");
+                nav.style.setProperty("z-index", "1000", "important");
+                nav.style.setProperty("width", "auto", "important");
+                nav.style.setProperty("max-width", "520px", "important");
+              };
+              anclar();
+              setTimeout(anclar, 80);
+              setTimeout(anclar, 280);
+              setTimeout(anclar, 800);
+              if (!win.__ccmBottomNavBound) {
+                win.__ccmBottomNavBound = true;
+                win.addEventListener("resize", anclar, { passive: true });
+                win.addEventListener("orientationchange", anclar, { passive: true });
+              }
+            })();
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -3646,24 +3689,36 @@ st.markdown(
         .swipe-indicator-bar { display: none; }
     }
 
+    .st-key-bottom_nav_pin {
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+    }
+
     .st-key-bottom_nav,
     div[class~="st-key-bottom_nav"] {
         position: fixed !important;
-        bottom: 15px !important;
-        left: 50% !important;
-        transform: translateX(-50%) !important;
-        z-index: 999 !important;
-        width: min(96vw, 520px) !important;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 12px !important;
+        right: 12px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        transform: none !important;
+        z-index: 1000 !important;
+        width: auto !important;
         max-width: 520px !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
         background: rgba(255, 255, 255, 0.95) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 35px !important;
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
-        padding: 8px 10px !important;
+        padding: 6px 8px !important;
         border: 1px solid rgba(226, 232, 240, 0.95) !important;
-        box-sizing: border-box !important;
-        overflow: visible !important;
     }
 
     .mas-titulo {
@@ -3746,6 +3801,13 @@ st.markdown(
         align-items: stretch !important;
         width: 100% !important;
         margin: 0 !important;
+    }
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div,
+    .st-key-bottom_nav [data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        width: auto !important;
+        padding: 0 !important;
     }
 
     .st-key-china_modulos {
@@ -4398,7 +4460,7 @@ st.markdown(
         border-radius: 20px !important;
         padding: 6px 2px 5px 2px !important;
         margin: 0 !important;
-        font-size: 0.62rem !important;
+        font-size: 0.58rem !important;
         font-weight: 700 !important;
         line-height: 1.15 !important;
         white-space: pre-line !important;
@@ -4469,21 +4531,6 @@ st.markdown(
     .st-key-bottom_nav [data-testid="stColumn"]:nth-child(3) [data-testid^="stBaseButton"] {
         position: relative !important;
         font-weight: 800 !important;
-        font-size: 0.50rem !important;
-        background: #E8EEFF !important;
-        background-color: #E8EEFF !important;
-        border-radius: 20px !important;
-        color: #003399 !important;
-        -webkit-text-fill-color: #003399 !important;
-        border: none !important;
-        outline: none !important;
-        box-shadow: none !important;
-    }
-    .st-key-bnav_cotizaciones div.stButton > button *,
-    .st-key-bnav_cotizaciones [data-testid^="stBaseButton"] *,
-    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button * {
-        color: #003399 !important;
-        -webkit-text-fill-color: #003399 !important;
     }
     .st-key-bnav_cotizaciones div.stButton > button::after,
     .st-key-bnav_cotizaciones [data-testid^="stBaseButton"]::after,
