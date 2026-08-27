@@ -1857,28 +1857,122 @@ def anclar_barra_inferior():
                   }
                 }
                 const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
+                const catalogo = doc.querySelector('[class~="st-key-vista_catalogo"]') || doc.querySelector(".st-key-vista_catalogo");
+                const cotizador = doc.querySelector('[class~="st-key-vista_cotizador"]') || doc.querySelector(".st-key-vista_cotizador");
                 const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
                   doc.querySelector(".st-key-btn_logout_cliente") ||
                   Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
-                const hueco = mas ? "0px" : "calc(180px + env(safe-area-inset-bottom, 0px))";
+                const accion = doc.querySelector('[class~="st-key-btn_confirmar_tarifa"]') ||
+                  doc.querySelector(".st-key-btn_confirmar_tarifa") ||
+                  doc.querySelector('[class~="st-key-btn_buscar_china"]') ||
+                  doc.querySelector(".st-key-btn_buscar_china") ||
+                  doc.querySelector('[class~="st-key-btn_escanear_catalogo"]') ||
+                  doc.querySelector(".st-key-btn_escanear_catalogo");
+                const vistaModulo = catalogo || cotizador;
+                const hueco = mas || vistaModulo ? "0px" : "calc(180px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
                 const GAP_OBJETIVO = 12;
-                if (mas && nav) {
+                const esVistaMas = (nodo) =>
+                  !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
+                if (vistaModulo) {
+                  doc.querySelectorAll("[data-testid='stBottomBlockContainer']").forEach((el) => {
+                    el.style.setProperty("min-height", "0px", "important");
+                    el.style.setProperty("padding-top", "0px", "important");
+                    el.style.setProperty("padding-bottom", "0px", "important");
+                    el.style.setProperty("margin-top", "0px", "important");
+                    el.style.setProperty("margin-bottom", "0px", "important");
+                  });
+                }
+                const dockVista = (caja, ancla) => {
+                  if (!caja || !nav) return;
                   const navCaja = nav.getBoundingClientRect();
                   const app = doc.querySelector(".stApp") || doc.documentElement;
-                  const extra = Math.max(0, Math.round((app.scrollHeight || 0) - mas.getBoundingClientRect().bottom - (app.scrollTop || 0)));
-                  const huecoNav = Math.max(24, Math.round(win.innerHeight - navCaja.top + GAP_OBJETIVO - extra));
-                  mas.style.setProperty("padding-bottom", huecoNav + "px", "important");
-                  const masTop = mas.getBoundingClientRect().top;
-                  const minH = Math.max(240, Math.round(win.innerHeight - masTop));
-                  mas.style.setProperty("min-height", minH + "px", "important");
-                  const item = logout
-                    ? Array.from(mas.children).find((ch) => ch.contains(logout))
-                    : mas.querySelector("[data-testid='stLayoutWrapper']:has(.st-key-mas_sesion)");
-                  if (item) item.style.setProperty("margin-top", "auto", "important");
-                }
+                  const isMas = esVistaMas(caja);
+                  if (isMas) {
+                    const extra = Math.max(0, Math.round((app.scrollHeight || 0) - caja.getBoundingClientRect().bottom - (app.scrollTop || 0)));
+                    const huecoNav = Math.max(24, Math.round(win.innerHeight - navCaja.top + GAP_OBJETIVO - extra));
+                    caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
+                    const cajaTop = caja.getBoundingClientRect().top;
+                    const minH = Math.max(240, Math.round(win.innerHeight - cajaTop));
+                    caja.style.setProperty("min-height", minH + "px", "important");
+                    caja.style.setProperty("box-sizing", "border-box", "important");
+                    return;
+                  }
+                  const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
+                  const host = form || caja;
+                  const posteriores = [];
+                  let nodoRef = form || (ancla && ancla.parentElement);
+                  while (nodoRef && nodoRef !== caja) {
+                    let sig = nodoRef.nextElementSibling;
+                    while (sig) {
+                      posteriores.push(sig);
+                      sig = sig.nextElementSibling;
+                    }
+                    nodoRef = nodoRef.parentElement;
+                  }
+                  const hayMas = posteriores.some((ch) =>
+                    ch.querySelector("button, a, img, [data-testid='stDownloadButton']")
+                  );
+                  if (form) {
+                    form.style.setProperty("display", "flex", "important");
+                    form.style.setProperty("flex-direction", "column", "important");
+                    form.style.setProperty("width", "100%", "important");
+                    form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
+                    form.style.setProperty("min-height", hayMas ? "0" : "100%", "important");
+                  }
+                  if (!hayMas && form) {
+                    const cadena = [];
+                    let p = form.parentElement;
+                    while (p && p !== caja) {
+                      cadena.push(p);
+                      p = p.parentElement;
+                    }
+                    cadena.forEach((nodo) => {
+                      nodo.style.setProperty("display", "flex", "important");
+                      nodo.style.setProperty("flex-direction", "column", "important");
+                      nodo.style.setProperty("flex", "1 1 auto", "important");
+                      nodo.style.setProperty("min-height", "0", "important");
+                      nodo.style.setProperty("width", "100%", "important");
+                    });
+                  }
+                  const hijosHost = Array.from(host.children);
+                  const item = ancla ? hijosHost.find((ch) => ch.contains(ancla)) : null;
+                  if (form) form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
+                  if (item) {
+                    if (hayMas) item.style.setProperty("margin-top", "0", "important");
+                    else item.style.setProperty("margin-top", "auto", "important");
+                  }
+                  caja.style.setProperty("box-sizing", "border-box", "important");
+                  if (hayMas) {
+                    caja.style.setProperty("padding-bottom", "8px", "important");
+                    caja.style.setProperty("min-height", "0px", "important");
+                    return;
+                  }
+                  const scrollTop = app.scrollTop || 0;
+                  const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
+                  const vistaLarga = maxScroll > 80;
+                  if (scrollTop < 4 || !vistaLarga) {
+                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
+                    const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
+                    caja.style.setProperty("min-height", minH + "px", "important");
+                  } else {
+                    caja.style.setProperty("min-height", "0px", "important");
+                  }
+                  if (!ancla) return;
+                  const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
+                  const anclaNow = ancla.getBoundingClientRect().bottom;
+                  const anclaAtMax = anclaNow + scrollTop - maxScroll;
+                  const objetivo = navCaja.top - GAP_OBJETIVO;
+                  const enPantalla = anclaNow <= win.innerHeight + 8 && anclaNow >= 40;
+                  const referencia = (!vistaLarga || (scrollTop < 4 && enPantalla)) ? anclaNow : anclaAtMax;
+                  let nextPad = Math.round(currentPad + (referencia - objetivo));
+                  nextPad = Math.max(0, Math.min(160, nextPad));
+                  caja.style.setProperty("padding-bottom", nextPad + "px", "important");
+                };
+                if (mas && nav) dockVista(mas, logout);
+                if (!mas && vistaModulo && nav) dockVista(vistaModulo, accion);
                 const chromeCss =
                   '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
                   '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
@@ -1940,6 +2034,13 @@ def anclar_barra_inferior():
                 win.__ccmBottomNavBound = true;
                 win.addEventListener("resize", anclar, { passive: true });
                 win.addEventListener("orientationchange", anclar, { passive: true });
+                const appScroll = doc.querySelector(".stApp");
+                if (appScroll) {
+                  appScroll.addEventListener("scroll", () => {
+                    if (win.__ccmDockScrollTO) win.cancelAnimationFrame(win.__ccmDockScrollTO);
+                    win.__ccmDockScrollTO = win.requestAnimationFrame(anclar);
+                  }, { passive: true });
+                }
                 try {
                   let espera;
                   const anclarSuave = () => {
@@ -1980,7 +2081,7 @@ def sincronizar_altura_encabezado_fijo():
                 const estilos = win.getComputedStyle(doc.documentElement);
                 const gapRaw = estilos.getPropertyValue("--header-gap").trim();
                 const gap = Number.parseFloat(gapRaw) || 16;
-                const offset = Math.ceil(bottom + gap) + "px";
+                const offset = Math.ceil(Math.max(bottom + gap, 208)) + "px";
                 const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
                 destinos.forEach((nodo) => {
                   if (nodo && nodo.style) nodo.style.setProperty("--header-offset", offset);
@@ -3635,10 +3736,10 @@ st.markdown(
         --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
-        --sticky-h: 132px;
+        --sticky-h: 208px;
         --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
-        --header-gap: 16px;
+        --header-gap: 20px;
         --ccm-nav-clearance: calc(109px + env(safe-area-inset-bottom, 0px));
     }
 
@@ -3777,8 +3878,8 @@ st.markdown(
 
     .ccm-header-spacer {
         display: block !important;
-        height: var(--header-offset) !important;
-        min-height: var(--header-offset) !important;
+        height: max(var(--header-offset), 208px) !important;
+        min-height: max(var(--header-offset), 208px) !important;
         width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -3953,9 +4054,7 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 8px;
             --header-blue-pad-x: 12px;
-            --sticky-h: 150px;
             --sticky-delivery: 0px;
-            --header-offset: var(--sticky-h);
         }
         .app-header-blue {
             border-radius: 11px !important;
@@ -3996,8 +4095,6 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 11px;
             --header-blue-pad-x: 14px;
-            --sticky-h: 148px;
-            --header-offset: var(--sticky-h);
         }
         .app-header-blue {
             border-radius: 14px !important;
@@ -4019,8 +4116,6 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
-            --sticky-h: 140px;
-            --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
         .app-header-brand {
@@ -4047,8 +4142,6 @@ st.markdown(
             --nav-btn-h: 46px;
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
-            --sticky-h: 136px;
-            --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
         .app-header-brand {
@@ -4074,6 +4167,12 @@ st.markdown(
         padding: 0 !important;
         overflow: hidden !important;
         border: 0 !important;
+    }
+    [data-testid="stBottom"],
+    [data-testid="stBottomBlockContainer"] {
+        min-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
 
     .st-key-bottom_nav,
@@ -4112,11 +4211,31 @@ st.markdown(
     .st-key-safe_cotizador_fin,
     .st-key-safe_catalogo {
         display: block !important;
-        height: 180px !important;
-        min-height: 180px !important;
+        height: 0 !important;
+        min-height: 0 !important;
         width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
         pointer-events: none !important;
         opacity: 0 !important;
+        overflow: hidden !important;
+    }
+    [data-testid="stElementContainer"]:has(> .st-key-safe_catalogo),
+    [data-testid="stElementContainer"]:has(> .st-key-safe_cotizador),
+    [data-testid="stElementContainer"]:has(> .st-key-safe_cotizador_fin),
+    [data-testid="stElementContainer"]:has(> [class~="st-key-safe_catalogo"]),
+    [data-testid="stElementContainer"]:has(> [class~="st-key-safe_cotizador"]),
+    [data-testid="stElementContainer"]:has(> [class~="st-key-safe_cotizador_fin"]),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_catalogo),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_cotizador),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_cotizador_fin) {
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
     }
     .st-key-safe_mas {
         display: block !important;
@@ -4129,13 +4248,27 @@ st.markdown(
         padding: 0 !important;
     }
     .st-key-catalogo_formulario {
-        padding-bottom: 24px !important;
-        margin-bottom: 8px !important;
+        padding-bottom: 0 !important;
+        margin-bottom: 0 !important;
     }
     .block-container:has(.st-key-vista_mas),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_mas),
-    .stMainBlockContainer:has(.st-key-vista_mas) {
+    .stMainBlockContainer:has(.st-key-vista_mas),
+    .block-container:has(.st-key-vista_catalogo),
+    [data-testid="stMainBlockContainer"]:has(.st-key-vista_catalogo),
+    .stMainBlockContainer:has(.st-key-vista_catalogo),
+    .block-container:has(.st-key-vista_cotizador),
+    [data-testid="stMainBlockContainer"]:has(.st-key-vista_cotizador),
+    .stMainBlockContainer:has(.st-key-vista_cotizador) {
         padding-bottom: 0 !important;
+    }
+    [data-testid="stAppViewContainer"]:has(.st-key-vista_catalogo) [data-testid="stBottomBlockContainer"],
+    [data-testid="stAppViewContainer"]:has(.st-key-vista_cotizador) [data-testid="stBottomBlockContainer"],
+    .stApp:has(.st-key-vista_catalogo) [data-testid="stBottomBlockContainer"],
+    .stApp:has(.st-key-vista_cotizador) [data-testid="stBottomBlockContainer"] {
+        min-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
     .st-key-vista_mas {
         display: flex !important;
@@ -4172,12 +4305,102 @@ st.markdown(
     .st-key-btn_logout_cliente div.stButton {
         margin-bottom: 0 !important;
     }
+    .st-key-vista_catalogo,
+    .st-key-vista_cotizador {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        box-sizing: border-box !important;
+        padding-top: 12px !important;
+        padding-bottom: var(--ccm-nav-clearance) !important;
+        margin-bottom: 0 !important;
+        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+    }
+    .st-key-vista_catalogo > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_catalogo > [data-testid="stVerticalBlock"],
+    .st-key-vista_catalogo > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        min-height: 0 !important;
+        height: 100% !important;
+    }
+    .st-key-vista_cotizador > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_cotizador > [data-testid="stVerticalBlock"],
+    .st-key-vista_cotizador > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+    }
+    .st-key-vista_catalogo [data-testid="stVerticalBlock"]:has(.st-key-catalogo_formulario),
+    .st-key-vista_catalogo [data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-catalogo_formulario),
+    .st-key-vista_catalogo [data-testid="stLayoutWrapper"]:has(.st-key-catalogo_formulario) {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        min-height: 0 !important;
+    }
+    .st-key-vista_catalogo .st-key-catalogo_formulario {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        min-height: 0 !important;
+    }
+    .st-key-catalogo_formulario > [data-testid="stElementContainer"]:has(.st-key-btn_buscar_china),
+    .st-key-catalogo_formulario > [data-testid="stElementContainer"]:has(.st-key-btn_escanear_catalogo),
+    .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_buscar_china),
+    .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_escanear_catalogo),
+    .st-key-vista_cotizador > [data-testid="stElementContainer"]:has(.st-key-guia_foco_tarifa),
+    .st-key-vista_cotizador > [data-testid="stElementContainer"]:has(.st-key-btn_confirmar_tarifa),
+    .st-key-vista_cotizador > [data-testid="stLayoutWrapper"]:has(.st-key-guia_foco_tarifa),
+    .st-key-vista_cotizador > [data-testid="stLayoutWrapper"]:has(.st-key-btn_confirmar_tarifa) {
+        margin-top: auto !important;
+        width: 100% !important;
+        flex: 0 0 auto !important;
+    }
+    .st-key-vista_catalogo [data-testid="stHeading"],
+    .st-key-vista_cotizador [data-testid="stHeading"],
+    .st-key-catalogo_formulario [data-testid="stHeading"] {
+        margin-top: 0 !important;
+        padding-top: 6px !important;
+        scroll-margin-top: max(var(--header-offset, 208px), 208px) !important;
+    }
     .st-key-guia_foco_tarifa,
+    .st-key-guia_foco_tarifa [data-testid="stVerticalBlock"],
+    .st-key-guia_foco_tarifa [data-testid="stLayoutWrapper"],
+    .st-key-guia_foco_tarifa [data-testid="stElementContainer"],
     .st-key-btn_confirmar_tarifa,
     .st-key-btn_buscar_china,
     .st-key-btn_escanear_catalogo {
-        scroll-margin-bottom: calc(180px + env(safe-area-inset-bottom, 0px)) !important;
-        margin-bottom: 16px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        display: block !important;
+        scroll-margin-bottom: var(--ccm-nav-clearance) !important;
+        margin-bottom: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+    .st-key-guia_foco_tarifa div.stButton,
+    .st-key-btn_confirmar_tarifa div.stButton,
+    .st-key-btn_buscar_china div.stButton,
+    .st-key-btn_escanear_catalogo div.stButton {
+        width: 100% !important;
+    }
+    .st-key-guia_foco_tarifa div.stButton > button,
+    .st-key-btn_confirmar_tarifa div.stButton > button,
+    .st-key-guia_foco_tarifa [data-testid^="stBaseButton"],
+    .st-key-btn_confirmar_tarifa [data-testid^="stBaseButton"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 48px !important;
+        height: auto !important;
+        max-height: none !important;
+        white-space: normal !important;
+        box-sizing: border-box !important;
     }
     .st-key-btn_logout_cliente {
         scroll-margin-bottom: calc(88px + env(safe-area-inset-bottom, 0px)) !important;
@@ -4188,8 +4411,12 @@ st.markdown(
     .st-key-btn_escanear_catalogo div.stButton > button,
     .st-key-btn_buscar_china [data-testid^="stBaseButton"],
     .st-key-btn_escanear_catalogo [data-testid^="stBaseButton"] {
+        width: 100% !important;
+        max-width: 100% !important;
         min-height: 48px !important;
         height: 48px !important;
+        max-height: none !important;
+        box-sizing: border-box !important;
     }
 
     .mas-seccion {
@@ -5980,7 +6207,11 @@ elif st.session_state["rol"] == "cliente":
                 st.session_state.pop("datos_pdf_confirmado", None)
                 st.rerun()
 
-    if st.session_state.get("hub") == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO:
+    if (
+        st.session_state.get("hub") == "china"
+        and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
+        and st.session_state["sub_tab_inicio"] not in {"Catálogo", "Cotizador"}
+    ):
         st.markdown(
             (
                 '<div class="banner-clearance"></div>'
@@ -5996,367 +6227,370 @@ elif st.session_state["rol"] == "cliente":
         )
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
-        with st.container(key="catalogo_formulario"):
-            st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+        with st.container(key="vista_catalogo"):
+            with st.container(key="catalogo_formulario"):
+                st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
 
-            modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+                modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
 
-            resultados_1688 = []
-            if modo_busq == "🔎 Por Nombre / Palabras":
-                kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
-                if st.button(
-                    "Buscar Productos en China ➔",
-                    type="primary",
-                    key="btn_buscar_china",
-                    use_container_width=True,
-                ) and kw:
-                    with st.spinner("Consultando catálogo de 1688..."):
-                        resultados_1688 = buscar_productos_1688_texto(kw)
-            else:
-                img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-                if img_up and st.button(
-                    "Escanear Coincidencia Visual ➔",
-                    type="primary",
-                    key="btn_escanear_catalogo",
-                    use_container_width=True,
-                ):
-                    with st.spinner("Buscando por reconocimiento visual..."):
-                        resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
+                resultados_1688 = []
+                if modo_busq == "🔎 Por Nombre / Palabras":
+                    kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+                    if st.button(
+                        "Buscar Productos en China ➔",
+                        type="primary",
+                        key="btn_buscar_china",
+                        use_container_width=True,
+                    ) and kw:
+                        with st.spinner("Consultando catálogo de 1688..."):
+                            resultados_1688 = buscar_productos_1688_texto(kw)
+                else:
+                    img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+                    if img_up and st.button(
+                        "Escanear Coincidencia Visual ➔",
+                        type="primary",
+                        key="btn_escanear_catalogo",
+                        use_container_width=True,
+                    ):
+                        with st.spinner("Buscando por reconocimiento visual..."):
+                            resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
 
-        if resultados_1688:
-            st.markdown("---")
-            for prod in resultados_1688:
-                calc = calcular_costo_puesto_honduras(
-                    prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
-                )
-
-                c_img, c_det = st.columns([1, 1.8])
-                with c_img:
-                    st.image(prod["imagen_url"], use_container_width=True)
-                with c_det:
-                    st.markdown(f"**{prod['nombre']}**")
-                    st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
-                    st.markdown(
-                        f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
-                    )
-                    st.success(
-                        f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*"
+            if resultados_1688:
+                st.markdown("---")
+                for prod in resultados_1688:
+                    calc = calcular_costo_puesto_honduras(
+                        prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
                     )
 
-                    msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
-                    url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+                    c_img, c_det = st.columns([1, 1.8])
+                    with c_img:
+                        st.image(prod["imagen_url"], use_container_width=True)
+                    with c_det:
+                        st.markdown(f"**{prod['nombre']}**")
+                        st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                        st.markdown(
+                            f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
+                        )
+                        st.success(
+                            f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {st.session_state['modalidad_envio_seleccionada']})*"
+                        )
 
-                    c_b1, c_b2 = st.columns(2)
-                    with c_b1:
-                        st.markdown(
-                            f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
-                            unsafe_allow_html=True,
-                        )
-                    with c_b2:
-                        st.markdown(
-                            f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
-                            unsafe_allow_html=True,
-                        )
-                st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        espaciador_barra_inferior("safe_catalogo")
+                        msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {st.session_state['modalidad_envio_seleccionada']}. Enlace: {prod['url_proveedor']}"
+                        url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+
+                        c_b1, c_b2 = st.columns(2)
+                        with c_b1:
+                            st.markdown(
+                                f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                        with c_b2:
+                            st.markdown(
+                                f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+            espaciador_barra_inferior("safe_catalogo")
 
     elif (
         st.session_state["sub_tab_inicio"] == "Cotizador"
         and st.session_state["modalidad_envio_seleccionada"] != "➕ Crear Nueva Dirección de Envío"
     ):
-        st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
-        selector_modalidad_entrega(opciones_modalidad)
-        st.info(
-            f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*"
-        )
-
-        t_lb = get_tarifa("tarifa_libra")
-        t_m3 = get_tarifa("tarifa_m3")
-        min_usd = get_tarifa("minimo_cobro_usd")
-        umbral_min = float(get_tarifa("umbral_minimo_lb") or 3.0)
-        umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
-        divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
-
-        tipo_opts = [
-            f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
-            "🚢 Carga Comercial por CBM (hasta contenedor 40')",
-        ]
-        tipo_kwargs = {"key": "sb_tipo_carga_select"}
-        if "sb_tipo_carga_select" not in st.session_state:
-            tipo_kwargs["index"] = 0
-        tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
-
-        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-
-        c_u1, c_u2 = st.columns(2)
-        with c_u1:
-            unidad_medida = st.selectbox(
-                "Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida"
-            )
-        with c_u2:
-            unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
-
-        es_paqueteria = "Paquetería Menor" in tipo_carga
-        dim = limites_dimensiones(unidad_medida, comercial=not es_paqueteria)
-        pes = limites_peso(unidad_peso, paqueteria=es_paqueteria)
-        etiqueta_medida = unidad_medida.split()[1].strip("()")
-        etiqueta_peso = unidad_peso.split()[1].strip("()")
-
-        st.caption(
-            f"Tope de medidas: contenedor 40' High Cube interno "
-            f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
-            f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
-            f"({peso_max_contenedor_hn_lb():,.0f} lb)."
-            + (f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb." if es_paqueteria else "")
-        )
-
-        st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
-
-        pref = "menor" if es_paqueteria else "com"
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            al_input = campo_numerico(
-                f"Alto ({etiqueta_medida})",
-                dim["min"],
-                dim["defaults"]["alto"],
-                dim["max"]["alto"],
-                dim["step"],
-                f"in_al_{pref}_{dim['codigo']}",
-                dim["formato"],
-            )
-        with c2:
-            an_input = campo_numerico(
-                f"Ancho ({etiqueta_medida})",
-                dim["min"],
-                dim["defaults"]["ancho"],
-                dim["max"]["ancho"],
-                dim["step"],
-                f"in_an_{pref}_{dim['codigo']}",
-                dim["formato"],
-            )
-        with c3:
-            la_input = campo_numerico(
-                f"Largo ({etiqueta_medida})",
-                dim["min"],
-                dim["defaults"]["largo"],
-                dim["max"]["largo"],
-                dim["step"],
-                f"in_la_{pref}_{dim['codigo']}",
-                dim["formato"],
-            )
-        with c4:
-            pe_input = campo_numerico(
-                f"Peso ({etiqueta_peso})",
-                pes["min"],
-                pes["default"],
-                pes["max"],
-                pes["step"],
-                f"in_pe_{pref}_{pes['codigo']}",
-                pes["formato"],
+        with st.container(key="vista_cotizador"):
+            st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+            selector_modalidad_entrega(opciones_modalidad)
+            st.info(
+                f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*"
             )
 
-        if "Pulgadas" in unidad_medida:
-            al_val = al_input * 2.54
-            an_val = an_input * 2.54
-            la_val = la_input * 2.54
-        elif "Metros" in unidad_medida:
-            al_val = al_input * 100.0
-            an_val = an_input * 100.0
-            la_val = la_input * 100.0
-        else:
-            al_val = al_input
-            an_val = an_input
-            la_val = la_input
+            t_lb = get_tarifa("tarifa_libra")
+            t_m3 = get_tarifa("tarifa_m3")
+            min_usd = get_tarifa("minimo_cobro_usd")
+            umbral_min = float(get_tarifa("umbral_minimo_lb") or 3.0)
+            umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
+            divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
 
-        if "Kilogramos" in unidad_peso:
-            pe_lb = pe_input * 2.20462
-            pe_kg = pe_input
-        else:
-            pe_lb = pe_input
-            pe_kg = pe_input / 2.20462
-
-        vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
-        vol_ft3_val = vol_m3_val * 35.3147
-
-        if es_paqueteria:
-            if pe_lb <= umbral_min:
-                tot = min_usd
-                desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
-            else:
-                tot = pe_lb * t_lb
-                desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
+            tipo_opts = [
+                f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
+                "🚢 Carga Comercial por CBM (hasta contenedor 40')",
+            ]
+            tipo_kwargs = {"key": "sb_tipo_carga_select"}
+            if "sb_tipo_carga_select" not in st.session_state:
+                tipo_kwargs["index"] = 0
+            tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
 
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Volumen (m³)", f"{vol_m3_val:.4f} m³")
-            with m2:
-                st.metric("Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
-            with m3:
-                st.metric("Total Estimado", f"${tot:.2f} USD")
 
-            modalidad_pdf = f"Paquetería Menor (1 a {umbral_paq:.0f} lbs)"
-            detalle_pdf = desc
+            c_u1, c_u2 = st.columns(2)
+            with c_u1:
+                unidad_medida = st.selectbox(
+                    "Unidad de Medida:", ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"], key="sb_unidad_medida"
+                )
+            with c_u2:
+                unidad_peso = st.selectbox("Unidad de Peso:", ["Libras (lb)", "Kilogramos (kg)"], key="sb_unidad_peso")
 
-        else:
-            vol_m3_peso = pe_kg / divisor_vol
-            cbm_facturable = max(vol_m3_val, vol_m3_peso)
-            tot = cbm_facturable * t_m3
+            es_paqueteria = "Paquetería Menor" in tipo_carga
+            dim = limites_dimensiones(unidad_medida, comercial=not es_paqueteria)
+            pes = limites_peso(unidad_peso, paqueteria=es_paqueteria)
+            etiqueta_medida = unidad_medida.split()[1].strip("()")
+            etiqueta_peso = unidad_peso.split()[1].strip("()")
 
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Volumen Físico", f"{vol_m3_val:.4f} m³")
-            with m2:
-                st.metric("CBM Facturable", f"{cbm_facturable:.4f} CBM")
-            with m3:
-                st.metric("Total Estimado", f"${tot:.2f} USD")
-
-            modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
-            detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
-
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        with st.container(key="guia_foco_tarifa"):
-            if st.button(
-                "🤝 Confirmar Tarifa & Emitir Documentos",
-                type="primary",
-                key="btn_confirmar_tarifa",
-            ):
-                ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
-                f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
-                with get_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute(
-                        """
-                        INSERT INTO cotizaciones (
-                            codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
-                            total_usd, fecha, confirmada, fecha_creacion
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                        """,
-                        (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql, f_hoy_sql),
-                    )
-                    id_generado = cur.lastrowid
-
-                st.session_state["ultima_cot_id"] = id_generado
-                st.session_state["datos_pdf_confirmado"] = {
-                    "tipo_carga": modalidad_pdf,
-                    "al": al_val,
-                    "an": an_val,
-                    "la": la_val,
-                    "peso_lb": pe_lb,
-                    "peso_kg": pe_kg,
-                    "vol_m3": vol_m3_val,
-                    "vol_ft3": vol_ft3_val,
-                    "total_usd": tot,
-                    "detalle_tarifa": detalle_pdf,
-                    "id_cot": id_generado,
-                    "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
-                    "fecha_hora_doc": f_hoy_doc,
-                    "fecha_sql": f_hoy_sql,
-                }
-                st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
-                avanzar_guia_si(2, 3)
-                st.rerun()
-        espaciador_barra_inferior("safe_cotizador")
-
-        if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
-            d_pdf = st.session_state["datos_pdf_confirmado"]
-            id_emitida = d_pdf.get("id_cot")
-            tarifa_consolidada = cotizacion_esta_confirmada(id_emitida, casillero)
-            tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
-                d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+            st.caption(
+                f"Tope de medidas: contenedor 40' High Cube interno "
+                f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
+                f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
+                f"({peso_max_contenedor_hn_lb():,.0f} lb)."
+                + (f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb." if es_paqueteria else "")
             )
-            if not tarifa_sigue_visible:
-                st.session_state.pop("datos_pdf_confirmado", None)
+
+            st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+
+            pref = "menor" if es_paqueteria else "com"
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                al_input = campo_numerico(
+                    f"Alto ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["alto"],
+                    dim["max"]["alto"],
+                    dim["step"],
+                    f"in_al_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                )
+            with c2:
+                an_input = campo_numerico(
+                    f"Ancho ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["ancho"],
+                    dim["max"]["ancho"],
+                    dim["step"],
+                    f"in_an_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                )
+            with c3:
+                la_input = campo_numerico(
+                    f"Largo ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["largo"],
+                    dim["max"]["largo"],
+                    dim["step"],
+                    f"in_la_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                )
+            with c4:
+                pe_input = campo_numerico(
+                    f"Peso ({etiqueta_peso})",
+                    pes["min"],
+                    pes["default"],
+                    pes["max"],
+                    pes["step"],
+                    f"in_pe_{pref}_{pes['codigo']}",
+                    pes["formato"],
+                )
+
+            if "Pulgadas" in unidad_medida:
+                al_val = al_input * 2.54
+                an_val = an_input * 2.54
+                la_val = la_input * 2.54
+            elif "Metros" in unidad_medida:
+                al_val = al_input * 100.0
+                an_val = an_input * 100.0
+                la_val = la_input * 100.0
             else:
-                mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
-                mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
-                mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
-                mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
-                mismo_peso = abs(d_pdf.get("peso_lb", 0.0) - pe_lb) < 0.01
-                mismo_precio = abs(d_pdf.get("total_usd", 0.0) - tot) < 0.01
+                al_val = al_input
+                an_val = an_input
+                la_val = la_input
 
-                if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
-                    id_c = d_pdf.get("id_cot", 1)
-                    dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
-                    fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
-                    estado_doc = texto_estado_cotizacion(
-                        d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
-                    )
-                    if tarifa_consolidada:
-                        titulo_emitida = (
-                            f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está en Envíos."
-                        )
-                        detalle_emitida = f"✅ {estado_doc}"
-                    else:
-                        titulo_emitida = (
-                            f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
-                        )
-                        detalle_emitida = (
-                            f"⏳ {estado_doc}. Confírmela en Mis Cotizaciones para que no caduque; el PDF Tarifa quedará en Envíos."
-                        )
+            if "Kilogramos" in unidad_peso:
+                pe_lb = pe_input * 2.20462
+                pe_kg = pe_input
+            else:
+                pe_lb = pe_input
+                pe_kg = pe_input / 2.20462
 
-                    st.markdown(
-                        f"""
-                    <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                            <span style="font-size: 1.4rem;">🎉</span>
-                            <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
-                        </div>
-                        <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
-                    </div>
-                    """,
-                        unsafe_allow_html=True,
-                    )
+            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+            vol_ft3_val = vol_m3_val * 35.3147
 
-                    pdf_fab = generar_pdf_etiqueta_proveedor(
-                        casillero=casillero,
-                        nombre=nombre_completo,
-                        telefono=tel_cli,
-                        ciudad=ciu_cli,
-                        al=d_pdf.get("al", 0),
-                        an=d_pdf.get("an", 0),
-                        la=d_pdf.get("la", 0),
-                        pe_lb=d_pdf.get("peso_lb", 0),
-                        pe_kg=d_pdf.get("peso_kg", 0),
-                        vol_m3=d_pdf.get("vol_m3", 0),
-                        destino_entrega=dest_pdf,
-                        fecha_emision=fecha_doc,
-                    )
-
-                    with st.container(key="guia_foco_pdf_fab"):
-                        if st.download_button(
-                            "📥 PDF Fabricante",
-                            pdf_fab,
-                            f"Shipping_Label_Fabricante_{casillero}.pdf",
-                            "application/pdf",
-                            key=f"dl_pdf_fab_{id_c}",
-                            use_container_width=True,
-                        ):
-                            avanzar_guia_si(3, 4)
-
-                    with st.container(key="guia_foco_ver_cot"):
-                        if st.button(
-                            "Ver en Mis Cotizaciones",
-                            type="primary",
-                            key=f"btn_ver_mis_cotizaciones_{id_c}",
-                            use_container_width=True,
-                        ):
-                            if guia_paso_actual() in (3, 4):
-                                st.session_state["guia_paso"] = 5
-                            ir_a_cotizacion_emitida(id_c)
-
-                    texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
-                    url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-                    st.markdown(
-                        f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
-                        unsafe_allow_html=True,
-                    )
+            if es_paqueteria:
+                if pe_lb <= umbral_min:
+                    tot = min_usd
+                    desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
                 else:
-                    st.session_state.pop("datos_pdf_confirmado", None)
+                    tot = pe_lb * t_lb
+                    desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
 
-        espaciador_barra_inferior("safe_cotizador_fin")
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Volumen (m³)", f"{vol_m3_val:.4f} m³")
+                with m2:
+                    st.metric("Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
+                with m3:
+                    st.metric("Total Estimado", f"${tot:.2f} USD")
+
+                modalidad_pdf = f"Paquetería Menor (1 a {umbral_paq:.0f} lbs)"
+                detalle_pdf = desc
+
+            else:
+                vol_m3_peso = pe_kg / divisor_vol
+                cbm_facturable = max(vol_m3_val, vol_m3_peso)
+                tot = cbm_facturable * t_m3
+
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Volumen Físico", f"{vol_m3_val:.4f} m³")
+                with m2:
+                    st.metric("CBM Facturable", f"{cbm_facturable:.4f} CBM")
+                with m3:
+                    st.metric("Total Estimado", f"${tot:.2f} USD")
+
+                modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
+                detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            with st.container(key="guia_foco_tarifa"):
+                if st.button(
+                    "🤝 Confirmar Tarifa & Emitir Documentos",
+                    type="primary",
+                    key="btn_confirmar_tarifa",
+                    use_container_width=True,
+                ):
+                    ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
+                    f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            """
+                            INSERT INTO cotizaciones (
+                                codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
+                                total_usd, fecha, confirmada, fecha_creacion
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                            """,
+                            (casillero, al_val, an_val, la_val, pe_lb, vol_m3_val, vol_ft3_val, tot, f_hoy_sql, f_hoy_sql),
+                        )
+                        id_generado = cur.lastrowid
+
+                    st.session_state["ultima_cot_id"] = id_generado
+                    st.session_state["datos_pdf_confirmado"] = {
+                        "tipo_carga": modalidad_pdf,
+                        "al": al_val,
+                        "an": an_val,
+                        "la": la_val,
+                        "peso_lb": pe_lb,
+                        "peso_kg": pe_kg,
+                        "vol_m3": vol_m3_val,
+                        "vol_ft3": vol_ft3_val,
+                        "total_usd": tot,
+                        "detalle_tarifa": detalle_pdf,
+                        "id_cot": id_generado,
+                        "destino_entrega": st.session_state["modalidad_envio_seleccionada"],
+                        "fecha_hora_doc": f_hoy_doc,
+                        "fecha_sql": f_hoy_sql,
+                    }
+                    st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
+                    avanzar_guia_si(2, 3)
+                    st.rerun()
+            espaciador_barra_inferior("safe_cotizador")
+
+            if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
+                d_pdf = st.session_state["datos_pdf_confirmado"]
+                id_emitida = d_pdf.get("id_cot")
+                tarifa_consolidada = cotizacion_esta_confirmada(id_emitida, casillero)
+                tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
+                    d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+                )
+                if not tarifa_sigue_visible:
+                    st.session_state.pop("datos_pdf_confirmado", None)
+                else:
+                    mismo_destino = d_pdf.get("destino_entrega", "") == st.session_state["modalidad_envio_seleccionada"]
+                    mismo_alto = abs(d_pdf.get("al", 0.0) - al_val) < 0.01
+                    mismo_ancho = abs(d_pdf.get("an", 0.0) - an_val) < 0.01
+                    mismo_largo = abs(d_pdf.get("la", 0.0) - la_val) < 0.01
+                    mismo_peso = abs(d_pdf.get("peso_lb", 0.0) - pe_lb) < 0.01
+                    mismo_precio = abs(d_pdf.get("total_usd", 0.0) - tot) < 0.01
+
+                    if mismo_destino and mismo_alto and mismo_ancho and mismo_largo and mismo_peso and mismo_precio:
+                        id_c = d_pdf.get("id_cot", 1)
+                        dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+                        fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
+                        estado_doc = texto_estado_cotizacion(
+                            d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
+                        )
+                        if tarifa_consolidada:
+                            titulo_emitida = (
+                                f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está en Envíos."
+                            )
+                            detalle_emitida = f"✅ {estado_doc}"
+                        else:
+                            titulo_emitida = (
+                                f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
+                            )
+                            detalle_emitida = (
+                                f"⏳ {estado_doc}. Confírmela en Mis Cotizaciones para que no caduque; el PDF Tarifa quedará en Envíos."
+                            )
+
+                        st.markdown(
+                            f"""
+                        <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                                <span style="font-size: 1.4rem;">🎉</span>
+                                <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
+                            </div>
+                            <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
+                        </div>
+                        """,
+                            unsafe_allow_html=True,
+                        )
+
+                        pdf_fab = generar_pdf_etiqueta_proveedor(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            al=d_pdf.get("al", 0),
+                            an=d_pdf.get("an", 0),
+                            la=d_pdf.get("la", 0),
+                            pe_lb=d_pdf.get("peso_lb", 0),
+                            pe_kg=d_pdf.get("peso_kg", 0),
+                            vol_m3=d_pdf.get("vol_m3", 0),
+                            destino_entrega=dest_pdf,
+                            fecha_emision=fecha_doc,
+                        )
+
+                        with st.container(key="guia_foco_pdf_fab"):
+                            if st.download_button(
+                                "📥 PDF Fabricante",
+                                pdf_fab,
+                                f"Shipping_Label_Fabricante_{casillero}.pdf",
+                                "application/pdf",
+                                key=f"dl_pdf_fab_{id_c}",
+                                use_container_width=True,
+                            ):
+                                avanzar_guia_si(3, 4)
+
+                        with st.container(key="guia_foco_ver_cot"):
+                            if st.button(
+                                "Ver en Mis Cotizaciones",
+                                type="primary",
+                                key=f"btn_ver_mis_cotizaciones_{id_c}",
+                                use_container_width=True,
+                            ):
+                                if guia_paso_actual() in (3, 4):
+                                    st.session_state["guia_paso"] = 5
+                                ir_a_cotizacion_emitida(id_c)
+
+                        texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
+                        url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
+                        st.markdown(
+                            f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.session_state.pop("datos_pdf_confirmado", None)
+
+            espaciador_barra_inferior("safe_cotizador_fin")
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
