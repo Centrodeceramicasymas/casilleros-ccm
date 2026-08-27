@@ -1343,7 +1343,7 @@ PASOS_GUIA_INTERACTIVA = (
     {
         "paso": 1,
         "titulo": "Acceso al Cotizador",
-        "texto": "Pulse <b>Cotizador</b> en el menú (o en las tarjetas) para calcular el flete de su carga.",
+        "texto": "Pulse <b>Cotizador</b> en la barra inferior para calcular el flete de su carga.",
     },
     {
         "paso": 2,
@@ -1507,6 +1507,49 @@ def disparar_guia_china_si_aplica():
     iniciar_guia_interactiva(1)
 
 
+def proximo_cierre_contenedor(ahora=None):
+    """Próximo viernes de cierre de consolidación (hora de Honduras)."""
+    ahora = ahora or obtener_tiempo_honduras()
+    dias = (4 - ahora.weekday()) % 7
+    if dias == 0 and ahora.hour >= 17:
+        dias = 7
+    cierre = ahora + timedelta(days=dias)
+    dia = DIAS_SEMANA_ES.get(cierre.weekday(), "")
+    mes = MESES_ES.get(cierre.month, "")
+    return f"{dia} {cierre.day} {mes} {cierre.year}"
+
+
+def pintar_banner_promocional_china(casillero):
+    """Tarjeta publicitaria en Inicio / China (el acceso a módulos vive en la barra inferior)."""
+    cas_txt = formatear_casillero(casillero) or "su casillero"
+    cierre = proximo_cierre_contenedor()
+    msg = urllib.parse.quote(
+        f"Hola Centro de Cerámicas y Más, soy del casillero {cas_txt}. "
+        "Quiero consultar la promoción de consolidación marítima China → Honduras "
+        f"y el cierre de contenedor del {cierre}."
+    )
+    url_wa = f"https://wa.me/50495771099?text={msg}"
+    st.markdown(
+        f'<div class="promo-ad-card">'
+        f'<div class="promo-ad-kicker">Promoción vigente · Casillero {cas_txt}</div>'
+        f'<div class="promo-ad-title">Tarifa especial de consolidación marítima</div>'
+        f'<div class="promo-ad-body">'
+        f"Reserve cupo en el contenedor 40&prime; HC China ➔ Honduras. "
+        f"Próximo cierre: <b>{cierre}</b>. Paquetería por libra o carga comercial por CBM, "
+        f"con asesoría de casillero incluida."
+        f"</div>"
+        f'<div class="promo-ad-pills">'
+        f'<span class="promo-ad-pill">Cierre {cierre}</span>'
+        f'<span class="promo-ad-pill">Cerámica y carga mixta</span>'
+        f'<span class="promo-ad-pill">Asesor CCM</span>'
+        f"</div>"
+        f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
+        f"Consultar Promoción</a>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def pintar_vista_mas():
     """Pantalla completa Más: cuenta, módulos restantes y cierre de sesión."""
     hub_activo = st.session_state.get("hub")
@@ -1531,12 +1574,19 @@ def pintar_vista_mas():
             ir_a("Mis Envíos", hub="china")
         if st.button("📋  Fichas", key="mas_fichas", use_container_width=True):
             ir_a("Fichas", hub="china")
+        if st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True):
+            ir_a("Mis Cotizaciones", hub="china")
+        if st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True):
+            ir_a("Catálogo", hub="china")
+        if st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True):
+            avanzar_guia_si(1, 2)
+            ir_a("Cotizador", hub="china")
         st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
         if mostrar_btn_guia:
             if st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True):
                 iniciar_guia_interactiva(1)
                 st.rerun()
-        if st.button("⏻  Cerrar", type="secondary", key="btn_logout_cliente", use_container_width=True):
+        if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
             ir_a("Cerrar")
         espaciador_barra_inferior("safe_mas")
 
@@ -1607,19 +1657,39 @@ def anclar_barra_inferior():
                 doc.querySelector(".st-key-bottom_nav");
               const anclar = () => {
                 const nav = nodoNav();
-                if (!nav) return;
-                nav.style.setProperty("position", "fixed", "important");
-                nav.style.setProperty("bottom", "20px", "important");
-                nav.style.setProperty("left", "50%", "important");
-                nav.style.setProperty("right", "auto", "important");
-                nav.style.setProperty("margin", "0", "important");
-                nav.style.setProperty("transform", "translateX(-50%)", "important");
-                nav.style.setProperty("z-index", "9999", "important");
-                nav.style.setProperty("width", "min(96vw, 520px)", "important");
-                nav.style.setProperty("max-width", "520px", "important");
-                const hueco = "calc(220px + env(safe-area-inset-bottom, 0px))";
+                if (nav) {
+                  nav.style.setProperty("position", "fixed", "important");
+                  nav.style.setProperty("bottom", "20px", "important");
+                  nav.style.setProperty("left", "50%", "important");
+                  nav.style.setProperty("right", "auto", "important");
+                  nav.style.setProperty("margin", "0", "important");
+                  nav.style.setProperty("transform", "translateX(-50%)", "important");
+                  nav.style.setProperty("z-index", "9999", "important");
+                  nav.style.setProperty("width", "min(96vw, 520px)", "important");
+                  nav.style.setProperty("max-width", "520px", "important");
+                }
+                const hueco = "calc(160px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
+                });
+                const chrome = [
+                  '[data-testid="stStatusWidget"]',
+                  ".stStatusWidget",
+                  '[data-testid="stAppDeployButton"]',
+                  ".stDeployButton",
+                  '[class*="stAppDeployButton"]',
+                  '[class*="viewerBadge"]',
+                  '[class*="ViewerBadge"]',
+                  '[data-testid="stToolbar"]',
+                  '[data-testid="stDecoration"]',
+                  '[data-testid="stBaseButton-headerNoPadding"]',
+                  "iframe[title*='streamlit status' i]",
+                ].join(",");
+                doc.querySelectorAll(chrome).forEach((el) => {
+                  el.style.setProperty("display", "none", "important");
+                  el.style.setProperty("visibility", "hidden", "important");
+                  el.style.setProperty("pointer-events", "none", "important");
+                  el.style.setProperty("opacity", "0", "important");
                 });
               };
               anclar();
@@ -1630,6 +1700,14 @@ def anclar_barra_inferior():
                 win.__ccmBottomNavBound = true;
                 win.addEventListener("resize", anclar, { passive: true });
                 win.addEventListener("orientationchange", anclar, { passive: true });
+                try {
+                  let espera;
+                  const anclarSuave = () => {
+                    clearTimeout(espera);
+                    espera = setTimeout(anclar, 60);
+                  };
+                  new MutationObserver(anclarSuave).observe(doc.body, { childList: true, subtree: true });
+                } catch (e) {}
               }
             })();
             </script>
@@ -3392,7 +3470,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: calc(220px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3638,7 +3716,7 @@ st.markdown(
         .inicio-placeholder { min-height: 260px; }
         .inicio-placeholder-body { min-height: 180px; }
         .card-box { padding: 0.9rem; border-radius: 12px; }
-        .app-banner-card { padding: 12px; border-radius: 12px; margin-bottom: 0.85rem; }
+        .app-banner-card { padding: 12px; border-radius: 16px; margin-bottom: 0.85rem; }
         .swipe-indicator-bar { font-size: 0.68rem; margin: 1px 0 4px 0; }
     }
 
@@ -3819,8 +3897,14 @@ st.markdown(
     }
     .st-key-mas_envios div.stButton > button,
     .st-key-mas_fichas div.stButton > button,
+    .st-key-mas_cotizaciones div.stButton > button,
+    .st-key-mas_catalogo div.stButton > button,
+    .st-key-mas_cotizador div.stButton > button,
     .st-key-mas_envios [data-testid^="stBaseButton"],
-    .st-key-mas_fichas [data-testid^="stBaseButton"] {
+    .st-key-mas_fichas [data-testid^="stBaseButton"],
+    .st-key-mas_cotizaciones [data-testid^="stBaseButton"],
+    .st-key-mas_catalogo [data-testid^="stBaseButton"],
+    .st-key-mas_cotizador [data-testid^="stBaseButton"] {
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -3831,19 +3915,88 @@ st.markdown(
         height: 54px !important;
         justify-content: flex-start !important;
         text-align: left !important;
-        padding: 0 16px !important;
+        padding: 0 44px 0 16px !important;
         font-weight: 700 !important;
         box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05) !important;
         position: relative !important;
     }
     .st-key-mas_envios div.stButton > button::after,
-    .st-key-mas_fichas div.stButton > button::after {
+    .st-key-mas_fichas div.stButton > button::after,
+    .st-key-mas_cotizaciones div.stButton > button::after,
+    .st-key-mas_catalogo div.stButton > button::after,
+    .st-key-mas_cotizador div.stButton > button::after {
         content: ">" !important;
         position: absolute !important;
         right: 16px !important;
         color: #94a3b8 !important;
         font-weight: 700 !important;
         font-size: 1.05rem !important;
+    }
+
+    .promo-ad-card {
+        position: relative;
+        overflow: hidden;
+        background:
+            linear-gradient(135deg, rgba(11, 58, 145, 0.92) 0%, rgba(0, 74, 193, 0.88) 52%, rgba(29, 78, 216, 0.9) 100%),
+            radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.22) 0%, transparent 42%);
+        border-radius: 16px;
+        padding: 20px 18px 18px 18px;
+        color: #ffffff;
+        margin: 10px 0 14px 0;
+        box-shadow: 0 14px 32px rgba(0, 74, 193, 0.28);
+        box-sizing: border-box;
+    }
+    .promo-ad-kicker {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #bfdbfe;
+        margin: 0 0 8px 0;
+    }
+    .promo-ad-title {
+        font-size: 1.22rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin: 0 0 10px 0;
+        color: #ffffff;
+        letter-spacing: -0.02em;
+    }
+    .promo-ad-body {
+        font-size: 0.88rem;
+        font-weight: 500;
+        line-height: 1.45;
+        color: #e2e8f0;
+        margin: 0 0 14px 0;
+    }
+    .promo-ad-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 16px 0;
+    }
+    .promo-ad-pill {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #ffffff;
+    }
+    .promo-ad-cta {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        text-align: center;
+        background: #ffffff;
+        color: #004ac1;
+        font-weight: 800;
+        font-size: 0.95rem;
+        text-decoration: none;
+        border-radius: 12px;
+        padding: 12px 14px;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
     }
 
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
@@ -4078,7 +4231,7 @@ st.markdown(
     .app-banner-card {
         background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
         border: 1px solid #bfdbfe;
-        border-radius: 14px;
+        border-radius: 16px;
         padding: 14px 16px;
         color: #0f172a;
         margin: 0.85rem auto 1rem auto;
@@ -5068,30 +5221,7 @@ elif st.session_state["rol"] == "cliente":
             hub_china = HUBS["china"]
             st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
             st.caption("Consolidación marítima China ➔ Honduras")
-            st.caption("Envíos y Fichas están en Más, en la barra inferior.")
-            mods = modulos_china_visibles()
-            with st.container(key="china_modulos"):
-                for fila in range(0, len(mods), 2):
-                    cols_mod = st.columns(2, gap="small")
-                    for offset, col in enumerate(cols_mod):
-                        if fila + offset >= len(mods):
-                            break
-                        modulo = mods[fila + offset]
-                        with col:
-                            texto = f"{modulo['icon']}  {modulo['label']}"
-                            if st.button(
-                                texto,
-                                type="secondary",
-                                key=modulo["btn_key"],
-                                use_container_width=True,
-                            ):
-                                if modulo["id"] == "Cotizador":
-                                    avanzar_guia_si(1, 2)
-                                ir_a(modulo["id"], hub="china")
-                            st.markdown(
-                                f'<div class="mod-detalle">{modulo["detalle"]}</div>',
-                                unsafe_allow_html=True,
-                            )
+            pintar_banner_promocional_china(casillero)
         elif hub_sel == "eeuu":
             pintar_modulo_aliexpress_eeuu(casillero)
         elif hub_sel in HUBS:
