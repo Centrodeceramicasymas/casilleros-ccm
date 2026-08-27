@@ -1618,6 +1618,12 @@ def selector_modalidad_entrega(opciones_modalidad):
     if pendiente in opciones_modalidad:
         st.session_state["sb_modalidad_entrega"] = pendiente
         st.session_state["modalidad_envio_seleccionada"] = pendiente
+    elif pendiente:
+        # La opción todavía no está en la lista (lectura rezagada): reintenta en el siguiente run
+        # y no dejes el select trabado en «Crear Nueva Dirección».
+        st.session_state["_mod_entrega_pendiente"] = pendiente
+        if st.session_state.get("sb_modalidad_entrega") == "➕ Crear Nueva Dirección de Envío":
+            st.session_state["sb_modalidad_entrega"] = OPCION_PREDETERMINADA
     idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
     sel_kwargs = {"key": "sb_modalidad_entrega"}
     if "sb_modalidad_entrega" not in st.session_state:
@@ -7035,14 +7041,23 @@ elif st.session_state["rol"] == "cliente":
     lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = cargar_direcciones_db(casillero)
-    st.session_state.setdefault("direcciones_usuario", {})[casillero] = [
+    bolsa_dir_usuario = st.session_state.setdefault("direcciones_usuario", {})
+    dirs_db = [
         {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
         for d in direcciones_guardadas
     ]
+    claves_db = {(e["etiqueta"], e["ciudad"]) for e in dirs_db}
+    # Las guardadas en esta sesión que la lectura (cache/BD) aún no refleja siguen visibles.
+    extras_sesion = [
+        e
+        for e in bolsa_dir_usuario.get(casillero, [])
+        if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
+    ]
+    bolsa_dir_usuario[casillero] = dirs_db + extras_sesion
 
     opciones_modalidad = [OPCION_PREDETERMINADA]
-    for d in direcciones_guardadas:
-        opciones_modalidad.append(f"📍 {d[1]} - {d[3]}")
+    for e in bolsa_dir_usuario[casillero]:
+        opciones_modalidad.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
     opciones_modalidad.append("➕ Crear Nueva Dirección de Envío")
 
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
