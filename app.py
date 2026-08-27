@@ -2298,6 +2298,34 @@ def anclar_barra_inferior():
                     else item.style.setProperty("margin-top", "auto", "important");
                   }
                   caja.style.setProperty("box-sizing", "border-box", "important");
+                  const emitAcciones = caja.querySelector('[class~="st-key-acciones_emit_cotizador"]') ||
+                    caja.querySelector(".st-key-acciones_emit_cotizador");
+                  if (emitAcciones) {
+                    caja.style.setProperty("display", "flex", "important");
+                    caja.style.setProperty("flex-direction", "column", "important");
+                    caja.style.setProperty("justify-content", "flex-start", "important");
+                    caja.style.setProperty("padding-top", "16px", "important");
+                    caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
+                    const cajaTopEmit = Math.max(0, caja.getBoundingClientRect().top);
+                    caja.style.setProperty("min-height", Math.max(0, Math.round(win.innerHeight - cajaTopEmit)) + "px", "important");
+                    emitAcciones.style.setProperty("margin-top", "auto", "important");
+                    emitAcciones.style.setProperty("margin-bottom", "0px", "important");
+                    const cadenaEmit = [];
+                    let pEmit = emitAcciones.parentElement;
+                    while (pEmit && pEmit !== caja) {
+                      cadenaEmit.push(pEmit);
+                      pEmit = pEmit.parentElement;
+                    }
+                    cadenaEmit.forEach((nodo) => {
+                      nodo.style.setProperty("display", "flex", "important");
+                      nodo.style.setProperty("flex-direction", "column", "important");
+                      nodo.style.setProperty("flex", "1 1 auto", "important");
+                      nodo.style.setProperty("min-height", "0", "important");
+                      nodo.style.setProperty("width", "100%", "important");
+                    });
+                    if (item) item.style.setProperty("margin-top", "0", "important");
+                    return;
+                  }
                   if (hayMas) {
                     caja.style.setProperty("padding-bottom", "200px", "important");
                     caja.style.setProperty("min-height", "0px", "important");
@@ -4767,13 +4795,17 @@ st.markdown(
         height: calc(var(--header-box, 196px) + 12px) !important;
         min-height: calc(var(--header-box, 196px) + 12px) !important;
     }
-    .stApp:has(.st-key-vista_catalogo) .ccm-header-spacer {
+    .stApp:has(.st-key-vista_catalogo) .ccm-header-spacer,
+    .stApp:has(.st-key-vista_cotizador) .ccm-header-spacer {
         height: calc(var(--header-box, 196px) + 16px) !important;
         min-height: calc(var(--header-box, 196px) + 16px) !important;
     }
     .stApp:has(.st-key-vista_catalogo) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
-    .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
+    .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_cotizador) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_cotizador) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_cotizador) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
         height: calc(var(--header-box, 196px) + 16px) !important;
         min-height: calc(var(--header-box, 196px) + 16px) !important;
         margin: 0 !important;
@@ -4901,8 +4933,20 @@ st.markdown(
     }
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab),
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) {
-        padding-bottom: 200px !important;
+        justify-content: flex-start !important;
+        padding-top: 16px !important;
+        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+    }
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) > [data-testid="stVerticalBlock"],
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        width: 100% !important;
         min-height: 0 !important;
+        height: auto !important;
     }
     .st-key-vista_catalogo > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_catalogo > [data-testid="stVerticalBlock"],
@@ -5595,21 +5639,31 @@ st.markdown(
     }
     [class*="st-key-docs_env_"],
     .st-key-acciones_emit_cotizador {
-        display: block !important;
+        display: flex !important;
+        flex-direction: column !important;
         height: auto !important;
         overflow: visible !important;
-        margin: 8px 0 0 0 !important;
+        width: 100% !important;
+        margin: 16px 0 0 0 !important;
+        padding-top: 4px !important;
+        gap: 12px !important;
         scroll-margin-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+    }
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) .st-key-acciones_emit_cotizador {
+        margin-top: auto !important;
+        margin-bottom: 0 !important;
     }
     [class*="st-key-docs_env_"] [data-testid="stDownloadButton"],
     [class*="st-key-docs_env_"] div.stButton,
     .st-key-acciones_emit_cotizador [data-testid="stDownloadButton"],
     .st-key-acciones_emit_cotizador div.stButton,
-    .st-key-acciones_emit_cotizador [data-testid="stElementContainer"] {
+    .st-key-acciones_emit_cotizador [data-testid="stElementContainer"],
+    .st-key-acciones_emit_cotizador [data-testid="stLayoutWrapper"] {
         margin-top: 0 !important;
-        margin-bottom: 12px !important;
+        margin-bottom: 0 !important;
         height: auto !important;
         overflow: visible !important;
+        width: 100% !important;
     }
     .st-key-acciones_emit_cotizador [data-testid="stDownloadButton"] button,
     .st-key-acciones_emit_cotizador div.stButton > button,
@@ -5623,9 +5677,9 @@ st.markdown(
     }
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) .st-key-safe_cotizador_fin,
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) .st-key-safe_cotizador_fin {
-        height: 180px !important;
-        min-height: 180px !important;
-        max-height: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
         opacity: 0 !important;
         overflow: hidden !important;
         pointer-events: none !important;
@@ -5634,10 +5688,12 @@ st.markdown(
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) [data-testid="stLayoutWrapper"]:has(.st-key-safe_cotizador_fin),
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) [data-testid="stElementContainer"]:has(.st-key-safe_cotizador_fin),
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) [data-testid="stLayoutWrapper"]:has(.st-key-safe_cotizador_fin) {
-        height: 180px !important;
-        min-height: 180px !important;
-        max-height: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
         overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     .st-key-vista_historial {
         padding-top: 12px !important;
@@ -7296,7 +7352,7 @@ elif st.session_state["rol"] == "cliente":
                                     args=(id_c,),
                                 )
                         if st.session_state.pop("_ccm_scroll_emit", None):
-                            desplazar_a_acciones_emit()
+                            pass
 
             espaciador_barra_inferior("safe_cotizador_fin")
 
