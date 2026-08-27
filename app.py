@@ -1104,14 +1104,22 @@ def _limpiar_cotizacion_vencida_en_sesion(ahora):
     if not isinstance(d_pdf, dict):
         return None
     id_cot = d_pdf.get("id_cot")
-    if not cotizacion_existe_en_casillero(id_cot):
+    try:
+        cid = int(id_cot or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    en_sesion = False
+    if cid:
+        _, lista = bolsa_cotizaciones_sesion(st.session_state.get("casillero"))
+        en_sesion = any(int(r.get("id") or 0) == cid for r in lista)
+    if not cotizacion_existe_en_casillero(id_cot) and not en_sesion:
         st.session_state.pop("datos_pdf_confirmado", None)
         st.session_state.pop("ultima_cot_id", None)
         return None
     if cotizacion_esta_confirmada(id_cot):
         return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
     fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
-    if cotizacion_vigente(fecha_pdf, ahora):
+    if cotizacion_vigente(fecha_pdf, ahora) or en_sesion:
         return fecha_pdf
     st.session_state.pop("datos_pdf_confirmado", None)
     st.session_state.pop("ultima_cot_id", None)
@@ -1376,8 +1384,9 @@ def emitir_tarifa_desde_snapshot():
             id_generado = cur.lastrowid
             conn.commit()
         cargar_cotizaciones_db.clear()
-    except Exception:
+    except Exception as exc:
         id_generado = None
+        st.session_state["_ccm_emit_error"] = str(exc)
     if not id_generado:
         id_generado = int(st.session_state.get("_seq_cot") or 900000) + 1
         st.session_state["_seq_cot"] = id_generado
@@ -1421,6 +1430,7 @@ def emitir_tarifa_desde_snapshot():
         "fecha_sql": f_hoy_sql,
     }
     st.session_state["china_modulos_desbloqueados"] = True
+    st.session_state.pop("_ccm_emit_error", None)
     avanzar_guia_si(2, 3)
     st.session_state["_ccm_rerun_app"] = True
     st.session_state["_ccm_scroll_emit"] = True
@@ -1490,9 +1500,15 @@ def selector_modalidad_entrega(opciones_modalidad):
         opciones_modalidad,
         **sel_kwargs,
     )
-    if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-        st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+    previa = st.session_state.get("modalidad_envio_seleccionada")
+    st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+    if (
+        st.session_state.get("_mod_entrega_lista")
+        and previa is not None
+        and mod_elegida != previa
+    ):
         st.session_state.pop("datos_pdf_confirmado", None)
+    st.session_state["_mod_entrega_lista"] = True
 
 
 ALIAS_VISTA = {
@@ -4078,6 +4094,8 @@ def logout():
         "_seq_cot",
         "_ccm_rerun_app",
         "_ccm_scroll_emit",
+        "_ccm_emit_error",
+        "_mod_entrega_lista",
         "modalidad_envio_seleccionada",
         "sb_modalidad_entrega",
         "sub_tab_inicio",
@@ -7157,17 +7175,27 @@ elif st.session_state["rol"] == "cliente":
                 "destino": st.session_state["modalidad_envio_seleccionada"],
             }
             with st.container(key="guia_foco_tarifa"):
-                st.button(
+                pulso_confirmar = st.button(
                     "🤝 Confirmar Tarifa & Emitir Documentos",
                     type="primary",
                     key="btn_confirmar_tarifa",
                     use_container_width=True,
                     on_click=emitir_tarifa_desde_snapshot,
                 )
+            if pulso_confirmar and not isinstance(st.session_state.get("datos_pdf_confirmado"), dict):
+                emitir_tarifa_desde_snapshot()
+            if st.session_state.get("_ccm_emit_error"):
+                st.error(
+                    "No se pudo guardar la tarifa en la base de datos. "
+                    "Igual puede descargar el formato y abrir Mis Cotizaciones con la emisión en memoria."
+                )
 
             if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
                 d_pdf = st.session_state["datos_pdf_confirmado"]
-                id_c = d_pdf.get("id_cot")
+                try:
+                    id_c = int(d_pdf.get("id_cot") or 0)
+                except (TypeError, ValueError):
+                    id_c = 0
                 if not id_c:
                     st.session_state.pop("datos_pdf_confirmado", None)
                 else:
@@ -7178,6 +7206,8 @@ elif st.session_state["rol"] == "cliente":
                     tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
                         d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
                     )
+                    if not tarifa_sigue_visible and int(st.session_state.get("ultima_cot_id") or 0) == int(id_c):
+                        tarifa_sigue_visible = True
                     if not tarifa_sigue_visible:
                         st.session_state.pop("datos_pdf_confirmado", None)
                     else:
@@ -7213,20 +7243,24 @@ elif st.session_state["rol"] == "cliente":
                             unsafe_allow_html=True,
                         )
 
-                        pdf_fab = generar_pdf_etiqueta_proveedor(
-                            casillero=casillero,
-                            nombre=nombre_completo,
-                            telefono=tel_cli,
-                            ciudad=ciu_cli,
-                            al=d_pdf.get("al", 0),
-                            an=d_pdf.get("an", 0),
-                            la=d_pdf.get("la", 0),
-                            pe_lb=d_pdf.get("peso_lb", 0),
-                            pe_kg=d_pdf.get("peso_kg", 0),
-                            vol_m3=d_pdf.get("vol_m3", 0),
-                            destino_entrega=dest_pdf,
-                            fecha_emision=fecha_doc,
-                        )
+                        pdf_fab = b""
+                        try:
+                            pdf_fab = generar_pdf_etiqueta_proveedor(
+                                casillero=casillero,
+                                nombre=nombre_completo,
+                                telefono=tel_cli,
+                                ciudad=ciu_cli,
+                                al=d_pdf.get("al", 0),
+                                an=d_pdf.get("an", 0),
+                                la=d_pdf.get("la", 0),
+                                pe_lb=d_pdf.get("peso_lb", 0),
+                                pe_kg=d_pdf.get("peso_kg", 0),
+                                vol_m3=d_pdf.get("vol_m3", 0),
+                                destino_entrega=dest_pdf,
+                                fecha_emision=fecha_doc,
+                            ) or b""
+                        except Exception:
+                            pdf_fab = b""
 
                         with st.container(key="acciones_emit_cotizador"):
                             st.markdown(
@@ -7234,15 +7268,24 @@ elif st.session_state["rol"] == "cliente":
                                 unsafe_allow_html=True,
                             )
                             with st.container(key="guia_foco_pdf_fab"):
-                                if st.download_button(
-                                    "🏷️ Descargar Formato / Documento para el Fabricante",
-                                    pdf_fab,
-                                    f"Shipping_Label_Fabricante_{casillero}.pdf",
-                                    "application/pdf",
-                                    key=f"dl_pdf_fab_{id_c}",
-                                    use_container_width=True,
-                                ):
-                                    avanzar_guia_si(3, 4)
+                                if pdf_fab:
+                                    if st.download_button(
+                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        pdf_fab,
+                                        f"Shipping_Label_Fabricante_{casillero}.pdf",
+                                        "application/pdf",
+                                        key=f"dl_pdf_fab_{id_c}",
+                                        use_container_width=True,
+                                    ):
+                                        avanzar_guia_si(3, 4)
+                                else:
+                                    st.button(
+                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        key=f"dl_pdf_fab_fallback_{id_c}",
+                                        use_container_width=True,
+                                        disabled=True,
+                                    )
+                                    st.caption("El PDF no se pudo generar en este momento. Use Ir a Mis Cotizaciones.")
                             with st.container(key="guia_foco_ver_cot"):
                                 st.button(
                                     "📋 Ir a Mis Cotizaciones",
