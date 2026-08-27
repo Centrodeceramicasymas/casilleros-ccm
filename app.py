@@ -1668,28 +1668,59 @@ def anclar_barra_inferior():
                   nav.style.setProperty("width", "min(96vw, 520px)", "important");
                   nav.style.setProperty("max-width", "520px", "important");
                 }
-                const hueco = "calc(160px + env(safe-area-inset-bottom, 0px))";
-                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer").forEach((el) => {
+                const hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
+                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
-                const chrome = [
-                  '[data-testid="stStatusWidget"]',
-                  ".stStatusWidget",
-                  '[data-testid="stAppDeployButton"]',
-                  ".stDeployButton",
-                  '[class*="stAppDeployButton"]',
-                  '[class*="viewerBadge"]',
-                  '[class*="ViewerBadge"]',
-                  '[data-testid="stToolbar"]',
-                  '[data-testid="stDecoration"]',
-                  '[data-testid="stBaseButton-headerNoPadding"]',
-                  "iframe[title*='streamlit status' i]",
-                ].join(",");
-                doc.querySelectorAll(chrome).forEach((el) => {
-                  el.style.setProperty("display", "none", "important");
-                  el.style.setProperty("visibility", "hidden", "important");
-                  el.style.setProperty("pointer-events", "none", "important");
-                  el.style.setProperty("opacity", "0", "important");
+                const chromeCss =
+                  '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
+                  '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
+                  '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
+                  '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
+                  '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
+                  '[data-testid="stBaseButton-header"], [data-testid="stBaseButton-headerNoPadding"],' +
+                  'button[kind="header"], button[kind="headerNoPadding"], button[title="Deploy"],' +
+                  'iframe[title*="streamlit status" i] { display:none !important; visibility:hidden !important;' +
+                  ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
+                const inyectarCss = (rootDoc) => {
+                  if (!rootDoc || !rootDoc.documentElement) return;
+                  let tag = rootDoc.getElementById("ccm-hide-chrome");
+                  if (!tag) {
+                    tag = rootDoc.createElement("style");
+                    tag.id = "ccm-hide-chrome";
+                    rootDoc.documentElement.appendChild(tag);
+                  }
+                  tag.textContent = chromeCss;
+                };
+                const docs = [doc];
+                try {
+                  if (win.parent && win.parent.document && win.parent.document !== doc) {
+                    docs.push(win.parent.document);
+                  }
+                } catch (e) {}
+                docs.forEach((rootDoc) => {
+                  inyectarCss(rootDoc);
+                  rootDoc.querySelectorAll(
+                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stBaseButton-headerNoPadding"], button[title="Deploy"], iframe[title*="streamlit status" i]'
+                  ).forEach((el) => {
+                    el.style.setProperty("display", "none", "important");
+                    el.style.setProperty("visibility", "hidden", "important");
+                    el.style.setProperty("pointer-events", "none", "important");
+                    el.style.setProperty("opacity", "0", "important");
+                  });
+                  const vista = rootDoc.defaultView || win;
+                  rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
+                    if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
+                    const stilo = vista.getComputedStyle(el);
+                    if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
+                    const r = el.getBoundingClientRect();
+                    if (r.width === 0 || r.height === 0 || r.width > 72 || r.height > 72) return;
+                    if (r.right > vista.innerWidth - 96 && r.bottom > vista.innerHeight - 96) {
+                      el.style.setProperty("display", "none", "important");
+                      el.style.setProperty("visibility", "hidden", "important");
+                      el.style.setProperty("pointer-events", "none", "important");
+                    }
+                  });
                 });
               };
               anclar();
@@ -3442,7 +3473,15 @@ st.markdown(
     [data-testid="stBaseButton-headerNoPadding"],
     [data-testid="stAppHeader"],
     .stAppHeader,
-    div[class*="stDeployButton"] {
+    div[class*="stDeployButton"],
+    [data-testid="stToolbarActions"],
+    [data-testid="stHostToolbar"],
+    [data-testid="stHostHeader"],
+    button[kind="header"],
+    button[kind="headerNoPadding"],
+    button[title="Deploy"],
+    a[href*="streamlit.io"],
+    a[href*="share.streamlit.io"] {
         display: none !important;
         visibility: hidden !important;
         pointer-events: none !important;
@@ -3470,7 +3509,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3834,22 +3873,36 @@ st.markdown(
     .ccm-bottom-safe,
     .st-key-safe_mas,
     .st-key-safe_cotizador,
-    .st-key-safe_cotizador_fin {
+    .st-key-safe_cotizador_fin,
+    .st-key-safe_catalogo {
         display: block !important;
-        height: 160px !important;
-        min-height: 160px !important;
+        height: 200px !important;
+        min-height: 200px !important;
         width: 100% !important;
         pointer-events: none !important;
         opacity: 0 !important;
+    }
+    .st-key-catalogo_formulario {
+        padding-bottom: 24px !important;
+        margin-bottom: 8px !important;
     }
     .st-key-vista_mas {
         padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
     .st-key-guia_foco_tarifa,
     .st-key-btn_confirmar_tarifa,
-    .st-key-btn_logout_cliente {
-        scroll-margin-bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
-        margin-bottom: 12px !important;
+    .st-key-btn_logout_cliente,
+    .st-key-btn_buscar_china,
+    .st-key-btn_escanear_catalogo {
+        scroll-margin-bottom: calc(180px + env(safe-area-inset-bottom, 0px)) !important;
+        margin-bottom: 16px !important;
+    }
+    .st-key-btn_buscar_china div.stButton > button,
+    .st-key-btn_escanear_catalogo div.stButton > button,
+    .st-key-btn_buscar_china [data-testid^="stBaseButton"],
+    .st-key-btn_escanear_catalogo [data-testid^="stBaseButton"] {
+        min-height: 48px !important;
+        height: 48px !important;
     }
 
     .mas-titulo {
@@ -5534,21 +5587,32 @@ elif st.session_state["rol"] == "cliente":
         )
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
-        st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+        with st.container(key="catalogo_formulario"):
+            st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
 
-        modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+            modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
 
-        resultados_1688 = []
-        if modo_busq == "🔎 Por Nombre / Palabras":
-            kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
-            if st.button("Buscar Productos en China ➔", type="primary") and kw:
-                with st.spinner("Consultando catálogo de 1688..."):
-                    resultados_1688 = buscar_productos_1688_texto(kw)
-        else:
-            img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-            if img_up and st.button("Escanear Coincidencia Visual ➔", type="primary"):
-                with st.spinner("Buscando por reconocimiento visual..."):
-                    resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
+            resultados_1688 = []
+            if modo_busq == "🔎 Por Nombre / Palabras":
+                kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+                if st.button(
+                    "Buscar Productos en China ➔",
+                    type="primary",
+                    key="btn_buscar_china",
+                    use_container_width=True,
+                ) and kw:
+                    with st.spinner("Consultando catálogo de 1688..."):
+                        resultados_1688 = buscar_productos_1688_texto(kw)
+            else:
+                img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+                if img_up and st.button(
+                    "Escanear Coincidencia Visual ➔",
+                    type="primary",
+                    key="btn_escanear_catalogo",
+                    use_container_width=True,
+                ):
+                    with st.spinner("Buscando por reconocimiento visual..."):
+                        resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
 
         if resultados_1688:
             st.markdown("---")
@@ -5585,6 +5649,7 @@ elif st.session_state["rol"] == "cliente":
                             unsafe_allow_html=True,
                         )
                 st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+        espaciador_barra_inferior("safe_catalogo")
 
     elif (
         st.session_state["sub_tab_inicio"] == "Cotizador"
