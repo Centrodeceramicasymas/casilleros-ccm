@@ -1497,19 +1497,27 @@ def _cerrar_mas_y_ir(vista, hub="_omit"):
 
 
 def pintar_barra_inferior(total_cotizaciones=0):
-    """Píldora flotante inferior: Inicio, Buscar, Cotiz., Envíos y Más."""
+    """Píldora flotante: Inicio, Consultas, Cotiz., Catálogo y Más."""
     st.session_state.setdefault("mas_abierto", False)
     vista = st.session_state.get("sub_tab_inicio") or "Inicio"
     hub_activo = st.session_state.get("hub")
     china_mods = modulos_china_nav()
     mostrar_btn_guia = hub_activo == "china"
     ids_china = {m["id"] for m in china_mods}
+    cas = formatear_casillero(st.session_state.get("casillero", ""))
+    msg_soporte = urllib.parse.quote(
+        f"Hola Centro de Cerámicas y Más, escribo desde el casillero {cas}."
+    )
+    url_soporte = f"https://wa.me/50495771099?text={msg_soporte}"
 
-    buscar_activo = vista == "Catálogo" or (hub_activo == "eeuu" and vista == "Inicio")
-    inicio_activo = vista == "Inicio" and not buscar_activo
+    consultas_activo = vista == "Consultas"
+    inicio_activo = vista == "Inicio"
     cot_activo = vista == "Mis Cotizaciones"
-    env_activo = vista in ("Mis Envíos", "Etiqueta")
-    mas_activo = bool(st.session_state.get("mas_abierto")) or vista == "Cotizador"
+    catalogo_activo = vista == "Catálogo" or (hub_activo == "eeuu" and vista == "Inicio")
+    if catalogo_activo and inicio_activo:
+        catalogo_activo = hub_activo == "eeuu"
+        inicio_activo = hub_activo != "eeuu"
+    mas_activo = bool(st.session_state.get("mas_abierto")) or vista in ("Cotizador", "Configuración", "Mis Envíos")
     n_badge = int(total_cotizaciones or 0)
 
     st.markdown(
@@ -1524,19 +1532,24 @@ def pintar_barra_inferior(total_cotizaciones=0):
                 if st.button("📐  Cotizador", key="btn_mas_cotizador", use_container_width=True):
                     avanzar_guia_si(1, 2)
                     _cerrar_mas_y_ir("Cotizador", hub="china")
+            if st.button("📦  Historial / Envíos", key="btn_mas_historial", use_container_width=True):
+                _cerrar_mas_y_ir("Mis Envíos", hub="china")
             if mostrar_btn_guia:
                 if st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True):
                     st.session_state["mas_abierto"] = False
                     iniciar_guia_interactiva(1)
                     st.rerun()
+            if st.button("⚙️  Configuración", key="btn_mas_config", use_container_width=True):
+                _cerrar_mas_y_ir("Configuración")
+            st.link_button("💬  Enlaces de soporte", url_soporte, use_container_width=True)
             if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
                 logout()
 
     items = (
         ("inicio", "🏠", "Inicio", inicio_activo),
-        ("buscar", "🔍", "Buscar", buscar_activo),
+        ("consultas", "🔍", "Consultas", consultas_activo),
         ("cotizaciones", "📄", "Cotiz.", cot_activo),
-        ("envios", "📦", "Envíos", env_activo),
+        ("catalogo", "📖", "Catálogo", catalogo_activo),
         ("mas", "☰", "Más", mas_activo),
     )
     with st.container(key="bottom_nav"):
@@ -1554,15 +1567,15 @@ def pintar_barra_inferior(total_cotizaciones=0):
                         st.rerun()
                     if dest == "inicio":
                         _cerrar_mas_y_ir("Inicio", hub=None)
-                    elif dest == "buscar":
+                    elif dest == "consultas":
+                        _cerrar_mas_y_ir("Consultas")
+                    elif dest == "cotizaciones":
+                        _cerrar_mas_y_ir("Mis Cotizaciones", hub="china")
+                    elif dest == "catalogo":
                         if hub_activo == "eeuu":
                             _cerrar_mas_y_ir("Inicio", hub="eeuu")
                         else:
                             _cerrar_mas_y_ir("Catálogo", hub="china")
-                    elif dest == "cotizaciones":
-                        _cerrar_mas_y_ir("Mis Cotizaciones", hub="china")
-                    elif dest == "envios":
-                        _cerrar_mas_y_ir("Mis Envíos", hub="china")
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -3144,7 +3157,7 @@ def restaurar_sesion_persistente():
         if isinstance(hub_url, list):
             hub_url = hub_url[0] if hub_url else ""
 
-        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras"} | VISTAS_MODULO
+        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración"} | VISTAS_MODULO
         if vista_url in vistas_validas:
             st.session_state["sub_tab_inicio"] = vista_url
         if hub_url in HUBS:
@@ -3292,7 +3305,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3311,7 +3324,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         margin-left: auto !important;
         margin-right: auto !important;
-        z-index: 998 !important;
+        z-index: 100 !important;
         background-color: #f8fafc !important;
         background: #f8fafc !important;
         background-image: none !important;
@@ -3372,12 +3385,13 @@ st.markdown(
         width: 100% !important;
         box-sizing: border-box !important;
         margin-bottom: 4px !important;
+        position: relative !important;
+        z-index: 100 !important;
         display: flex !important;
         flex-direction: column !important;
         gap: 1px !important;
         container-type: inline-size;
         overflow: hidden !important;
-        position: relative !important;
     }
 
     .app-header-top {
@@ -3630,7 +3644,7 @@ st.markdown(
         z-index: 999 !important;
         width: min(92vw, 440px) !important;
         max-width: 440px !important;
-        background: rgba(255, 255, 255, 0.92) !important;
+        background: rgba(255, 255, 255, 0.95) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 35px !important;
@@ -3669,22 +3683,19 @@ st.markdown(
         margin: 0 !important;
     }
 
-    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
-        width: auto !important;
-        max-width: none !important;
+    .st-key-china_modulos {
+        padding-bottom: 12px !important;
     }
 
     .st-key-guia_coach {
-        position: sticky !important;
-        top: var(--header-offset) !important;
-        z-index: 998 !important;
+        position: relative !important;
+        top: auto !important;
+        z-index: 1 !important;
         background: #fffbeb !important;
         border: 1.5px solid #f59e0b !important;
         border-radius: 12px !important;
         padding: 10px 12px 8px 12px !important;
-        margin: 0 0 12px 0 !important;
+        margin: 8px 0 14px 0 !important;
         box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18) !important;
         box-sizing: border-box !important;
     }
@@ -4353,9 +4364,20 @@ st.markdown(
         -webkit-text-fill-color: #003399 !important;
         fill: #003399 !important;
     }
-    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button {
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button,
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button[kind="primary"],
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button[kind="secondary"] {
         position: relative !important;
         font-weight: 800 !important;
+        background: #E8EEFF !important;
+        background-color: #E8EEFF !important;
+        border-radius: 20px !important;
+        color: #003399 !important;
+        -webkit-text-fill-color: #003399 !important;
+    }
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button * {
+        color: #003399 !important;
+        -webkit-text-fill-color: #003399 !important;
     }
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button::after {
         content: var(--ccm-cot-badge, "0");
@@ -4875,6 +4897,39 @@ elif st.session_state["rol"] == "cliente":
                 f"</div>",
                 unsafe_allow_html=True,
             )
+
+    if st.session_state["sub_tab_inicio"] == "Consultas":
+        cas_txt = formatear_casillero(casillero)
+        msg_wa = urllib.parse.quote(
+            f"Hola Centro de Cerámicas y Más, tengo una consulta de mi casillero {cas_txt}."
+        )
+        st.markdown("#### 🔍 Consultas")
+        st.caption("Pregunte a CCM por WhatsApp o busque productos para importar.")
+        st.link_button("💬 Preguntar por WhatsApp", f"https://wa.me/50495771099?text={msg_wa}", use_container_width=True)
+        c_q1, c_q2 = st.columns(2)
+        with c_q1:
+            if st.button("📖 Catálogo 1688", key="btn_consultas_1688", use_container_width=True):
+                ir_a("Catálogo", hub="china")
+        with c_q2:
+            if st.button("🇺🇸 AliExpress", key="btn_consultas_ae", use_container_width=True):
+                ir_a("Inicio", hub="eeuu")
+
+    if st.session_state["sub_tab_inicio"] == "Configuración":
+        st.markdown("#### ⚙️ Configuración")
+        st.caption("Datos de su casillero. La sesión se conserva al cambiar de vista.")
+        st.info(
+            f"**Casillero:** `{casillero}`  \n"
+            f"**Nombre:** {st.session_state.get('nombre') or '—'}  \n"
+            f"**Correo:** {st.session_state.get('usuario') or '—'}  \n"
+            f"**Entrega:** {st.session_state.get('modalidad_envio_seleccionada') or OPCION_PREDETERMINADA}"
+        )
+        st.link_button(
+            "💬 Actualizar datos por WhatsApp",
+            "https://wa.me/50495771099?text=" + urllib.parse.quote(
+                f"Hola, necesito actualizar los datos de mi casillero {casillero}."
+            ),
+            use_container_width=True,
+        )
 
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
