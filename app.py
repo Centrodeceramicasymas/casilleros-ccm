@@ -1550,6 +1550,12 @@ def ir_a_mas():
     ir_a("Más")
 
 
+def iniciar_guia_desde_mas():
+    """Activa la guía interactiva y abre Inicio (China) para el recorrido."""
+    iniciar_guia_interactiva(1)
+    ir_a("Inicio", hub="china")
+
+
 def ir_a_envios():
     ir_a("Mis Envíos", hub="china")
 
@@ -1740,12 +1746,16 @@ def aplicar_clase_guia_js():
     )
 
 
+@st.fragment
 def pintar_coach_guia():
     detectar_avance_descarga_guia()
     aplicar_clase_guia_js()
     if not guia_esta_activa():
         return
     if st.session_state.get("hub") != "china":
+        return
+    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
+    if vista_actual == "Más":
         return
     with st.container(key="guia_coach"):
         st.markdown(html_globo_guia(), unsafe_allow_html=True)
@@ -1997,16 +2007,17 @@ def pintar_vista_mas():
         if aviso:
             st.success(aviso)
         st.markdown('<div class="mas-seccion mas-seccion-cuenta">Cuenta</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="mas-card mas-cuenta">'
-            f'<div class="mas-cuenta-nombre">{html.escape(nombre)}</div>'
-            f'<div class="mas-cuenta-cas">Casillero {html.escape(cas)}</div>'
-            f'<div class="mas-cuenta-mail">{html.escape(correo)}</div>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
-            abrir_dialogo_editar_perfil()
+        with st.container(key="mas_cuenta"):
+            st.markdown(
+                f'<div class="mas-cuenta">'
+                f'<div class="mas-cuenta-nombre">{html.escape(nombre)}</div>'
+                f'<div class="mas-cuenta-cas">Casillero {html.escape(cas)}</div>'
+                f'<div class="mas-cuenta-mail">{html.escape(correo)}</div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
+                abrir_dialogo_editar_perfil()
         st.markdown('<div class="mas-seccion">Módulos y operaciones</div>', unsafe_allow_html=True)
         with st.container(key="mas_modulos"):
             st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
@@ -2017,7 +2028,13 @@ def pintar_vista_mas():
         with st.container(key="mas_sesion"):
             st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
             if mostrar_btn_guia:
-                st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True, on_click=iniciar_guia_interactiva, args=(1,))
+                st.button(
+                    "Guía",
+                    type="secondary",
+                    key="btn_guia_rapida",
+                    use_container_width=True,
+                    on_click=iniciar_guia_desde_mas,
+                )
             if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
                 ir_a("Cerrar")
         espaciador_barra_inferior("safe_mas")
@@ -2146,14 +2163,14 @@ def anclar_barra_inferior():
                   doc.querySelector(".st-key-btn_escanear_catalogo");
                 const vistaModulo = catalogo || cotizador;
                 const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                const hueco = vistaModulo ? "0px" : "calc(180px + env(safe-area-inset-bottom, 0px))";
+                const hueco = (mas || vistaModulo) ? "0px" : "calc(180px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
                 const GAP_OBJETIVO = 12;
                 const esVistaMas = (nodo) =>
                   !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
-                if (vistaModulo) {
+                if (vistaModulo || mas) {
                   doc.querySelectorAll("[data-testid='stBottomBlockContainer']").forEach((el) => {
                     el.style.setProperty("min-height", "0px", "important");
                     el.style.setProperty("padding-top", "0px", "important");
@@ -2168,13 +2185,18 @@ def anclar_barra_inferior():
                   const app = doc.querySelector(".stApp") || doc.documentElement;
                   const isMas = esVistaMas(caja);
                   if (isMas) {
-                    const extra = Math.max(0, Math.round((app.scrollHeight || 0) - caja.getBoundingClientRect().bottom - (app.scrollTop || 0)));
-                    const huecoNav = Math.max(24, Math.round(win.innerHeight - navCaja.top + GAP_OBJETIVO - extra));
-                    caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
-                    const cajaTop = caja.getBoundingClientRect().top;
-                    const minH = Math.max(240, Math.round(win.innerHeight - cajaTop));
-                    caja.style.setProperty("min-height", minH + "px", "important");
+                    caja.style.setProperty("min-height", "0px", "important");
                     caja.style.setProperty("box-sizing", "border-box", "important");
+                    if (!ancla) return;
+                    const scrollTop = app.scrollTop || 0;
+                    const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
+                    const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
+                    const anclaNow = ancla.getBoundingClientRect().bottom;
+                    const anclaAtMax = anclaNow + scrollTop - maxScroll;
+                    const objetivo = navCaja.top - GAP_OBJETIVO;
+                    let huecoNav = Math.round(currentPad + (anclaAtMax - objetivo));
+                    huecoNav = Math.max(8, Math.min(240, huecoNav));
+                    caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
                     return;
                   }
                   const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
@@ -2248,6 +2270,13 @@ def anclar_barra_inferior():
                   nextPad = Math.max(0, Math.min(160, nextPad));
                   caja.style.setProperty("padding-bottom", nextPad + "px", "important");
                 };
+                if (mas) {
+                  doc.querySelectorAll("[data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'], .stMainBlockContainer > [data-testid='stVerticalBlock']").forEach((col) => {
+                    col.style.setProperty("gap", "0px", "important");
+                    col.style.setProperty("row-gap", "0px", "important");
+                  });
+                }
+                if (mas && nav) dockVista(mas, logout);
                 if (!mas && vistaModulo && nav) dockVista(vistaModulo, accion);
                 const chromeCss =
                   '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
@@ -2255,9 +2284,12 @@ def anclar_barra_inferior():
                   '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
                   '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
                   '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
+                  '[data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stMainMenu"],' +
                   '[data-testid="stHeader"] [data-testid="stBaseButton-header"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],' +
-                  '[data-testid="stHeader"] button[title="Deploy"],' +
-                  'iframe[title*="streamlit status" i] { display:none !important; visibility:hidden !important;' +
+                  '[data-testid="stHeader"] button[title="Deploy"], #recordMenuPopoverButton,' +
+                  'iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i],' +
+                  'a[href*="share.streamlit.io"], a[href*="streamlit.io/cloud"]' +
+                  ' { display:none !important; visibility:hidden !important;' +
                   ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
                 const inyectarCss = (rootDoc) => {
                   if (!rootDoc || !rootDoc.documentElement) return;
@@ -2278,7 +2310,7 @@ def anclar_barra_inferior():
                 docs.forEach((rootDoc) => {
                   inyectarCss(rootDoc);
                   rootDoc.querySelectorAll(
-                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], iframe[title*="streamlit status" i]'
+                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], #recordMenuPopoverButton, iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i]'
                   ).forEach((el) => {
                     if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
                     el.style.setProperty("display", "none", "important");
@@ -2290,11 +2322,18 @@ def anclar_barra_inferior():
                   rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
                     if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
                     if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
+                    const etiqueta = ((el.innerText || el.getAttribute("aria-label") || el.title || "") + "").replace(/\\s+/g, " ").trim();
+                    if (/^(Manage app|Deploy this app|Deploy|Stop|Record a screencast|Record)$/i.test(etiqueta)) {
+                      el.style.setProperty("display", "none", "important");
+                      el.style.setProperty("visibility", "hidden", "important");
+                      el.style.setProperty("pointer-events", "none", "important");
+                      return;
+                    }
                     const stilo = vista.getComputedStyle(el);
                     if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
                     const r = el.getBoundingClientRect();
-                    if (r.width === 0 || r.height === 0 || r.width > 72 || r.height > 72) return;
-                    if (r.right > vista.innerWidth - 96 && r.bottom > vista.innerHeight - 96) {
+                    if (r.width === 0 || r.height === 0 || r.width > 220 || r.height > 96) return;
+                    if (r.right > vista.innerWidth - 160 && r.bottom > vista.innerHeight - 160) {
                       el.style.setProperty("display", "none", "important");
                       el.style.setProperty("visibility", "hidden", "important");
                       el.style.setProperty("pointer-events", "none", "important");
@@ -2360,7 +2399,10 @@ def sincronizar_altura_encabezado_fijo():
                 const offset = Math.ceil(Math.max(bottom + gap, 208)) + "px";
                 const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
                 destinos.forEach((nodo) => {
-                  if (nodo && nodo.style) nodo.style.setProperty("--header-offset", offset);
+                  if (nodo && nodo.style) {
+                    nodo.style.setProperty("--header-offset", offset);
+                    nodo.style.setProperty("--header-box", Math.round(bottom) + "px");
+                  }
                 });
               };
               win.__ccmMedirHeader = medir;
@@ -4023,6 +4065,7 @@ st.markdown(
         --sticky-h: 208px;
         --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
+        --header-box: 196px;
         --header-gap: 20px;
         --ccm-nav-clearance: calc(109px + env(safe-area-inset-bottom, 0px));
     }
@@ -4092,7 +4135,11 @@ st.markdown(
     [data-testid="stHeader"] button[kind="header"],
     [data-testid="stHeader"] [data-testid="stBaseButton-header"],
     [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],
-    [data-testid="stToolbar"] button[title="Deploy"],
+    [data-testid="stAppToolbar"],
+    .stAppToolbar,
+    [data-testid="stMainMenu"],
+    #recordMenuPopoverButton,
+    iframe[title*="streamlit cloud" i],
     a[href*="streamlit.io"],
     a[href*="share.streamlit.io"] {
         display: none !important;
@@ -4521,7 +4568,18 @@ st.markdown(
         overflow: hidden !important;
         border: 0 !important;
     }
-    .st-key-safe_mas,
+    .st-key-safe_mas {
+        display: block !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        width: 100% !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
     .st-key-safe_historial {
         display: block !important;
         height: 180px !important;
@@ -4546,7 +4604,10 @@ st.markdown(
     }
     .block-container:has(.st-key-vista_mas),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_mas),
-    .stMainBlockContainer:has(.st-key-vista_mas),
+    .stMainBlockContainer:has(.st-key-vista_mas) {
+        padding-bottom: 0 !important;
+        padding-top: 0 !important;
+    }
     .block-container:has(.ccm-vista-historial),
     [data-testid="stMainBlockContainer"]:has(.ccm-vista-historial),
     .stMainBlockContainer:has(.ccm-vista-historial),
@@ -4555,34 +4616,71 @@ st.markdown(
     }
     [data-testid="stAppViewContainer"]:has(.st-key-vista_catalogo) [data-testid="stBottomBlockContainer"],
     [data-testid="stAppViewContainer"]:has(.st-key-vista_cotizador) [data-testid="stBottomBlockContainer"],
+    [data-testid="stAppViewContainer"]:has(.st-key-vista_mas) [data-testid="stBottomBlockContainer"],
     .stApp:has(.st-key-vista_catalogo) [data-testid="stBottomBlockContainer"],
-    .stApp:has(.st-key-vista_cotizador) [data-testid="stBottomBlockContainer"] {
+    .stApp:has(.st-key-vista_cotizador) [data-testid="stBottomBlockContainer"],
+    .stApp:has(.st-key-vista_mas) [data-testid="stBottomBlockContainer"] {
         min-height: 0 !important;
         padding: 0 !important;
         margin: 0 !important;
     }
+    .stApp:has(.st-key-vista_mas) .ccm-header-spacer {
+        height: calc(var(--header-box, 196px) + 12px) !important;
+        min-height: calc(var(--header-box, 196px) + 12px) !important;
+    }
+    .stApp:has(.st-key-vista_mas) [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
+    .stApp:has(.st-key-vista_mas) .stMainBlockContainer > [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+        row-gap: 0 !important;
+    }
+    .stApp:has(.st-key-vista_mas) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_mas) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_mas) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
+        height: calc(var(--header-box, 196px) + 12px) !important;
+        min-height: calc(var(--header-box, 196px) + 12px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+    }
     .st-key-vista_mas {
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: flex-start !important;
+        display: block !important;
         box-sizing: border-box !important;
-        padding-top: 4px !important;
-        padding-bottom: 180px !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
         margin-bottom: 0 !important;
         min-height: 0 !important;
     }
     .st-key-vista_mas > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_mas > [data-testid="stVerticalBlock"],
     .st-key-vista_mas > [data-testid="stLayoutWrapper"] {
-        display: flex !important;
-        flex-direction: column !important;
-        flex: 0 0 auto !important;
+        display: block !important;
+        width: 100% !important;
     }
     .st-key-vista_mas > [data-testid="stLayoutWrapper"]:has(.st-key-mas_sesion),
     .st-key-vista_mas > [data-testid="stElementContainer"]:has(.st-key-mas_sesion) {
-        margin-top: 8px !important;
+        margin-top: 4px !important;
         width: 100% !important;
-        flex: 0 0 auto !important;
+    }
+    .st-key-vista_mas [data-testid="stVerticalBlock"] {
+        gap: 0.35rem !important;
+    }
+    .st-key-vista_mas > [data-testid="stElementContainer"]:first-child,
+    .st-key-vista_mas [data-testid="stElementContainer"]:has(.mas-seccion-cuenta) {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    .stApp:has(.st-key-vista_mas) .st-key-guia_coach,
+    .stApp:has(.st-key-vista_mas) .guia-globo {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        visibility: hidden !important;
     }
     .st-key-mas_modulos {
         display: flex !important;
@@ -4725,7 +4823,24 @@ st.markdown(
         margin: 12px 4px 6px 4px;
     }
     .mas-seccion-cuenta {
-        margin-top: 2px;
+        margin-top: 0;
+        margin-bottom: 8px;
+    }
+    .st-key-mas_cuenta {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 18px !important;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+        padding: 4px 6px 10px 6px !important;
+        margin: 0 0 8px 0 !important;
+        overflow: hidden !important;
+    }
+    .st-key-mas_cuenta [data-testid="stElementContainer"],
+    .st-key-mas_cuenta [data-testid="stLayoutWrapper"] {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
     }
     .mas-card,
     .mas-cuenta {
@@ -4735,6 +4850,13 @@ st.markdown(
         padding: 16px 18px;
         box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
         margin-bottom: 8px;
+    }
+    .st-key-mas_cuenta .mas-cuenta {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 10px 12px 6px 12px;
+        margin-bottom: 0;
     }
     .mas-cuenta-nombre {
         font-size: 1.05rem;
@@ -4761,12 +4883,13 @@ st.markdown(
         color: #004ac1 !important;
         -webkit-text-fill-color: #004ac1 !important;
         border: 1px solid #dbeafe !important;
-        border-radius: 14px !important;
-        min-height: 42px !important;
-        height: 42px !important;
+        border-radius: 12px !important;
+        min-height: 40px !important;
+        height: 40px !important;
         font-weight: 700 !important;
         box-shadow: none !important;
-        margin-bottom: 4px !important;
+        margin: 0 8px 4px 8px !important;
+        width: calc(100% - 16px) !important;
     }
 
     [data-st-overlay-root="true"],
@@ -6165,8 +6288,10 @@ elif st.session_state["rol"] == "cliente":
         )
 
     sincronizar_altura_encabezado_fijo()
-    disparar_guia_china_si_aplica()
-    pintar_coach_guia()
+    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
+    if vista_actual != "Más":
+        disparar_guia_china_si_aplica()
+        pintar_coach_guia()
 
     if st.session_state["sub_tab_inicio"] == "Inicio":
         hub_sel = st.session_state.get("hub")
