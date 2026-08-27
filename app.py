@@ -2225,6 +2225,32 @@ def anclar_barra_inferior():
                   const hayMas = posteriores.some((ch) =>
                     ch.querySelector("button, a, img, [data-testid='stDownloadButton']")
                   );
+                  const esCatalogo = !!(caja && ((caja.className || "").indexOf("st-key-vista_catalogo") >= 0));
+                  if (esCatalogo) {
+                    caja.style.setProperty("box-sizing", "border-box", "important");
+                    if (form) {
+                      form.style.setProperty("display", "flex", "important");
+                      form.style.setProperty("flex-direction", "column", "important");
+                      form.style.setProperty("width", "100%", "important");
+                      form.style.setProperty("flex", "0 0 auto", "important");
+                      form.style.setProperty("min-height", "0", "important");
+                    }
+                    const itemCat = ancla ? Array.from((form || caja).children).find((ch) => ch.contains(ancla)) : null;
+                    if (itemCat) itemCat.style.setProperty("margin-top", "0", "important");
+                    if (hayMas) {
+                      caja.style.setProperty("justify-content", "flex-start", "important");
+                      caja.style.setProperty("padding-bottom", "180px", "important");
+                      caja.style.setProperty("min-height", "0px", "important");
+                    } else {
+                      caja.style.setProperty("justify-content", "center", "important");
+                      caja.style.setProperty("padding-top", "0px", "important");
+                      caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
+                      const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
+                      const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
+                      caja.style.setProperty("min-height", minH + "px", "important");
+                    }
+                    return;
+                  }
                   if (form) {
                     form.style.setProperty("display", "flex", "important");
                     form.style.setProperty("flex-direction", "column", "important");
@@ -4708,6 +4734,20 @@ st.markdown(
         height: calc(var(--header-box, 196px) + 12px) !important;
         min-height: calc(var(--header-box, 196px) + 12px) !important;
     }
+    .stApp:has(.st-key-vista_catalogo) .ccm-header-spacer {
+        height: calc(var(--header-box, 196px) + 16px) !important;
+        min-height: calc(var(--header-box, 196px) + 16px) !important;
+    }
+    .stApp:has(.st-key-vista_catalogo) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
+    .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
+        height: calc(var(--header-box, 196px) + 16px) !important;
+        min-height: calc(var(--header-box, 196px) + 16px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+    }
     .stApp:has(.st-key-vista_mas) [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
     .stApp:has(.st-key-vista_mas) .stMainBlockContainer > [data-testid="stVerticalBlock"] {
         gap: 0 !important;
@@ -4800,7 +4840,6 @@ st.markdown(
     .st-key-btn_logout_cliente div.stButton {
         margin-bottom: 0 !important;
     }
-    .st-key-vista_catalogo,
     .st-key-vista_cotizador {
         display: flex !important;
         flex-direction: column !important;
@@ -4810,6 +4849,22 @@ st.markdown(
         padding-bottom: var(--ccm-nav-clearance) !important;
         margin-bottom: 0 !important;
         min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+    }
+    .st-key-vista_catalogo {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        box-sizing: border-box !important;
+        padding-top: 0 !important;
+        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+    }
+    .st-key-vista_catalogo:has([data-testid="stImage"]) {
+        justify-content: flex-start !important;
+        padding-bottom: 180px !important;
+        min-height: 0 !important;
     }
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab),
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) {
@@ -4821,10 +4876,10 @@ st.markdown(
     .st-key-vista_catalogo > [data-testid="stLayoutWrapper"] {
         display: flex !important;
         flex-direction: column !important;
-        flex: 1 1 auto !important;
+        flex: 0 0 auto !important;
         width: 100% !important;
         min-height: 0 !important;
-        height: 100% !important;
+        height: auto !important;
     }
     .st-key-vista_cotizador > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_cotizador > [data-testid="stVerticalBlock"],
@@ -4839,21 +4894,21 @@ st.markdown(
     .st-key-vista_catalogo [data-testid="stLayoutWrapper"]:has(.st-key-catalogo_formulario) {
         display: flex !important;
         flex-direction: column !important;
-        flex: 1 1 auto !important;
+        flex: 0 0 auto !important;
         width: 100% !important;
         min-height: 0 !important;
+        height: auto !important;
     }
     .st-key-vista_catalogo .st-key-catalogo_formulario {
         display: flex !important;
         flex-direction: column !important;
-        flex: 1 1 auto !important;
+        flex: 0 0 auto !important;
         width: 100% !important;
         min-height: 0 !important;
+        height: auto !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
     }
-    .st-key-catalogo_formulario > [data-testid="stElementContainer"]:has(.st-key-btn_buscar_china),
-    .st-key-catalogo_formulario > [data-testid="stElementContainer"]:has(.st-key-btn_escanear_catalogo),
-    .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_buscar_china),
-    .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_escanear_catalogo),
     .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-guia_foco_tarifa),
     .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-btn_confirmar_tarifa),
     .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stLayoutWrapper"]:has(.st-key-guia_foco_tarifa),
@@ -4862,24 +4917,41 @@ st.markdown(
         width: 100% !important;
         flex: 0 0 auto !important;
     }
-    .st-key-vista_catalogo [data-testid="stHeading"],
-    .st-key-vista_cotizador [data-testid="stHeading"],
-    .st-key-catalogo_formulario [data-testid="stHeading"] {
+    .st-key-vista_cotizador [data-testid="stHeading"] {
         margin-top: 0 !important;
         padding-top: 6px !important;
+        scroll-margin-top: max(var(--header-offset, 208px), 208px) !important;
+    }
+    .st-key-vista_catalogo [data-testid="stHeading"],
+    .st-key-catalogo_formulario [data-testid="stHeading"],
+    .st-key-catalogo_formulario h1,
+    .st-key-catalogo_formulario h2,
+    .st-key-catalogo_formulario h3,
+    .st-key-catalogo_formulario h4 {
+        margin-top: 0 !important;
+        margin-bottom: 8px !important;
+        padding-top: 0 !important;
         scroll-margin-top: max(var(--header-offset, 208px), 208px) !important;
     }
     .st-key-guia_foco_tarifa,
     .st-key-guia_foco_tarifa [data-testid="stVerticalBlock"],
     .st-key-guia_foco_tarifa [data-testid="stLayoutWrapper"],
     .st-key-guia_foco_tarifa [data-testid="stElementContainer"],
-    .st-key-btn_confirmar_tarifa,
+    .st-key-btn_confirmar_tarifa {
+        width: 100% !important;
+        max-width: 100% !important;
+        display: block !important;
+        scroll-margin-bottom: var(--ccm-nav-clearance) !important;
+        margin-bottom: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
     .st-key-btn_buscar_china,
     .st-key-btn_escanear_catalogo {
         width: 100% !important;
         max-width: 100% !important;
         display: block !important;
-        scroll-margin-bottom: var(--ccm-nav-clearance) !important;
+        scroll-margin-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
         margin-bottom: 0 !important;
         margin-left: 0 !important;
         margin-right: 0 !important;
