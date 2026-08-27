@@ -1538,6 +1538,13 @@ def pintar_vista_mas():
                 st.rerun()
         if st.button("⏻  Cerrar", type="secondary", key="btn_logout_cliente", use_container_width=True):
             ir_a("Cerrar")
+        espaciador_barra_inferior("safe_mas")
+
+
+def espaciador_barra_inferior(clave):
+    """Reserva altura real al final de la vista para que el último botón quede sobre la píldora."""
+    with st.container(key=clave):
+        st.markdown("&nbsp;")
 
 
 def pintar_barra_inferior(total_cotizaciones=0):
@@ -1602,14 +1609,18 @@ def anclar_barra_inferior():
                 const nav = nodoNav();
                 if (!nav) return;
                 nav.style.setProperty("position", "fixed", "important");
-                nav.style.setProperty("bottom", "calc(12px + env(safe-area-inset-bottom, 0px))", "important");
-                nav.style.setProperty("left", "12px", "important");
-                nav.style.setProperty("right", "12px", "important");
-                nav.style.setProperty("margin", "0 auto", "important");
-                nav.style.setProperty("transform", "none", "important");
-                nav.style.setProperty("z-index", "1000", "important");
-                nav.style.setProperty("width", "auto", "important");
+                nav.style.setProperty("bottom", "20px", "important");
+                nav.style.setProperty("left", "50%", "important");
+                nav.style.setProperty("right", "auto", "important");
+                nav.style.setProperty("margin", "0", "important");
+                nav.style.setProperty("transform", "translateX(-50%)", "important");
+                nav.style.setProperty("z-index", "9999", "important");
+                nav.style.setProperty("width", "min(96vw, 520px)", "important");
                 nav.style.setProperty("max-width", "520px", "important");
+                const hueco = "calc(220px + env(safe-area-inset-bottom, 0px))";
+                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer").forEach((el) => {
+                  el.style.setProperty("padding-bottom", hueco, "important");
+                });
               };
               anclar();
               setTimeout(anclar, 80);
@@ -3337,11 +3348,30 @@ st.markdown(
         max-width: 100% !important;
     }
 
-    #MainMenu, footer, header, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
+    #MainMenu, footer, header,
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    .stStatusWidget,
+    .stDeployButton,
+    [data-testid="stAppDeployButton"],
+    [class*="stAppDeployButton"],
+    [class*="viewerBadge"],
+    [class*="ViewerBadge"],
+    iframe[title*="streamlit status" i],
+    [data-testid="stBaseButton-header"],
+    [data-testid="stBaseButton-headerNoPadding"],
+    [data-testid="stAppHeader"],
+    .stAppHeader,
+    div[class*="stDeployButton"] {
         display: none !important;
         visibility: hidden !important;
+        pointer-events: none !important;
         height: 0 !important;
         min-height: 0 !important;
+        width: 0 !important;
+        opacity: 0 !important;
     }
 
     [data-testid="stAppViewContainer"],
@@ -3355,11 +3385,14 @@ st.markdown(
         min-height: 0 !important;
     }
 
-    .block-container {
+    .block-container,
+    [data-testid="stMainBlockContainer"],
+    .stMainBlockContainer,
+    [data-testid="stAppViewBlockContainer"] {
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: calc(95px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(220px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3701,15 +3734,14 @@ st.markdown(
     .st-key-bottom_nav,
     div[class~="st-key-bottom_nav"] {
         position: fixed !important;
-        bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-        left: 12px !important;
-        right: 12px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        transform: none !important;
-        z-index: 1000 !important;
-        width: auto !important;
+        bottom: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 9999 !important;
+        width: min(96vw, 520px) !important;
         max-width: 520px !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
         box-sizing: border-box !important;
         overflow: visible !important;
         background: rgba(255, 255, 255, 0.95) !important;
@@ -3719,6 +3751,27 @@ st.markdown(
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
         padding: 6px 8px !important;
         border: 1px solid rgba(226, 232, 240, 0.95) !important;
+    }
+
+    .ccm-bottom-safe,
+    .st-key-safe_mas,
+    .st-key-safe_cotizador,
+    .st-key-safe_cotizador_fin {
+        display: block !important;
+        height: 160px !important;
+        min-height: 160px !important;
+        width: 100% !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+    }
+    .st-key-vista_mas {
+        padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+    .st-key-guia_foco_tarifa,
+    .st-key-btn_confirmar_tarifa,
+    .st-key-btn_logout_cliente {
+        scroll-margin-bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+        margin-bottom: 12px !important;
     }
 
     .mas-titulo {
@@ -5601,6 +5654,7 @@ elif st.session_state["rol"] == "cliente":
                 st.session_state["china_modulos_desbloqueados"] = china_seguimiento_habilitado()
                 avanzar_guia_si(2, 3)
                 st.rerun()
+        espaciador_barra_inferior("safe_cotizador")
 
         if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
             d_pdf = st.session_state["datos_pdf_confirmado"]
@@ -5697,6 +5751,8 @@ elif st.session_state["rol"] == "cliente":
                     )
                 else:
                     st.session_state.pop("datos_pdf_confirmado", None)
+
+        espaciador_barra_inferior("safe_cotizador_fin")
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         st.markdown("#### 📦 Mis Paquetes en Tránsito")
