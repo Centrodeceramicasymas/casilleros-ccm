@@ -2245,7 +2245,7 @@ def anclar_barra_inferior():
                   }
                   caja.style.setProperty("box-sizing", "border-box", "important");
                   if (hayMas) {
-                    caja.style.setProperty("padding-bottom", "180px", "important");
+                    caja.style.setProperty("padding-bottom", "200px", "important");
                     caja.style.setProperty("min-height", "0px", "important");
                     return;
                   }
@@ -4223,6 +4223,16 @@ st.markdown(
         pointer-events: none !important;
         visibility: hidden !important;
     }
+    [data-testid="stElementContainer"]:has(.ccm-header-spacer),
+    [data-testid="stMarkdown"]:has(.ccm-header-spacer),
+    [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
+        height: max(var(--header-offset), 208px) !important;
+        min-height: max(var(--header-offset), 208px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+    }
 
     .st-key-header_offset_sync {
         height: 0 !important;
@@ -4768,10 +4778,15 @@ st.markdown(
         flex-direction: column !important;
         justify-content: flex-start !important;
         box-sizing: border-box !important;
-        padding-top: 12px !important;
+        padding-top: 16px !important;
         padding-bottom: var(--ccm-nav-clearance) !important;
         margin-bottom: 0 !important;
         min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+    }
+    .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab),
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) {
+        padding-bottom: 200px !important;
+        min-height: 0 !important;
     }
     .st-key-vista_catalogo > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_catalogo > [data-testid="stVerticalBlock"],
@@ -4811,10 +4826,10 @@ st.markdown(
     .st-key-catalogo_formulario > [data-testid="stElementContainer"]:has(.st-key-btn_escanear_catalogo),
     .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_buscar_china),
     .st-key-catalogo_formulario > [data-testid="stLayoutWrapper"]:has(.st-key-btn_escanear_catalogo),
-    .st-key-vista_cotizador > [data-testid="stElementContainer"]:has(.st-key-guia_foco_tarifa),
-    .st-key-vista_cotizador > [data-testid="stElementContainer"]:has(.st-key-btn_confirmar_tarifa),
-    .st-key-vista_cotizador > [data-testid="stLayoutWrapper"]:has(.st-key-guia_foco_tarifa),
-    .st-key-vista_cotizador > [data-testid="stLayoutWrapper"]:has(.st-key-btn_confirmar_tarifa) {
+    .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-guia_foco_tarifa),
+    .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-btn_confirmar_tarifa),
+    .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stLayoutWrapper"]:has(.st-key-guia_foco_tarifa),
+    .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stLayoutWrapper"]:has(.st-key-btn_confirmar_tarifa) {
         margin-top: auto !important;
         width: 100% !important;
         flex: 0 0 auto !important;
@@ -5237,9 +5252,10 @@ st.markdown(
         border: 1.5px solid #f59e0b !important;
         border-radius: 12px !important;
         padding: 10px 12px 8px 12px !important;
-        margin: 8px 0 14px 0 !important;
+        margin: 12px 0 16px 0 !important;
         box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18) !important;
         box-sizing: border-box !important;
+        overflow: visible !important;
     }
     .guia-globo { margin: 0; }
     .guia-globo-kicker {
@@ -5377,6 +5393,67 @@ st.markdown(
     .cotizacion-pendiente-foco {
         animation: cotPulseBorde 1.55s ease-in-out infinite;
         scroll-margin-top: var(--header-offset) !important;
+    }
+    [class*="st-key-tarjeta_cot_"] {
+        background: #f8fafc !important;
+        border: 1.5px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 12px 12px 14px 12px !important;
+        margin: 0 0 14px 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+    }
+    [class*="st-key-tarjeta_cot_"]:has(.cotizacion-pendiente-foco) {
+        background: #fffbeb !important;
+        border-color: #f59e0b !important;
+    }
+    [class*="st-key-tarjeta_cot_"] .cot-card-body {
+        margin: 0 0 10px 0;
+        padding: 0;
+        font-size: 0.85rem;
+        overflow: visible;
+    }
+    [class*="st-key-tarjeta_cot_"] [data-testid="stElementContainer"],
+    [class*="st-key-tarjeta_cot_"] [data-testid="stLayoutWrapper"],
+    [class*="st-key-tarjeta_cot_"] [data-testid="stDownloadButton"],
+    [class*="st-key-tarjeta_cot_"] div.stButton {
+        height: auto !important;
+        overflow: visible !important;
+        margin-bottom: 8px !important;
+    }
+    [class*="st-key-tarjeta_cot_"] div.stButton > button,
+    [class*="st-key-tarjeta_cot_"] [data-testid^="stBaseButton"],
+    [class*="st-key-tarjeta_cot_"] [data-testid="stDownloadButton"] button {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 44px !important;
+        max-height: none !important;
+        white-space: normal !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+    }
+    [class*="st-key-docs_env_"],
+    .st-key-acciones_emit_cotizador {
+        display: block !important;
+        height: auto !important;
+        overflow: visible !important;
+        margin: 8px 0 0 0 !important;
+    }
+    [class*="st-key-docs_env_"] [data-testid="stDownloadButton"],
+    [class*="st-key-docs_env_"] div.stButton,
+    .st-key-acciones_emit_cotizador [data-testid="stDownloadButton"],
+    .st-key-acciones_emit_cotizador div.stButton,
+    .st-key-acciones_emit_cotizador [data-testid="stElementContainer"] {
+        margin-top: 0 !important;
+        margin-bottom: 12px !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+    .st-key-vista_historial {
+        padding-top: 12px !important;
     }
     .cotizacion-badge-pendiente {
         display: inline-block;
@@ -6475,49 +6552,46 @@ elif st.session_state["rol"] == "cliente":
                     pendiente_foco = es_foco_hist and not consolidada
                     clase_foco = "cotizacion-pendiente-foco" if pendiente_foco else ""
                     id_ancla = 'id="cotizacion-foco-pendiente"' if pendiente_foco else f'id="cotizacion-ccm-{id_cot_item}"'
-                    borde = "#f59e0b" if pendiente_foco else "#e2e8f0"
-                    fondo = "#fffbeb" if pendiente_foco else "#f8fafc"
                     insignia = (
                         '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
                         if pendiente_foco
                         else ""
                     )
-                    st.markdown(
-                        f"""
-                    <div {id_ancla} class="{clase_foco}" style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:0.85rem;">
-                        <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)} {insignia}<br>
-                        <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
-                        <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
-                    </div>
-                    """,
-                        unsafe_allow_html=True,
-                    )
-                    if pendiente_foco and not scroll_pendiente_hecho:
-                        desplazar_a_cotizacion_pendiente()
-                        scroll_pendiente_hecho = True
+                    with st.container(key=f"tarjeta_cot_{id_cot_item}"):
+                        st.markdown(
+                            f"""
+                        <div {id_ancla} class="cot-card-body {clase_foco}">
+                            <b>🔖 CCM-COT-{id_cot_item:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_c)} {insignia}<br>
+                            <small style="color:#475569;">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></small><br>
+                            <small style="color:{color_estado}; font-weight:700;">{icono_estado} {estado_txt}</small>
+                        </div>
+                        """,
+                            unsafe_allow_html=True,
+                        )
+                        if pendiente_foco and not scroll_pendiente_hecho:
+                            desplazar_a_cotizacion_pendiente()
+                            scroll_pendiente_hecho = True
 
-                    pdf_historial = generar_pdf_confirmacion_cotizacion(
-                        casillero=casillero,
-                        nombre=nombre_completo,
-                        telefono=tel_cli,
-                        ciudad=ciu_cli,
-                        tipo_carga="Cotización Histórica",
-                        al=al_c,
-                        an=an_c,
-                        la=la_c,
-                        peso_lb=pe_lb_c,
-                        peso_kg=pe_lb_c / 2.20462,
-                        vol_m3=vol_m3_c,
-                        vol_ft3=vol_m3_c * 35.3147,
-                        total_usd=tot_c,
-                        detalle_tarifa="Tarifa Calculada Sistema CCM",
-                        id_cot=id_cot_item,
-                        destino_entrega=st.session_state["modalidad_envio_seleccionada"],
-                        fecha_emision=fec_c,
-                    )
-                    if consolidada:
-                        col_env, col_pdf = st.columns(2)
-                        with col_env:
+                        pdf_historial = generar_pdf_confirmacion_cotizacion(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            tipo_carga="Cotización Histórica",
+                            al=al_c,
+                            an=an_c,
+                            la=la_c,
+                            peso_lb=pe_lb_c,
+                            peso_kg=pe_lb_c / 2.20462,
+                            vol_m3=vol_m3_c,
+                            vol_ft3=vol_m3_c * 35.3147,
+                            total_usd=tot_c,
+                            detalle_tarifa="Tarifa Calculada Sistema CCM",
+                            id_cot=id_cot_item,
+                            destino_entrega=st.session_state["modalidad_envio_seleccionada"],
+                            fecha_emision=fec_c,
+                        )
+                        if consolidada:
                             es_foco_envios_guia = bool(
                                 guia_esta_activa()
                                 and guia_paso_actual() == 6
@@ -6537,7 +6611,6 @@ elif st.session_state["rol"] == "cliente":
                                     on_click=ir_a_envios_de_cotizacion,
                                     args=(id_cot_item,),
                                 )
-                        with col_pdf:
                             st.download_button(
                                 f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
                                 pdf_historial,
@@ -6546,9 +6619,7 @@ elif st.session_state["rol"] == "cliente":
                                 key=f"dl_cot_{id_cot_item}",
                                 use_container_width=True,
                             )
-                    else:
-                        col_conf, col_pdf = st.columns(2)
-                        with col_conf:
+                        else:
                             confirmar_ctx = (
                                 st.container(key=f"foco_confirmar_{id_cot_item}")
                                 if pendiente_foco
@@ -6563,7 +6634,6 @@ elif st.session_state["rol"] == "cliente":
                                     on_click=on_confirmar_cot_historial,
                                     args=(id_cot_item, casillero),
                                 )
-                        with col_pdf:
                             st.download_button(
                                 f"📥 PDF CCM-COT-{id_cot_item:05d}",
                                 pdf_historial,
@@ -6572,7 +6642,6 @@ elif st.session_state["rol"] == "cliente":
                                 key=f"dl_cot_{id_cot_item}",
                                 use_container_width=True,
                             )
-                    st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
             else:
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
@@ -6927,7 +6996,6 @@ elif st.session_state["rol"] == "cliente":
                     use_container_width=True,
                     on_click=emitir_tarifa_desde_snapshot,
                 )
-            espaciador_barra_inferior("safe_cotizador")
 
             if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
                 d_pdf = st.session_state["datos_pdf_confirmado"]
@@ -7010,41 +7078,42 @@ elif st.session_state["rol"] == "cliente":
                             fecha_emision=fecha_doc,
                         )
 
-                        with st.container(key="guia_foco_pdf_fab"):
-                            if st.download_button(
-                                "📥 PDF Fabricante",
-                                pdf_fab,
-                                f"Shipping_Label_Fabricante_{casillero}.pdf",
-                                "application/pdf",
-                                key=f"dl_pdf_fab_{id_c}",
-                                use_container_width=True,
-                            ):
-                                avanzar_guia_si(3, 4)
-                        st.download_button(
-                            "📥 PDF Tarifa",
-                            pdf_tarifa,
-                            f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
-                            "application/pdf",
-                            key=f"dl_pdf_tarifa_emit_{id_c}",
-                            use_container_width=True,
-                        )
-
-                        with st.container(key="guia_foco_ver_cot"):
+                        with st.container(key="acciones_emit_cotizador"):
+                            with st.container(key="guia_foco_pdf_fab"):
+                                if st.download_button(
+                                    "🏷️ Descargar Ficha de Bodega",
+                                    pdf_fab,
+                                    f"Shipping_Label_Fabricante_{casillero}.pdf",
+                                    "application/pdf",
+                                    key=f"dl_pdf_fab_{id_c}",
+                                    use_container_width=True,
+                                ):
+                                    avanzar_guia_si(3, 4)
                             st.button(
-                                "Ver en Mis Cotizaciones",
+                                "📦 Ir a Mis Envíos",
                                 type="primary",
-                                key=f"btn_ver_mis_cotizaciones_{id_c}",
+                                key=f"btn_ir_envios_emit_{id_c}",
                                 use_container_width=True,
-                                on_click=ir_a_historial_guia,
+                                on_click=ir_a_envios_de_cotizacion,
                                 args=(id_c,),
                             )
-                        st.button(
-                            "📦 Ir a Envíos",
-                            key=f"btn_ir_envios_emit_{id_c}",
-                            use_container_width=True,
-                            on_click=ir_a_envios_de_cotizacion,
-                            args=(id_c,),
-                        )
+                            st.download_button(
+                                "📥 PDF Tarifa",
+                                pdf_tarifa,
+                                f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
+                                "application/pdf",
+                                key=f"dl_pdf_tarifa_emit_{id_c}",
+                                use_container_width=True,
+                            )
+                            with st.container(key="guia_foco_ver_cot"):
+                                st.button(
+                                    "Ver en Mis Cotizaciones",
+                                    type="secondary",
+                                    key=f"btn_ver_mis_cotizaciones_{id_c}",
+                                    use_container_width=True,
+                                    on_click=ir_a_historial_guia,
+                                    args=(id_c,),
+                                )
 
                         texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
                         url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
@@ -7099,6 +7168,10 @@ elif st.session_state["rol"] == "cliente":
                         *clave_orden_cotizacion(r[7], r[0]),
                     ),
                 )
+                if not any(int(r[0]) == foco_envios for r in cotizaciones_despacho):
+                    extra_foco = next((r for r in lista_mis_cotizaciones if int(r[0]) == foco_envios), None)
+                    if extra_foco:
+                        cotizaciones_despacho = [extra_foco] + list(cotizaciones_despacho)
             if cotizaciones_despacho:
                 for cot_env in cotizaciones_despacho:
                     id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
@@ -7137,14 +7210,6 @@ elif st.session_state["rol"] == "cliente":
                         destino_entrega=st.session_state["modalidad_envio_seleccionada"],
                         fecha_emision=fec_e,
                     )
-                    st.download_button(
-                        f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
-                        pdf_ficha_env,
-                        f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
-                        "application/pdf",
-                        key=f"dl_ficha_env_{id_e}",
-                        use_container_width=True,
-                    )
                     pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
                         casillero=casillero,
                         nombre=nombre_completo,
@@ -7164,15 +7229,23 @@ elif st.session_state["rol"] == "cliente":
                         destino_entrega=st.session_state["modalidad_envio_seleccionada"],
                         fecha_emision=fec_e,
                     )
-                    st.download_button(
-                        f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
-                        pdf_tarifa_env,
-                        f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
-                        "application/pdf",
-                        key=f"dl_tarifa_env_{id_e}",
-                        use_container_width=True,
-                    )
-                    st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
+                    with st.container(key=f"docs_env_{id_e}"):
+                        st.download_button(
+                            f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
+                            pdf_ficha_env,
+                            f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_ficha_env_{id_e}",
+                            use_container_width=True,
+                        )
+                        st.download_button(
+                            f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
+                            pdf_tarifa_env,
+                            f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_tarifa_env_{id_e}",
+                            use_container_width=True,
+                        )
             else:
                 st.info("Confirme una cotización para consultar y descargar la Ficha y el PDF Tarifa en este módulo.")
             espaciador_barra_inferior("safe_envios")
