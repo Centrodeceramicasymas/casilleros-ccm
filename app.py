@@ -1568,6 +1568,50 @@ def seleccionar_modalidad_entrega(opcion):
     st.session_state["_mod_entrega_pendiente"] = opcion
 
 
+CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in")
+
+
+def guardar_nueva_direccion(casillero):
+    """on_click de Guardar Dirección: los valores del widget ya están confirmados al ejecutarse."""
+    etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
+    receptor = (st.session_state.get("dir_receptor_in") or "").strip()
+    tel = (st.session_state.get("dir_tel_in") or "").strip()
+    dep = (st.session_state.get("sb_dep_nueva_dir") or "").strip()
+    ciu = (st.session_state.get("sb_ciu_nueva_dir") or "").strip()
+    dir_exacta = (st.session_state.get("dir_exacta_in") or "").strip()
+    if not (etiqueta and receptor and tel and dep and ciu and dir_exacta):
+        st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
+        return
+    f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (casillero, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
+        )
+        conn.commit()
+    cargar_direcciones_db.clear()
+    bolsa_dir = st.session_state.setdefault("direcciones_usuario", {}).setdefault(casillero, [])
+    bolsa_dir.append({"etiqueta": etiqueta, "receptor": receptor, "ciudad": ciu, "direccion": dir_exacta})
+    seleccionar_modalidad_entrega(f"📍 {etiqueta} - {ciu}")
+    st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
+    st.session_state["_dir_form_reset"] = True
+    st.session_state.pop("_dir_form_error", None)
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.toast(f"✅ Dirección '{etiqueta}' guardada y seleccionada.")
+
+
+def cancelar_nueva_direccion():
+    """on_click de Cancelar: cierra el formulario y vuelve al almacén predeterminado."""
+    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
+    st.session_state["_dir_form_reset"] = True
+    st.session_state.pop("_dir_form_error", None)
+    st.session_state.pop("datos_pdf_confirmado", None)
+
+
 def selector_modalidad_entrega(opciones_modalidad):
     """Select de entrega en el cuerpo del Cotizador (fuera del header sticky, sin CSS sobre Baseweb)."""
     pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
@@ -4235,6 +4279,13 @@ def logout():
         "modalidad_envio_seleccionada",
         "sb_modalidad_entrega",
         "direcciones_usuario",
+        "_dir_form_error",
+        "_dir_form_exito",
+        "_dir_form_reset",
+        "dir_etiqueta_in",
+        "dir_receptor_in",
+        "dir_tel_in",
+        "dir_exacta_in",
         "sub_tab_inicio",
         "vista_activa",
         "hub",
@@ -5984,6 +6035,42 @@ st.markdown(
     .st-key-vista_historial {
         padding-top: 12px !important;
     }
+    @keyframes pulso-suave {
+        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(30, 77, 183, 0.4); }
+        50% { transform: scale(1.008); box-shadow: 0 0 10px 4px rgba(30, 77, 183, 0.2); }
+        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(30, 77, 183, 0); }
+    }
+    .destino-seleccionado-card {
+        animation: pulso-suave 2.5s infinite ease-in-out;
+        border-left: 4px solid #1E4DB7;
+        background-color: #EBF3FF;
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin: 4px 0 10px 0;
+        box-sizing: border-box;
+        width: 100%;
+    }
+    .destino-seleccionado-kicker {
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #1E4DB7;
+        margin: 0 0 2px 0;
+    }
+    .destino-seleccionado-dir {
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: #0f2a6b;
+        line-height: 1.35;
+        word-break: break-word;
+        margin: 0;
+    }
+    .destino-seleccionado-nota {
+        font-size: 0.74rem;
+        color: #64748b;
+        margin: 2px 0 0 0;
+    }
     .cotizacion-badge-pendiente {
         display: inline-flex;
         align-items: center;
@@ -7180,6 +7267,7 @@ elif st.session_state["rol"] == "cliente":
                         if pendiente_foco and not scroll_pendiente_hecho:
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
+            else:
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
                     "tiene 24 horas para confirmarla y habilitar Envíos."
@@ -7237,62 +7325,50 @@ elif st.session_state["rol"] == "cliente":
 
                 st.markdown("---")
                 st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
-                etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Sucursal 2, Taller")
-                receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_completo)
-                tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
+                if st.session_state.pop("_dir_form_reset", None):
+                    for _campo_dir in CAMPOS_FORM_DIRECCION:
+                        st.session_state.pop(_campo_dir, None)
+                if "dir_receptor_in" not in st.session_state:
+                    st.session_state["dir_receptor_in"] = nombre_completo
+                if "dir_tel_in" not in st.session_state:
+                    st.session_state["dir_tel_in"] = tel_cli
+                st.text_input(
+                    "Etiqueta de la dirección *",
+                    key="dir_etiqueta_in",
+                    placeholder="Ej: Mi Casa, Sucursal 2, Taller",
+                )
+                st.text_input("Nombre de quien recibe *", key="dir_receptor_in")
+                st.text_input("Teléfono de contacto *", key="dir_tel_in")
                 dep_dir_in = st.selectbox(
                     "Departamento *",
                     list(MUNICIPIOS_HONDURAS.keys()),
                     index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
                     key="sb_dep_nueva_dir",
                 )
-                ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
-                dir_exacta_in = st.text_area(
+                st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
+                st.text_area(
                     "Dirección exacta y referencias *",
+                    key="dir_exacta_in",
                     placeholder="Barrio, calle, número de casa, puntos clave...",
                 )
-                if st.button("💾 Guardar Dirección", type="primary", key="btn_guardar_nueva_dir", use_container_width=True):
-                    if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
-                        f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-                        with get_db() as conn:
-                            cur = conn.cursor()
-                            cur.execute(
-                                """
-                                INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    casillero,
-                                    etiqueta_in,
-                                    receptor_in,
-                                    tel_dir_in,
-                                    dep_dir_in,
-                                    ciu_dir_in,
-                                    dir_exacta_in,
-                                    f_ahora,
-                                ),
-                            )
-                            conn.commit()
-                        cargar_direcciones_db.clear()
-                        bolsa_dir = st.session_state.setdefault("direcciones_usuario", {}).setdefault(casillero, [])
-                        bolsa_dir.append(
-                            {
-                                "etiqueta": etiqueta_in,
-                                "receptor": receptor_in,
-                                "ciudad": ciu_dir_in,
-                                "direccion": dir_exacta_in,
-                            }
-                        )
-                        seleccionar_modalidad_entrega(f"📍 {etiqueta_in} - {ciu_dir_in}")
-                        st.session_state.pop("datos_pdf_confirmado", None)
-                        st.toast(f"✅ Dirección '{etiqueta_in}' guardada y seleccionada.")
-                        st.rerun()
-                    else:
-                        st.error("Completa todos los campos obligatorios (*).")
-                if st.button("Cancelar", type="secondary", key="btn_cancelar_dir", use_container_width=True):
-                    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
-                    st.session_state.pop("datos_pdf_confirmado", None)
-                    st.rerun()
+                error_dir = st.session_state.pop("_dir_form_error", None)
+                if error_dir:
+                    st.error(error_dir)
+                st.button(
+                    "💾 Guardar Dirección",
+                    type="primary",
+                    key="btn_guardar_nueva_dir",
+                    use_container_width=True,
+                    on_click=guardar_nueva_direccion,
+                    args=(casillero,),
+                )
+                st.button(
+                    "Cancelar",
+                    type="secondary",
+                    key="btn_cancelar_dir",
+                    use_container_width=True,
+                    on_click=cancelar_nueva_direccion,
+                )
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         with st.container(key="vista_catalogo"):
@@ -7367,9 +7443,19 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_cotizador"):
             st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
             selector_modalidad_entrega(opciones_modalidad)
-            st.info(
-                f"📍 **Dirección / Destino de Entrega Seleccionado:** `{st.session_state['modalidad_envio_seleccionada']}` *(Se imprimirá en todos los formatos)*"
+            st.markdown(
+                f"""
+                <div class="destino-seleccionado-card">
+                    <div class="destino-seleccionado-kicker">📍 Destino de Entrega Seleccionado</div>
+                    <div class="destino-seleccionado-dir">{st.session_state['modalidad_envio_seleccionada']}</div>
+                    <div class="destino-seleccionado-nota">(Se imprimirá en todos los formatos y fichas de bodega)</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
+            exito_dir = st.session_state.pop("_dir_form_exito", None)
+            if exito_dir:
+                st.success(f"✅ {exito_dir}")
 
             t_lb = get_tarifa("tarifa_libra")
             t_m3 = get_tarifa("tarifa_m3")
