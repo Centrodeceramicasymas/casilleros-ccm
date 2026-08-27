@@ -1423,6 +1423,7 @@ def emitir_tarifa_desde_snapshot():
     st.session_state["china_modulos_desbloqueados"] = True
     avanzar_guia_si(2, 3)
     st.session_state["_ccm_rerun_app"] = True
+    st.session_state["_ccm_scroll_emit"] = True
 
 
 def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
@@ -2474,11 +2475,12 @@ def sincronizar_altura_encabezado_fijo():
     st.markdown('<div class="ccm-header-spacer" aria-hidden="true"></div>', unsafe_allow_html=True)
 
 
-def desplazar_a_ancla(element_id):
+def desplazar_a_ancla(element_id, alinear="start"):
     """Auto-scroll suave hasta un ancla, dejando el encabezado congelado por encima."""
     eid = str(element_id or "").replace("\\", "").replace('"', "")
     if not eid:
         return
+    bloque = "end" if alinear == "end" else "start"
     components.html(
         f"""
         <script>
@@ -2498,8 +2500,15 @@ def desplazar_a_ancla(element_id):
             const gapRaw = estilos.getPropertyValue("--header-gap").trim();
             const gap = Number.parseFloat(gapRaw) || 16;
             const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 196);
+            const nav = doc.querySelector('[class~="st-key-bottom_nav"]') || doc.querySelector(".st-key-bottom_nav");
+            let huecoNav = 125;
+            if (nav) {{
+              const nr = nav.getBoundingClientRect();
+              huecoNav = Math.max(109, Math.round(win.innerHeight - nr.top + 16));
+            }}
             el.style.scrollMarginTop = margen + "px";
-            el.scrollIntoView({{ behavior: "smooth", block: "start" }});
+            el.style.scrollMarginBottom = huecoNav + "px";
+            el.scrollIntoView({{ behavior: "smooth", block: "{bloque}" }});
           }};
           setTimeout(ir, 180);
           setTimeout(ir, 480);
@@ -2515,6 +2524,11 @@ def desplazar_a_ancla(element_id):
 def desplazar_a_cotizacion_pendiente():
     """Auto-scroll suave hasta la tarjeta que hay que confirmar (bajo el encabezado fijo)."""
     desplazar_a_ancla("cotizacion-foco-pendiente")
+
+
+def desplazar_a_acciones_emit():
+    """Tras emitir, deja los botones de PDF e Ir a Cotizaciones sobre la píldora."""
+    desplazar_a_ancla("ccm-acciones-emit", alinear="end")
 
 
 # ---------------------------------------------------------
@@ -4063,6 +4077,7 @@ def logout():
         "_cot_emit_snapshot",
         "_seq_cot",
         "_ccm_rerun_app",
+        "_ccm_scroll_emit",
         "modalidad_envio_seleccionada",
         "sb_modalidad_entrega",
         "sub_tab_inicio",
@@ -5566,6 +5581,7 @@ st.markdown(
         height: auto !important;
         overflow: visible !important;
         margin: 8px 0 0 0 !important;
+        scroll-margin-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
     }
     [class*="st-key-docs_env_"] [data-testid="stDownloadButton"],
     [class*="st-key-docs_env_"] div.stButton,
@@ -5576,6 +5592,34 @@ st.markdown(
         margin-bottom: 12px !important;
         height: auto !important;
         overflow: visible !important;
+    }
+    .st-key-acciones_emit_cotizador [data-testid="stDownloadButton"] button,
+    .st-key-acciones_emit_cotizador div.stButton > button,
+    .st-key-acciones_emit_cotizador [data-testid^="stBaseButton"] {
+        white-space: normal !important;
+        height: auto !important;
+        min-height: 48px !important;
+        line-height: 1.25 !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+    }
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) .st-key-safe_cotizador_fin,
+    .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) .st-key-safe_cotizador_fin {
+        height: 180px !important;
+        min-height: 180px !important;
+        max-height: none !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+    }
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) [data-testid="stElementContainer"]:has(.st-key-safe_cotizador_fin),
+    .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) [data-testid="stLayoutWrapper"]:has(.st-key-safe_cotizador_fin),
+    .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) [data-testid="stElementContainer"]:has(.st-key-safe_cotizador_fin),
+    .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab) [data-testid="stLayoutWrapper"]:has(.st-key-safe_cotizador_fin) {
+        height: 180px !important;
+        min-height: 180px !important;
+        max-height: none !important;
+        overflow: hidden !important;
     }
     .st-key-vista_historial {
         padding-top: 12px !important;
@@ -7149,10 +7193,11 @@ elif st.session_state["rol"] == "cliente":
                             detalle_emitida = f"✅ {estado_doc}"
                         else:
                             titulo_emitida = (
-                                f"Tarifa CCM-COT-{id_c:05d} emitida el {fecha_doc} para entrega en: {dest_pdf}"
+                                f"Tarifa CCM-COT-{id_c:05d} · Pendiente de Confirmar"
                             )
                             detalle_emitida = (
-                                f"⏳ {estado_doc}. Ya está en Mis Cotizaciones. Confírmela ahí para que no caduque."
+                                f"⏳ {estado_doc}. Código de seguimiento CCM-COT-{id_c:05d}. "
+                                "Descargue el formato para el fabricante o vaya a Mis Cotizaciones para confirmarla antes de 24 horas."
                             )
 
                         st.markdown(
@@ -7182,30 +7227,15 @@ elif st.session_state["rol"] == "cliente":
                             destino_entrega=dest_pdf,
                             fecha_emision=fecha_doc,
                         )
-                        pdf_tarifa = generar_pdf_confirmacion_cotizacion(
-                            casillero=casillero,
-                            nombre=nombre_completo,
-                            telefono=tel_cli,
-                            ciudad=ciu_cli,
-                            tipo_carga=d_pdf.get("tipo_carga") or "Tarifa emitida",
-                            al=d_pdf.get("al", 0),
-                            an=d_pdf.get("an", 0),
-                            la=d_pdf.get("la", 0),
-                            peso_lb=d_pdf.get("peso_lb", 0),
-                            peso_kg=d_pdf.get("peso_kg", 0),
-                            vol_m3=d_pdf.get("vol_m3", 0),
-                            vol_ft3=d_pdf.get("vol_ft3", 0),
-                            total_usd=d_pdf.get("total_usd", 0),
-                            detalle_tarifa=d_pdf.get("detalle_tarifa") or "Tarifa Calculada Sistema CCM",
-                            id_cot=id_c,
-                            destino_entrega=dest_pdf,
-                            fecha_emision=fecha_doc,
-                        )
 
                         with st.container(key="acciones_emit_cotizador"):
+                            st.markdown(
+                                '<div id="ccm-acciones-emit" class="ccm-acciones-emit-ancla"></div>',
+                                unsafe_allow_html=True,
+                            )
                             with st.container(key="guia_foco_pdf_fab"):
                                 if st.download_button(
-                                    "🏷️ Descargar Ficha de Bodega",
+                                    "🏷️ Descargar Formato / Documento para el Fabricante",
                                     pdf_fab,
                                     f"Shipping_Label_Fabricante_{casillero}.pdf",
                                     "application/pdf",
@@ -7213,38 +7243,17 @@ elif st.session_state["rol"] == "cliente":
                                     use_container_width=True,
                                 ):
                                     avanzar_guia_si(3, 4)
-                            st.button(
-                                "📦 Ir a Mis Envíos",
-                                type="primary",
-                                key=f"btn_ir_envios_emit_{id_c}",
-                                use_container_width=True,
-                                on_click=ir_a_envios_de_cotizacion,
-                                args=(id_c,),
-                            )
-                            st.download_button(
-                                "📥 PDF Tarifa",
-                                pdf_tarifa,
-                                f"Comprobante_Tarifa_{casillero}_COT{id_c:05d}.pdf",
-                                "application/pdf",
-                                key=f"dl_pdf_tarifa_emit_{id_c}",
-                                use_container_width=True,
-                            )
                             with st.container(key="guia_foco_ver_cot"):
                                 st.button(
-                                    "Ver en Mis Cotizaciones",
-                                    type="secondary",
+                                    "📋 Ir a Mis Cotizaciones",
+                                    type="primary",
                                     key=f"btn_ver_mis_cotizaciones_{id_c}",
                                     use_container_width=True,
                                     on_click=ir_a_historial_guia,
                                     args=(id_c,),
                                 )
-
-                        texto_wa = f"Hola Centro de Cerámicas y Más, confirmo cotización CCM-COT-{id_c:05d} generada el {fecha_doc} del casillero {casillero}. Destino de Entrega: {dest_pdf}. Total: ${d_pdf.get('total_usd', 0):.2f} USD."
-                        url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(texto_wa)
-                        st.markdown(
-                            f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:12px; width:100%; height:48px; font-weight:bold; cursor:pointer; margin-top:8px; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.25);">📲 Enviar a WhatsApp (+504 9577-1099)</button></a>',
-                            unsafe_allow_html=True,
-                        )
+                        if st.session_state.pop("_ccm_scroll_emit", None):
+                            desplazar_a_acciones_emit()
 
             espaciador_barra_inferior("safe_cotizador_fin")
 
