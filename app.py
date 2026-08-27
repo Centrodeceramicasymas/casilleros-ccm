@@ -15,6 +15,7 @@ from pathlib import Path
 import base64
 import hmac
 import json
+import html
 
 import requests
 
@@ -1550,25 +1551,183 @@ def pintar_banner_promocional_china(casillero):
     )
 
 
+CLAVES_WIDGET_PERFIL = (
+    "perfil_nom",
+    "perfil_tel",
+    "perfil_dep",
+    "perfil_ciu",
+    "perfil_dir",
+    "perfil_dni",
+)
+
+
+def cargar_perfil_usuario(casillero):
+    """Lee nombre, DNI, teléfono y dirección del casillero activo."""
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return None
+    claves = coincidencias_casillero(cas)
+    placeholders = ",".join("?" * len(claves))
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            f"""
+            SELECT codigo_casillero, nombre_completo, dni, correo_principal,
+                   telefono_principal, departamento, ciudad, direccion_exacta
+            FROM usuarios
+            WHERE codigo_casillero IN ({placeholders}) AND activo = 1
+            """,
+            claves,
+        )
+        row = c.fetchone()
+    if not row:
+        return None
+    return {
+        "casillero": formatear_casillero(row[0]),
+        "nombre": row[1] or "",
+        "dni": row[2] or "",
+        "correo": row[3] or "",
+        "telefono": row[4] or "",
+        "departamento": row[5] or "",
+        "ciudad": row[6] or "",
+        "direccion": row[7] or "",
+    }
+
+
+def aplicar_perfil_en_sesion(perfil):
+    if not perfil:
+        return
+    st.session_state["casillero"] = perfil["casillero"]
+    st.session_state["nombre"] = perfil["nombre"]
+    st.session_state["dni"] = perfil["dni"]
+    st.session_state["usuario"] = perfil["correo"]
+    st.session_state["telefono"] = perfil["telefono"]
+    st.session_state["departamento"] = perfil["departamento"]
+    st.session_state["ciudad"] = perfil["ciudad"]
+    st.session_state["direccion_exacta"] = perfil["direccion"]
+
+
+def persistir_perfil_usuario(casillero, nombre, telefono, departamento, ciudad, direccion, dni):
+    """Actualiza datos editables. Correo y código de casillero no cambian."""
+    actual = cargar_perfil_usuario(casillero)
+    if not actual:
+        return False, "No se encontró el casillero."
+    nombre = (nombre or "").strip()
+    telefono = (telefono or "").strip()
+    departamento = (departamento or "").strip()
+    ciudad = (ciudad or "").strip()
+    direccion = (direccion or "").strip()
+    dni = (dni or "").strip()
+    dni_dig = "".join(filter(str.isdigit, dni))
+    if not nombre:
+        return False, "Ingrese el nombre completo."
+    if not telefono:
+        return False, "Ingrese el teléfono / WhatsApp."
+    if not departamento or not ciudad or not direccion:
+        return False, "Ingrese departamento, ciudad y dirección de entrega."
+    if len(dni_dig) < 8:
+        return False, "Ingrese un DNI válido (mínimo 8 dígitos)."
+    claves = coincidencias_casillero(actual["casillero"])
+    placeholders = ",".join("?" * len(claves))
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            f"""
+            SELECT 1 FROM usuarios
+            WHERE dni = ? AND codigo_casillero NOT IN ({placeholders})
+            LIMIT 1
+            """,
+            (dni, *claves),
+        )
+        if c.fetchone():
+            return False, "Ese DNI ya está registrado en otro casillero."
+        c.execute(
+            f"""
+            UPDATE usuarios
+            SET nombre_completo = ?, dni = ?, telefono_principal = ?,
+                departamento = ?, ciudad = ?, direccion_exacta = ?
+            WHERE codigo_casillero IN ({placeholders})
+            """,
+            (nombre, dni, telefono, departamento, ciudad, direccion, *claves),
+        )
+        conn.commit()
+    aplicar_perfil_en_sesion(
+        {
+            **actual,
+            "nombre": nombre,
+            "dni": dni,
+            "telefono": telefono,
+            "departamento": departamento,
+            "ciudad": ciudad,
+            "direccion": direccion,
+        }
+    )
+    return True, "¡Datos actualizados exitosamente!"
+
+
+@st.dialog("Editar perfil", width="large")
+def dialogo_editar_perfil():
+    perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
+    if not perfil:
+        st.error("No se encontró el perfil de este casillero.")
+        return
+    st.caption("El correo y el código de casillero no se pueden modificar.")
+    nom = st.text_input("Nombre completo", value=perfil["nombre"], key="perfil_nom")
+    tel = st.text_input("Teléfono / WhatsApp", value=perfil["telefono"], key="perfil_tel")
+    dep = st.text_input("Departamento", value=perfil["departamento"], key="perfil_dep")
+    ciu = st.text_input("Ciudad", value=perfil["ciudad"], key="perfil_ciu")
+    dir_e = st.text_area("Dirección de entrega", value=perfil["direccion"], key="perfil_dir")
+    dni = st.text_input("Número de Identidad / DNI", value=perfil["dni"], key="perfil_dni")
+    st.text_input("Correo electrónico", value=perfil["correo"], disabled=True, key="perfil_mail")
+    st.text_input("Código de casillero", value=perfil["casillero"], disabled=True, key="perfil_cas")
+    if st.button("💾 Guardar Cambios", type="primary", key="perfil_guardar", use_container_width=True):
+        ok, msg = persistir_perfil_usuario(
+            perfil["casillero"], nom, tel, dep, ciu, dir_e, dni
+        )
+        if ok:
+            st.session_state["flash_perfil"] = msg
+            for k in CLAVES_WIDGET_PERFIL:
+                st.session_state.pop(k, None)
+            st.rerun()
+        st.error(msg)
+
+
+def abrir_dialogo_editar_perfil():
+    for k in CLAVES_WIDGET_PERFIL:
+        st.session_state.pop(k, None)
+    dialogo_editar_perfil()
+
+
 def pintar_vista_mas():
     """Pantalla completa Más: cuenta, módulos restantes y cierre de sesión."""
     hub_activo = st.session_state.get("hub")
     mostrar_btn_guia = hub_activo == "china"
-    nombre = st.session_state.get("nombre") or "Cliente"
-    cas = formatear_casillero(st.session_state.get("casillero", "")) or "—"
-    correo = st.session_state.get("usuario") or "—"
+    perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
+    if perfil:
+        aplicar_perfil_en_sesion(perfil)
+        nombre = perfil["nombre"] or "Cliente"
+        cas = perfil["casillero"] or "—"
+        correo = perfil["correo"] or "—"
+    else:
+        nombre = st.session_state.get("nombre") or "Cliente"
+        cas = formatear_casillero(st.session_state.get("casillero", "")) or "—"
+        correo = st.session_state.get("usuario") or "—"
 
     with st.container(key="vista_mas"):
-        st.markdown('<div class="mas-titulo">Más</div>', unsafe_allow_html=True)
-        st.markdown('<div class="mas-seccion">Cuenta</div>', unsafe_allow_html=True)
+        aviso = st.session_state.pop("flash_perfil", None)
+        if aviso:
+            st.success(aviso)
+        st.markdown('<div class="mas-seccion mas-seccion-cuenta">Cuenta</div>', unsafe_allow_html=True)
         st.markdown(
             f'<div class="mas-card mas-cuenta">'
-            f'<div class="mas-cuenta-nombre">{nombre}</div>'
-            f'<div class="mas-cuenta-cas">Casillero {cas}</div>'
-            f'<div class="mas-cuenta-mail">{correo}</div>'
+            f'<div class="mas-cuenta-nombre">{html.escape(nombre)}</div>'
+            f'<div class="mas-cuenta-cas">Casillero {html.escape(cas)}</div>'
+            f'<div class="mas-cuenta-mail">{html.escape(correo)}</div>'
             f"</div>",
             unsafe_allow_html=True,
         )
+        if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
+            abrir_dialogo_editar_perfil()
         st.markdown('<div class="mas-seccion">Módulos y operaciones</div>', unsafe_allow_html=True)
         if st.button("📦  Mis envíos", key="mas_envios", use_container_width=True):
             ir_a("Mis Envíos", hub="china")
@@ -1668,7 +1827,7 @@ def anclar_barra_inferior():
                   nav.style.setProperty("width", "min(96vw, 520px)", "important");
                   nav.style.setProperty("max-width", "520px", "important");
                 }
-                const hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
+                const hueco = "calc(180px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
@@ -3271,8 +3430,11 @@ if "autenticado" not in st.session_state:
             "rol": None,
             "casillero": None,
             "nombre": None,
+            "dni": None,
             "telefono": None,
+            "departamento": None,
             "ciudad": None,
+            "direccion_exacta": None,
             "reg_paso": 1,
             "reg_datos": {},
             "reg_exito": None,
@@ -3313,12 +3475,16 @@ def restaurar_sesion_persistente():
             return False
 
         st.session_state["autenticado"] = True
-        st.session_state["casillero"] = formatear_casillero(user_rec[1])
-        st.session_state["nombre"] = user_rec[2]
-        st.session_state["usuario"] = user_rec[3]
         st.session_state["rol"] = user_rec[4]
-        st.session_state["telefono"] = user_rec[6]
-        st.session_state["ciudad"] = user_rec[7]
+        perfil_rest = cargar_perfil_usuario(user_rec[1])
+        if perfil_rest:
+            aplicar_perfil_en_sesion(perfil_rest)
+        else:
+            st.session_state["casillero"] = formatear_casillero(user_rec[1])
+            st.session_state["nombre"] = user_rec[2]
+            st.session_state["usuario"] = user_rec[3]
+            st.session_state["telefono"] = user_rec[6]
+            st.session_state["ciudad"] = user_rec[7]
 
         vista_url = params.get("vista", "")
         if isinstance(vista_url, list):
@@ -3370,8 +3536,12 @@ def logout():
         "rol",
         "casillero",
         "nombre",
+        "dni",
         "telefono",
+        "departamento",
         "ciudad",
+        "direccion_exacta",
+        "flash_perfil",
         "datos_pdf_confirmado",
         "ultima_cot_id",
         "modalidad_envio_seleccionada",
@@ -3509,7 +3679,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(180px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3876,8 +4046,8 @@ st.markdown(
     .st-key-safe_cotizador_fin,
     .st-key-safe_catalogo {
         display: block !important;
-        height: 200px !important;
-        min-height: 200px !important;
+        height: 180px !important;
+        min-height: 180px !important;
         width: 100% !important;
         pointer-events: none !important;
         opacity: 0 !important;
@@ -3887,6 +4057,7 @@ st.markdown(
         margin-bottom: 8px !important;
     }
     .st-key-vista_mas {
+        padding-top: 4px !important;
         padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
     .st-key-guia_foco_tarifa,
@@ -3905,14 +4076,6 @@ st.markdown(
         height: 48px !important;
     }
 
-    .mas-titulo {
-        text-align: center;
-        font-size: 1.35rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin: 2px 0 14px 0;
-        letter-spacing: -0.02em;
-    }
     .mas-seccion {
         font-size: 0.72rem;
         font-weight: 800;
@@ -3920,6 +4083,9 @@ st.markdown(
         text-transform: uppercase;
         color: #64748b;
         margin: 16px 4px 8px 4px;
+    }
+    .mas-seccion-cuenta {
+        margin-top: 2px;
     }
     .mas-card,
     .mas-cuenta {
@@ -3947,6 +4113,20 @@ st.markdown(
         color: #64748b;
         margin-top: 2px;
         word-break: break-word;
+    }
+    .st-key-mas_editar_perfil div.stButton > button,
+    .st-key-mas_editar_perfil [data-testid^="stBaseButton"] {
+        background: #f8fafc !important;
+        background-color: #f8fafc !important;
+        color: #004ac1 !important;
+        -webkit-text-fill-color: #004ac1 !important;
+        border: 1px solid #dbeafe !important;
+        border-radius: 14px !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        font-weight: 700 !important;
+        box-shadow: none !important;
+        margin-bottom: 4px !important;
     }
     .st-key-mas_envios div.stButton > button,
     .st-key-mas_fichas div.stButton > button,
@@ -4931,12 +5111,16 @@ if not st.session_state["autenticado"]:
                         st.error("⛔ Cuenta inactiva. Contacte al soporte.")
                     else:
                         st.session_state["autenticado"] = True
-                        st.session_state["casillero"] = formatear_casillero(user[1])
-                        st.session_state["nombre"] = user[2]
-                        st.session_state["usuario"] = user[3]
                         st.session_state["rol"] = user[4]
-                        st.session_state["telefono"] = user[6]
-                        st.session_state["ciudad"] = user[7]
+                        perfil_login = cargar_perfil_usuario(user[1])
+                        if perfil_login:
+                            aplicar_perfil_en_sesion(perfil_login)
+                        else:
+                            st.session_state["casillero"] = formatear_casillero(user[1])
+                            st.session_state["nombre"] = user[2]
+                            st.session_state["usuario"] = user[3]
+                            st.session_state["telefono"] = user[6]
+                            st.session_state["ciudad"] = user[7]
                         st.session_state.pop("datos_pdf_confirmado", None)
                         st.session_state["china_modulos_desbloqueados"] = False
                         st.session_state["sub_tab_inicio"] = "Inicio"
