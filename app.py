@@ -2293,6 +2293,20 @@ def anclar_barra_inferior():
                     caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
                     return;
                   }
+                  const formDir = caja.querySelector('[class~="st-key-formulario_direcciones"]') || caja.querySelector(".st-key-formulario_direcciones");
+                  if (formDir) {
+                    caja.style.setProperty("box-sizing", "border-box", "important");
+                    caja.style.setProperty("min-height", "0px", "important");
+                    caja.style.setProperty("height", "auto", "important");
+                    caja.style.setProperty("padding-top", "16px", "important");
+                    caja.style.setProperty("padding-bottom", "0px", "important");
+                    formDir.style.setProperty("display", "flex", "important");
+                    formDir.style.setProperty("flex-direction", "column", "important");
+                    formDir.style.setProperty("height", "auto", "important");
+                    formDir.style.setProperty("min-height", "0", "important");
+                    formDir.style.setProperty("padding-bottom", "220px", "important");
+                    return;
+                  }
                   const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
                   const host = form || caja;
                   const posteriores = [];
@@ -5030,6 +5044,42 @@ st.markdown(
         margin-bottom: 0 !important;
         min-height: calc(100dvh - var(--header-offset, 208px)) !important;
     }
+    .st-key-vista_cotizador:has(.st-key-formulario_direcciones) {
+        padding-top: 16px !important;
+        padding-bottom: 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+    .st-key-formulario_direcciones {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        box-sizing: border-box !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 220px !important;
+        overflow: visible !important;
+    }
+    .st-key-formulario_direcciones > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-formulario_direcciones > [data-testid="stVerticalBlock"],
+    .st-key-formulario_direcciones > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        height: auto !important;
+        min-height: 0 !important;
+        width: 100% !important;
+        overflow: visible !important;
+    }
+    .st-key-formulario_direcciones .st-key-btn_guardar_nueva_dir,
+    .st-key-formulario_direcciones .st-key-btn_cancelar_dir {
+        width: 100% !important;
+        margin-top: 4px !important;
+        margin-bottom: 8px !important;
+    }
     .st-key-vista_catalogo {
         display: flex !important;
         flex-direction: column !important;
@@ -7109,108 +7159,102 @@ elif st.session_state["rol"] == "cliente":
             espaciador_barra_inferior("safe_historial")
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
-        selector_modalidad_entrega(opciones_modalidad)
-        st.markdown("#### 📍 Administrar Direcciones de Envío")
+        with st.container(key="vista_cotizador"):
+            with st.container(key="formulario_direcciones"):
+                selector_modalidad_entrega(opciones_modalidad)
+                st.markdown("#### 📍 Administrar Direcciones de Envío")
 
-        st.markdown(
-            f"""
-        <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
-            <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
-            <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
+                st.markdown(
+                    f"""
+                <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
+                    <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
+                    <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
 
-        if direcciones_guardadas:
-            st.markdown(
-                "<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>",
-                unsafe_allow_html=True,
-            )
-            for dir_item in direcciones_guardadas:
-                id_dir, etiq, rec, ciu_d, dir_e = dir_item
-                col_info_d, col_btn_del = st.columns([3.8, 1])
-                with col_info_d:
+                if direcciones_guardadas:
                     st.markdown(
-                        f"""
-                    <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
-                        <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
-                        <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
-                    </div>
-                    """,
+                        "<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>",
                         unsafe_allow_html=True,
                     )
-                with col_btn_del:
-                    if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir}", type="secondary"):
+                    for dir_item in direcciones_guardadas:
+                        id_dir, etiq, rec, ciu_d, dir_e = dir_item
+                        col_info_d, col_btn_del = st.columns([3.8, 1])
+                        with col_info_d:
+                            st.markdown(
+                                f"""
+                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
+                                <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
+                                <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
+                            </div>
+                            """,
+                                unsafe_allow_html=True,
+                            )
+                        with col_btn_del:
+                            if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir}", type="secondary"):
+                                with get_db() as conn:
+                                    cur = conn.cursor()
+                                    cur.execute(
+                                        "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
+                                        (id_dir, casillero),
+                                    )
+                                    conn.commit()
+                                st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                                st.session_state.pop("datos_pdf_confirmado", None)
+                                st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
+                                st.rerun()
+
+                st.markdown("---")
+                st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
+                etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Sucursal 2, Taller")
+                receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_completo)
+                tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
+                dep_dir_in = st.selectbox(
+                    "Departamento *",
+                    list(MUNICIPIOS_HONDURAS.keys()),
+                    index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
+                    key="sb_dep_nueva_dir",
+                )
+                ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
+                dir_exacta_in = st.text_area(
+                    "Dirección exacta y referencias *",
+                    placeholder="Barrio, calle, número de casa, puntos clave...",
+                )
+                if st.button("💾 Guardar Dirección", type="primary", key="btn_guardar_nueva_dir", use_container_width=True):
+                    if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
+                        f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                         with get_db() as conn:
                             cur = conn.cursor()
                             cur.execute(
-                                "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
-                                (id_dir, casillero),
+                                """
+                                INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    casillero,
+                                    etiqueta_in,
+                                    receptor_in,
+                                    tel_dir_in,
+                                    dep_dir_in,
+                                    ciu_dir_in,
+                                    dir_exacta_in,
+                                    f_ahora,
+                                ),
                             )
                             conn.commit()
-                        st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                        st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
+                        st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
                         st.session_state.pop("datos_pdf_confirmado", None)
-                        st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
+                        cargar_direcciones_db.clear()
                         st.rerun()
-
-        st.markdown("---")
-        st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
-        c_et1, c_et2 = st.columns(2)
-        with c_et1:
-            etiqueta_in = st.text_input("Etiqueta de la dirección *", placeholder="Ej: Mi Casa, Sucursal 2, Taller")
-            receptor_in = st.text_input("Nombre de quien recibe *", value=nombre_completo)
-        with c_et2:
-            tel_dir_in = st.text_input("Teléfono de contacto *", value=tel_cli)
-            dep_dir_in = st.selectbox(
-                "Departamento *",
-                list(MUNICIPIOS_HONDURAS.keys()),
-                index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
-                key="sb_dep_nueva_dir",
-            )
-
-        ciu_dir_in = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
-        dir_exacta_in = st.text_area(
-            "Dirección exacta y referencias *",
-            placeholder="Barrio, calle, número de casa, puntos clave...",
-        )
-
-        c_sv1, c_sv2 = st.columns(2)
-        with c_sv1:
-            if st.button("💾 Guardar Dirección", type="primary", key="btn_guardar_nueva_dir"):
-                if etiqueta_in and receptor_in and tel_dir_in and ciu_dir_in and dir_exacta_in:
-                    f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-                    with get_db() as conn:
-                        cur = conn.cursor()
-                        cur.execute(
-                            """
-                            INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                casillero,
-                                etiqueta_in,
-                                receptor_in,
-                                tel_dir_in,
-                                dep_dir_in,
-                                ciu_dir_in,
-                                dir_exacta_in,
-                                f_ahora,
-                            ),
-                        )
-                        conn.commit()
-                    st.success(f"✅ Dirección '{etiqueta_in}' guardada.")
-                    st.session_state["modalidad_envio_seleccionada"] = f"📍 {etiqueta_in} - {ciu_dir_in}"
+                    else:
+                        st.error("Completa todos los campos obligatorios (*).")
+                if st.button("Cancelar", type="secondary", key="btn_cancelar_dir", use_container_width=True):
+                    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
                     st.session_state.pop("datos_pdf_confirmado", None)
-                    cargar_direcciones_db.clear()
                     st.rerun()
-                else:
-                    st.error("Completa todos los campos obligatorios (*).")
-        with c_sv2:
-            if st.button("Cancelar", type="secondary", key="btn_cancelar_dir"):
-                st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
-                st.session_state.pop("datos_pdf_confirmado", None)
-                st.rerun()
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         with st.container(key="vista_catalogo"):
