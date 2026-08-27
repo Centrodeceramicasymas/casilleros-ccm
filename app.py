@@ -1760,14 +1760,14 @@ def pintar_vista_mas():
         if st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True):
             avanzar_guia_si(1, 2)
             ir_a("Cotizador", hub="china")
-        st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
-        if mostrar_btn_guia:
-            if st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True):
-                iniciar_guia_interactiva(1)
-                st.rerun()
-        if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
-            ir_a("Cerrar")
-        espaciador_barra_inferior("safe_mas")
+        with st.container(key="mas_sesion"):
+            st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
+            if mostrar_btn_guia:
+                if st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True):
+                    iniciar_guia_interactiva(1)
+                    st.rerun()
+            if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
+                ir_a("Cerrar")
 
 
 def espaciador_barra_inferior(clave):
@@ -1846,11 +1846,39 @@ def anclar_barra_inferior():
                   nav.style.setProperty("z-index", "9999", "important");
                   nav.style.setProperty("width", "min(96vw, 520px)", "important");
                   nav.style.setProperty("max-width", "520px", "important");
+                  const cajaNav = nav.closest('[data-testid="stElementContainer"]') || nav.parentElement;
+                  if (cajaNav && cajaNav !== doc.body) {
+                    cajaNav.style.setProperty("height", "0", "important");
+                    cajaNav.style.setProperty("min-height", "0", "important");
+                    cajaNav.style.setProperty("margin", "0", "important");
+                    cajaNav.style.setProperty("padding", "0", "important");
+                    cajaNav.style.setProperty("overflow", "visible", "important");
+                    cajaNav.style.setProperty("border", "0", "important");
+                  }
                 }
-                const hueco = "calc(180px + env(safe-area-inset-bottom, 0px))";
+                const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
+                const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
+                  doc.querySelector(".st-key-btn_logout_cliente") ||
+                  Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
+                const hueco = mas ? "0px" : "calc(180px + env(safe-area-inset-bottom, 0px))";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
                 });
+                const GAP_OBJETIVO = 12;
+                if (mas && nav) {
+                  const navCaja = nav.getBoundingClientRect();
+                  const app = doc.querySelector(".stApp") || doc.documentElement;
+                  const extra = Math.max(0, Math.round((app.scrollHeight || 0) - mas.getBoundingClientRect().bottom - (app.scrollTop || 0)));
+                  const huecoNav = Math.max(24, Math.round(win.innerHeight - navCaja.top + GAP_OBJETIVO - extra));
+                  mas.style.setProperty("padding-bottom", huecoNav + "px", "important");
+                  const masTop = mas.getBoundingClientRect().top;
+                  const minH = Math.max(240, Math.round(win.innerHeight - masTop));
+                  mas.style.setProperty("min-height", minH + "px", "important");
+                  const item = logout
+                    ? Array.from(mas.children).find((ch) => ch.contains(logout))
+                    : mas.querySelector("[data-testid='stLayoutWrapper']:has(.st-key-mas_sesion)");
+                  if (item) item.style.setProperty("margin-top", "auto", "important");
+                }
                 const chromeCss =
                   '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
                   '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
@@ -3611,11 +3639,13 @@ st.markdown(
         --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
         --header-gap: 16px;
+        --ccm-nav-clearance: calc(109px + env(safe-area-inset-bottom, 0px));
     }
 
     html, body {
-        overflow-x: hidden !important;
-        max-width: 100% !important;
+        overflow: hidden !important;
+        height: 100% !important;
+        max-height: 100% !important;
         background-color: #f8fafc !important;
         background: #f8fafc !important;
         color: #0f172a !important;
@@ -3646,8 +3676,9 @@ st.markdown(
     .stApp {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         overflow-x: hidden !important;
-        overflow-y: visible !important;
-        height: auto !important;
+        overflow-y: auto !important;
+        height: 100% !important;
+        max-height: 100% !important;
         min-height: 100% !important;
         color-scheme: light !important;
         max-width: 100% !important;
@@ -4066,9 +4097,17 @@ st.markdown(
         padding: 6px 8px !important;
         border: 1px solid rgba(226, 232, 240, 0.95) !important;
     }
+    [data-testid="stElementContainer"]:has(.st-key-bottom_nav),
+    [data-testid="stElementContainer"]:has([class~="st-key-bottom_nav"]) {
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        border: 0 !important;
+    }
 
     .ccm-bottom-safe,
-    .st-key-safe_mas,
     .st-key-safe_cotizador,
     .st-key-safe_cotizador_fin,
     .st-key-safe_catalogo {
@@ -4079,21 +4118,71 @@ st.markdown(
         pointer-events: none !important;
         opacity: 0 !important;
     }
+    .st-key-safe_mas {
+        display: block !important;
+        height: 8px !important;
+        min-height: 8px !important;
+        width: 100% !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
     .st-key-catalogo_formulario {
         padding-bottom: 24px !important;
         margin-bottom: 8px !important;
     }
+    .block-container:has(.st-key-vista_mas),
+    [data-testid="stMainBlockContainer"]:has(.st-key-vista_mas),
+    .stMainBlockContainer:has(.st-key-vista_mas) {
+        padding-bottom: 0 !important;
+    }
     .st-key-vista_mas {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        box-sizing: border-box !important;
         padding-top: 4px !important;
-        padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: var(--ccm-nav-clearance) !important;
+        margin-bottom: 0 !important;
+        min-height: calc(100dvh - var(--header-offset, 132px) - 72px) !important;
+    }
+    .st-key-vista_mas > [data-testid="stVerticalBlockBorderWrapper"],
+    .st-key-vista_mas > [data-testid="stVerticalBlock"],
+    .st-key-vista_mas > [data-testid="stLayoutWrapper"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 0 0 auto !important;
+    }
+    .st-key-vista_mas > [data-testid="stLayoutWrapper"]:has(.st-key-mas_sesion),
+    .st-key-vista_mas > [data-testid="stElementContainer"]:has(.st-key-mas_sesion) {
+        margin-top: auto !important;
+        width: 100% !important;
+        flex: 0 0 auto !important;
+    }
+    .st-key-mas_sesion {
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+        width: 100% !important;
+    }
+    .st-key-vista_mas div.stButton {
+        margin-top: 0 !important;
+        margin-bottom: 6px !important;
+    }
+    .st-key-btn_logout_cliente div.stButton {
+        margin-bottom: 0 !important;
     }
     .st-key-guia_foco_tarifa,
     .st-key-btn_confirmar_tarifa,
-    .st-key-btn_logout_cliente,
     .st-key-btn_buscar_china,
     .st-key-btn_escanear_catalogo {
         scroll-margin-bottom: calc(180px + env(safe-area-inset-bottom, 0px)) !important;
         margin-bottom: 16px !important;
+    }
+    .st-key-btn_logout_cliente {
+        scroll-margin-bottom: calc(88px + env(safe-area-inset-bottom, 0px)) !important;
+        margin-bottom: 0 !important;
+        margin-top: 0 !important;
     }
     .st-key-btn_buscar_china div.stButton > button,
     .st-key-btn_escanear_catalogo div.stButton > button,
@@ -4109,7 +4198,7 @@ st.markdown(
         letter-spacing: 0.06em;
         text-transform: uppercase;
         color: #64748b;
-        margin: 16px 4px 8px 4px;
+        margin: 12px 4px 6px 4px;
     }
     .mas-seccion-cuenta {
         margin-top: 2px;
@@ -4296,11 +4385,17 @@ st.markdown(
     .st-key-mas_cotizaciones div.stButton > button,
     .st-key-mas_catalogo div.stButton > button,
     .st-key-mas_cotizador div.stButton > button,
+    .st-key-btn_guia_rapida div.stButton > button,
+    .st-key-btn_logout_cliente div.stButton > button,
+    .st-key-btn_guia_rapida button[kind="secondary"],
+    .st-key-btn_logout_cliente button[kind="secondary"],
     .st-key-mas_envios [data-testid^="stBaseButton"],
     .st-key-mas_fichas [data-testid^="stBaseButton"],
     .st-key-mas_cotizaciones [data-testid^="stBaseButton"],
     .st-key-mas_catalogo [data-testid^="stBaseButton"],
-    .st-key-mas_cotizador [data-testid^="stBaseButton"] {
+    .st-key-mas_cotizador [data-testid^="stBaseButton"],
+    .st-key-btn_guia_rapida [data-testid^="stBaseButton"],
+    .st-key-btn_logout_cliente [data-testid^="stBaseButton"] {
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -4481,25 +4576,6 @@ st.markdown(
         transform: none !important;
     }
 
-    .st-key-btn_guia_rapida button,
-    .st-key-btn_guia_rapida button[kind="secondary"] {
-        min-height: 44px !important;
-        height: 44px !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-        -webkit-text-fill-color: #0f172a !important;
-        border: 1.5px solid #cbd5e1 !important;
-        border-radius: 12px !important;
-        box-shadow: none !important;
-        opacity: 1 !important;
-    }
-    .st-key-btn_guia_rapida button *,
-    .st-key-btn_guia_rapida button[kind="secondary"] * {
-        color: #0f172a !important;
-        -webkit-text-fill-color: #0f172a !important;
-        fill: #0f172a !important;
-    }
     .st-key-btn_guia_rapida button:hover,
     .st-key-btn_guia_rapida button[kind="secondary"]:hover {
         background: #f8fafc !important;
@@ -5006,20 +5082,6 @@ st.markdown(
     }
     div.stButton > button[kind="secondary"]:hover * {
         color: #004ac1 !important;
-    }
-
-    .st-key-btn_logout_cliente button,
-    .st-key-btn_logout_cliente button[kind="secondary"] {
-        min-height: 44px !important;
-        height: 44px !important;
-        max-height: none !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-        border: 1.5px solid #cbd5e1 !important;
-        border-radius: 12px !important;
-        box-shadow: none !important;
-        opacity: 1 !important;
     }
 
     .st-key-btn_logout_cliente button:hover,
