@@ -1441,7 +1441,7 @@ def aplicar_clase_guia_js():
             if ({paso}) app.classList.add("guia-paso-{paso}");
             doc.querySelectorAll(".ccm-guia-pulse").forEach((el) => el.classList.remove("ccm-guia-pulse"));
             const mapa = {{
-              1: [".st-key-mod_cotizador button", ".st-key-nav_mod_cotizador button", "[class*='st-key-mod_cotizador'] button", "[class*='st-key-nav_mod_cotizador'] button"],
+              1: [".st-key-mod_cotizador button", ".st-key-nav_mod_cotizador button", ".st-key-btn_mas_cotizador button", "[class*='st-key-mod_cotizador'] button", "[class*='st-key-nav_mod_cotizador'] button"],
               2: [".st-key-guia_foco_tarifa button", ".st-key-btn_confirmar_tarifa button", "[class*='btn_confirmar_tarifa'] button"],
               3: [".st-key-guia_foco_pdf_fab button", "[class*='dl_pdf_fab_'] button"],
               4: [".st-key-guia_foco_ver_cot button", "[class*='btn_ver_mis_cotizaciones_'] button"],
@@ -1489,6 +1489,80 @@ def disparar_guia_china_si_aplica():
         return
     st.session_state["guia_china_auto_vista"] = True
     iniciar_guia_interactiva(1)
+
+
+def _cerrar_mas_y_ir(vista, hub="_omit"):
+    st.session_state["mas_abierto"] = False
+    ir_a(vista, hub=hub)
+
+
+def pintar_barra_inferior(total_cotizaciones=0):
+    """Píldora flotante inferior: Inicio, Buscar, Cotiz., Envíos y Más."""
+    st.session_state.setdefault("mas_abierto", False)
+    vista = st.session_state.get("sub_tab_inicio") or "Inicio"
+    hub_activo = st.session_state.get("hub")
+    china_mods = modulos_china_nav()
+    mostrar_btn_guia = hub_activo == "china"
+    ids_china = {m["id"] for m in china_mods}
+
+    buscar_activo = vista == "Catálogo" or (hub_activo == "eeuu" and vista == "Inicio")
+    inicio_activo = vista == "Inicio" and not buscar_activo
+    cot_activo = vista == "Mis Cotizaciones"
+    env_activo = vista in ("Mis Envíos", "Etiqueta")
+    mas_activo = bool(st.session_state.get("mas_abierto")) or vista == "Cotizador"
+    n_badge = int(total_cotizaciones or 0)
+
+    st.markdown(
+        f"<style>:root {{ --ccm-cot-badge: \"{n_badge}\"; }}</style>",
+        unsafe_allow_html=True,
+    )
+
+    if st.session_state.get("mas_abierto"):
+        with st.container(key="mas_sheet"):
+            st.caption("Más opciones")
+            if "Cotizador" in ids_china or usuario_puede_modulo("Cotizador"):
+                if st.button("📐  Cotizador", key="btn_mas_cotizador", use_container_width=True):
+                    avanzar_guia_si(1, 2)
+                    _cerrar_mas_y_ir("Cotizador", hub="china")
+            if mostrar_btn_guia:
+                if st.button("Guía", type="secondary", key="btn_guia_rapida", use_container_width=True):
+                    st.session_state["mas_abierto"] = False
+                    iniciar_guia_interactiva(1)
+                    st.rerun()
+            if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
+                logout()
+
+    items = (
+        ("inicio", "🏠", "Inicio", inicio_activo),
+        ("buscar", "🔍", "Buscar", buscar_activo),
+        ("cotizaciones", "📄", "Cotiz.", cot_activo),
+        ("envios", "📦", "Envíos", env_activo),
+        ("mas", "☰", "Más", mas_activo),
+    )
+    with st.container(key="bottom_nav"):
+        cols = st.columns(5, gap="small")
+        for col, (dest, icono, etiqueta, activo) in zip(cols, items):
+            with col:
+                if st.button(
+                    f"{icono}\n{etiqueta}",
+                    type="primary" if activo else "secondary",
+                    key=f"bnav_{dest}",
+                    use_container_width=True,
+                ):
+                    if dest == "mas":
+                        st.session_state["mas_abierto"] = not bool(st.session_state.get("mas_abierto"))
+                        st.rerun()
+                    if dest == "inicio":
+                        _cerrar_mas_y_ir("Inicio", hub=None)
+                    elif dest == "buscar":
+                        if hub_activo == "eeuu":
+                            _cerrar_mas_y_ir("Inicio", hub="eeuu")
+                        else:
+                            _cerrar_mas_y_ir("Catálogo", hub="china")
+                    elif dest == "cotizaciones":
+                        _cerrar_mas_y_ir("Mis Cotizaciones", hub="china")
+                    elif dest == "envios":
+                        _cerrar_mas_y_ir("Mis Envíos", hub="china")
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -3154,7 +3228,7 @@ st.markdown(
         --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
-        --sticky-h: 196px;
+        --sticky-h: 132px;
         --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
         --header-gap: 16px;
@@ -3218,7 +3292,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         width: 100% !important;
         padding-top: 0.15rem !important;
-        padding-bottom: 5rem !important;
+        padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
@@ -3237,7 +3311,7 @@ st.markdown(
         max-width: var(--app-max-width) !important;
         margin-left: auto !important;
         margin-right: auto !important;
-        z-index: 999 !important;
+        z-index: 998 !important;
         background-color: #f8fafc !important;
         background: #f8fafc !important;
         background-image: none !important;
@@ -3433,7 +3507,7 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 8px;
             --header-blue-pad-x: 12px;
-            --sticky-h: 280px;
+            --sticky-h: 150px;
             --sticky-delivery: 0px;
             --header-offset: var(--sticky-h);
         }
@@ -3476,7 +3550,7 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 11px;
             --header-blue-pad-x: 14px;
-            --sticky-h: 240px;
+            --sticky-h: 148px;
             --header-offset: var(--sticky-h);
         }
         .app-header-blue {
@@ -3499,7 +3573,7 @@ st.markdown(
             --nav-btn-h: 44px;
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
-            --sticky-h: 220px;
+            --sticky-h: 140px;
             --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
@@ -3527,7 +3601,7 @@ st.markdown(
             --nav-btn-h: 46px;
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
-            --sticky-h: 200px;
+            --sticky-h: 136px;
             --header-offset: var(--sticky-h);
         }
         .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
@@ -3547,104 +3621,59 @@ st.markdown(
         .swipe-indicator-bar { display: none; }
     }
 
-    .st-key-nav_home {
-        width: 100% !important;
-        max-width: 100% !important;
-        display: flex !important;
-        justify-content: center !important;
+    .st-key-bottom_nav,
+    div[class~="st-key-bottom_nav"] {
+        position: fixed !important;
+        bottom: max(15px, env(safe-area-inset-bottom, 15px)) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 999 !important;
+        width: min(92vw, 440px) !important;
+        max-width: 440px !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: 35px !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
+        padding: 8px 10px !important;
+        border: 1px solid rgba(226, 232, 240, 0.95) !important;
+        box-sizing: border-box !important;
         overflow: visible !important;
-        margin-bottom: 6px !important;
     }
 
-    .st-key-nav_scroll {
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
-        -webkit-overflow-scrolling: touch !important;
-        scrollbar-width: thin !important;
-        margin-bottom: 2px !important;
-        padding-bottom: 4px !important;
-        touch-action: pan-x !important;
-        background: transparent !important;
+    .st-key-mas_sheet,
+    div[class~="st-key-mas_sheet"] {
+        position: fixed !important;
+        bottom: calc(92px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 1000 !important;
+        width: min(92vw, 440px) !important;
+        background: rgba(255, 255, 255, 0.96) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: 22px !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
+        padding: 10px 12px 8px 12px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-sizing: border-box !important;
     }
 
-    .st-key-nav_scroll::-webkit-scrollbar {
-        height: 4px !important;
-    }
-
-    .st-key-nav_scroll::-webkit-scrollbar-track {
-        background: transparent !important;
-    }
-
-    .st-key-nav_scroll::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.65) !important;
-        border-radius: 20px !important;
-    }
-
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"],
-    .st-key-nav_home [data-testid="stHorizontalBlock"] {
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 8px !important;
-        align-items: center !important;
-        width: max-content !important;
-        min-width: max-content !important;
-        padding-right: 4px !important;
-    }
-
-    .st-key-nav_home [data-testid="stHorizontalBlock"] {
-        justify-content: center !important;
+        align-items: stretch !important;
         width: 100% !important;
-        min-width: 100% !important;
-        margin: 0 auto !important;
-        padding-right: 0 !important;
-        gap: 8px !important;
-    }
-
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div,
-    .st-key-nav_home [data-testid="stHorizontalBlock"] > div {
-        flex: 0 0 var(--nav-btn-w) !important;
-        width: var(--nav-btn-w) !important;
-        min-width: var(--nav-btn-w) !important;
-        max-width: var(--nav-btn-w) !important;
-        box-sizing: border-box !important;
-    }
-
-    .st-key-nav_scroll div.stButton,
-    .st-key-nav_home div.stButton {
-        width: var(--nav-btn-w) !important;
-        min-width: var(--nav-btn-w) !important;
-        max-width: var(--nav-btn-w) !important;
-        margin: 0 auto !important;
-    }
-
-    .st-key-nav_scroll div.stButton > button,
-    .st-key-nav_home div.stButton > button {
-        width: var(--nav-btn-w) !important;
-        min-width: var(--nav-btn-w) !important;
-        height: var(--nav-btn-h) !important;
-        min-height: 44px !important;
-        max-height: none !important;
-        border-radius: 10px !important;
-        padding: 0 8px !important;
-        font-size: clamp(0.72rem, 0.64rem + 0.35vw, 0.82rem) !important;
-        font-weight: 700 !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-align: center !important;
-        touch-action: pan-x !important;
         margin: 0 !important;
-        box-sizing: border-box !important;
     }
 
-    .st-key-nav_scroll [data-testid="stHorizontalBlock"] > div > div {
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0 !important;
         min-width: 0 !important;
+        width: auto !important;
+        max-width: none !important;
     }
 
     .st-key-guia_coach {
@@ -3714,17 +3743,15 @@ st.markdown(
 
     .st-key-btn_guia_rapida button,
     .st-key-btn_guia_rapida button[kind="secondary"] {
-        width: var(--nav-btn-w) !important;
-        height: var(--nav-btn-h) !important;
         min-height: 44px !important;
-        max-height: none !important;
+        height: 44px !important;
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
         border: 1.5px solid #cbd5e1 !important;
-        border-radius: 10px !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
         opacity: 1 !important;
     }
     .st-key-btn_guia_rapida button *,
@@ -3761,6 +3788,8 @@ st.markdown(
     .stApp.guia-paso-1 .st-key-mod_cotizador [data-testid^="stBaseButton"],
     .stApp.guia-paso-1 .st-key-nav_mod_cotizador button,
     .stApp.guia-paso-1 .st-key-nav_mod_cotizador [data-testid^="stBaseButton"],
+    .stApp.guia-paso-1 .st-key-btn_mas_cotizador button,
+    .stApp.guia-paso-1 .st-key-btn_mas_cotizador [data-testid^="stBaseButton"],
     .stApp.guia-paso-2 .st-key-guia_foco_tarifa button,
     .stApp.guia-paso-2 .st-key-guia_foco_tarifa [data-testid^="stBaseButton"],
     .stApp.guia-paso-2 .st-key-btn_confirmar_tarifa button,
@@ -4241,16 +4270,15 @@ st.markdown(
 
     .st-key-btn_logout_cliente button,
     .st-key-btn_logout_cliente button[kind="secondary"] {
-        width: var(--nav-btn-w) !important;
-        height: var(--nav-btn-h) !important;
         min-height: 44px !important;
+        height: 44px !important;
         max-height: none !important;
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
         border: 1.5px solid #cbd5e1 !important;
-        border-radius: 10px !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
         opacity: 1 !important;
     }
 
@@ -4273,6 +4301,77 @@ st.markdown(
     .st-key-btn_logout_cliente button[kind="secondary"]:hover * {
         color: #004ac1 !important;
         fill: #004ac1 !important;
+    }
+
+    .st-key-bottom_nav div.stButton,
+    .st-key-bottom_nav div.stButton > button,
+    .st-key-bottom_nav div.stButton > button[kind="primary"],
+    .st-key-bottom_nav div.stButton > button[kind="secondary"],
+    .st-key-bottom_nav [data-testid^="stBaseButton"] {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 52px !important;
+        max-height: none !important;
+        border-radius: 20px !important;
+        padding: 6px 2px 5px 2px !important;
+        margin: 0 !important;
+        font-size: 0.62rem !important;
+        font-weight: 700 !important;
+        line-height: 1.15 !important;
+        white-space: pre-line !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        color: #666666 !important;
+        -webkit-text-fill-color: #666666 !important;
+        transform: none !important;
+    }
+    .st-key-bottom_nav div.stButton > button *,
+    .st-key-bottom_nav div.stButton > button[kind="secondary"] * {
+        color: #666666 !important;
+        -webkit-text-fill-color: #666666 !important;
+        fill: #666666 !important;
+    }
+    .st-key-bottom_nav div.stButton > button[kind="primary"],
+    .st-key-bottom_nav div.stButton > button[kind="primary"]:hover {
+        background: #E8EEFF !important;
+        background-color: #E8EEFF !important;
+        color: #003399 !important;
+        -webkit-text-fill-color: #003399 !important;
+        border-radius: 20px !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    .st-key-bottom_nav div.stButton > button[kind="primary"] * {
+        color: #003399 !important;
+        -webkit-text-fill-color: #003399 !important;
+        fill: #003399 !important;
+    }
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button {
+        position: relative !important;
+        font-weight: 800 !important;
+    }
+    .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button::after {
+        content: var(--ccm-cot-badge, "0");
+        position: absolute;
+        top: 3px;
+        right: 6px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: #004ac1;
+        color: #ffffff;
+        font-size: 0.58rem;
+        font-weight: 800;
+        line-height: 16px;
+        text-align: center;
     }
 
     .st-key-hub_china div.stButton > button,
@@ -4709,63 +4808,6 @@ elif st.session_state["rol"] == "cliente":
             ),
             unsafe_allow_html=True,
         )
-
-        hub_activo = st.session_state.get("hub")
-        china_mods = modulos_china_nav()
-        mostrar_subnav_china = hub_activo == "china" and st.session_state["sub_tab_inicio"] in VISTAS_MODULO
-        mostrar_btn_guia = hub_activo == "china"
-
-        with st.container(key="nav_scroll" if mostrar_subnav_china else "nav_home"):
-
-            extra_guia = 1 if mostrar_btn_guia else 0
-            if mostrar_subnav_china:
-                nav_cols = st.columns(2 + extra_guia + len(china_mods), gap="small")
-            else:
-                nav_cols = st.columns(2 + extra_guia, gap="small")
-
-            with nav_cols[0]:
-                if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
-                    logout()
-
-            with nav_cols[1]:
-                en_inicio = st.session_state["sub_tab_inicio"] == "Inicio"
-                if st.button(
-                    "🏠 Inicio",
-                    type="primary" if en_inicio else "secondary",
-                    key="btn_inicio_cliente",
-                ):
-                    ir_a("Inicio", hub=None)
-
-            if mostrar_btn_guia:
-                with nav_cols[2]:
-                    if st.button("Guía", type="secondary", key="btn_guia_rapida"):
-                        iniciar_guia_interactiva(1)
-                        st.rerun()
-
-            if mostrar_subnav_china:
-                for idx, modulo in enumerate(china_mods):
-                    with nav_cols[2 + extra_guia + idx]:
-                        activo = st.session_state["sub_tab_inicio"] == modulo["id"]
-                        if st.button(
-                            modulo["nav"],
-                            type="primary" if activo else "secondary",
-                            key=f"nav_{modulo['btn_key']}",
-                        ):
-                            if modulo["id"] == "Cotizador":
-                                avanzar_guia_si(1, 2)
-                            ir_a(modulo["id"], hub="china")
-
-        if mostrar_subnav_china and st.session_state["sub_tab_inicio"] != "Cotizador":
-            if st.session_state["sub_tab_inicio"] == "Mis Envíos":
-                st.markdown(
-                    '<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>',
-                    unsafe_allow_html=True,
-                )
 
     sincronizar_altura_encabezado_fijo()
     disparar_guia_china_si_aplica()
@@ -5562,6 +5604,8 @@ elif st.session_state["rol"] == "cliente":
 
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         ir_a("Mis Envíos", hub="china")
+
+    pintar_barra_inferior(total_cotizaciones)
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
