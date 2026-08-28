@@ -2581,8 +2581,9 @@ def anclar_barra_inferior():
                   doc.querySelector(".st-key-btn_escanear_catalogo");
                 const vistaModulo = catalogo || cotizador;
                 const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
+                const envios = doc.querySelector('[class~="st-key-vista_envios"]') || doc.querySelector(".st-key-vista_envios");
                 let hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
-                if (mas || vistaModulo || inicio) hueco = "0px";
+                if (mas || vistaModulo || inicio || envios) hueco = "0px";
                 else if (historial) hueco = "calc(var(--ccm-nav-clearance, 109px) + 16px)";
                 doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
                   el.style.setProperty("padding-bottom", hueco, "important");
@@ -5137,7 +5138,16 @@ st.markdown(
         margin: 0 !important;
         padding: 0 !important;
     }
-    .st-key-safe_envios,
+    .st-key-safe_envios {
+        display: block !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        width: 100% !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
     .st-key-safe_fichas {
         display: block !important;
         height: 200px !important;
@@ -5193,13 +5203,20 @@ st.markdown(
     }
     .block-container:has(.st-key-vista_envios),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_envios),
-    .stMainBlockContainer:has(.st-key-vista_envios),
+    .stMainBlockContainer:has(.st-key-vista_envios) {
+        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+    }
     .block-container:has(.st-key-vista_fichas),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_fichas),
     .stMainBlockContainer:has(.st-key-vista_fichas) {
         padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
     }
-    .st-key-vista_envios,
+    .st-key-vista_envios {
+        display: block !important;
+        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
     .st-key-vista_fichas {
         display: block !important;
         padding-bottom: 200px !important;
@@ -5242,8 +5259,15 @@ st.markdown(
         flex: 0 0 auto !important;
     }
     [data-testid="stElementContainer"]:has(> .st-key-safe_envios),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_envios) {
+        height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+    }
     [data-testid="stElementContainer"]:has(> .st-key-safe_fichas),
-    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_envios),
     [data-testid="stLayoutWrapper"]:has(> .st-key-safe_fichas) {
         height: 200px !important;
         min-height: 200px !important;
@@ -6246,7 +6270,17 @@ st.markdown(
         box-sizing: border-box !important;
         overflow: hidden !important;
     }
-    [class*="st-key-docs_env_"],
+    [class*="st-key-docs_env_"] {
+        display: flex !important;
+        flex-direction: column !important;
+        height: auto !important;
+        overflow: visible !important;
+        width: 100% !important;
+        margin: 10px 0 0 0 !important;
+        padding-top: 0 !important;
+        gap: 8px !important;
+        scroll-margin-bottom: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+    }
     .st-key-acciones_emit_cotizador {
         display: flex !important;
         flex-direction: column !important;
