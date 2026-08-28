@@ -827,7 +827,7 @@ RUTAS_LOGO = (
     Path(__file__).resolve().parent / "logo centro y mas.jpg",
 )
 
-VIGENCIA_COTIZACION_HORAS = 24
+VIGENCIA_COTIZACION_HORAS = 1
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
 FORMATOS_FECHA_COTIZACION = (
     "%Y-%m-%d %H:%M:%S",
@@ -917,14 +917,15 @@ def texto_vigencia_cotizacion(fecha_raw, ahora=None):
     ahora = ahora or obtener_tiempo_honduras()
     fin = dt + VIGENCIA_COTIZACION
     restante = fin - ahora
-    fin_txt = fin.strftime("%d/%m/%Y %I:%M %p")
+    fin_txt = fin.strftime("%d/%m/%Y %I:%M:%S %p")
     if restante.total_seconds() <= 0:
         return f"Vencida (era hasta {fin_txt})"
-    total_min = int(restante.total_seconds() // 60)
-    horas, minutos = divmod(total_min, 60)
+    total_segundos = max(0, int(restante.total_seconds()))
+    horas, rem_segundos = divmod(total_segundos, 3600)
+    minutos, segundos = divmod(rem_segundos, 60)
     if horas >= 1:
-        return f"Vigente {horas} h {minutos} min (hasta {fin_txt})"
-    return f"Vigente {minutos} min (hasta {fin_txt})"
+        return f"Vigente {horas} h {minutos} min {segundos} s (hasta {fin_txt})"
+    return f"Vigente {minutos} min {segundos} s (hasta {fin_txt})"
 
 
 def leer_config_moneda(clave, valor_default):
@@ -2040,7 +2041,7 @@ PASOS_GUIA_INTERACTIVA = (
     {
         "paso": 4,
         "titulo": "Traslado al historial",
-        "texto": "Pasa a tus cotizaciones para asegurar tu tarifa antes de 24 horas.",
+        "texto": "Pasa a tus cotizaciones para asegurar tu tarifa antes de 1 hora.",
     },
     {
         "paso": 5,
@@ -7583,7 +7584,7 @@ elif st.session_state["rol"] == "cliente":
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
             st.caption(
-                "Las tarifas no confirmadas caducan a las 24 horas (hora de Honduras) y se eliminan. "
+                "Las tarifas no confirmadas caducan al cumplirse 1 hora (hora de Honduras) y se eliminan. "
                 "Al confirmar, la cotización queda consolidada de forma permanente. "
                 "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
             )
@@ -7708,7 +7709,7 @@ elif st.session_state["rol"] == "cliente":
             else:
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
-                    "tiene 24 horas para confirmarla y habilitar Envíos."
+                    "tiene 1 hora para confirmarla y habilitar Envíos."
                 )
             espaciador_barra_inferior("safe_historial")
 
@@ -8131,7 +8132,7 @@ elif st.session_state["rol"] == "cliente":
                             )
                             detalle_emitida = (
                                 f"⏳ {estado_doc}. Código de seguimiento CCM-COT-{id_c:05d}. "
-                                "Descargue el formato para el fabricante o vaya a Mis Cotizaciones para confirmarla antes de 24 horas."
+                                "Descargue el formato para el fabricante o vaya a Mis Cotizaciones para confirmarla antes de 1 hora."
                             )
 
                         st.markdown(
