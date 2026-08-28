@@ -1895,6 +1895,11 @@ def catalogo_disponible_en_hub_actual():
     return st.session_state.get("hub") == "china" and usuario_puede_modulo("Catálogo")
 
 
+def modulo_china_disponible_en_hub_actual(modulo):
+    """Los accesos operativos de China solo existen tras seleccionar ese origen."""
+    return st.session_state.get("hub") == "china" and usuario_puede_modulo(modulo)
+
+
 def ir_a_catalogo():
     # Impide abrir el catálogo por un callback o URL residual si el origen fue deseleccionado.
     if not catalogo_disponible_en_hub_actual():
@@ -1904,10 +1909,16 @@ def ir_a_catalogo():
 
 
 def ir_a_mis_cotizaciones():
+    if not modulo_china_disponible_en_hub_actual("Mis Cotizaciones"):
+        ir_a_inicio()
+        return
     ir_a("Mis Cotizaciones", hub="china")
 
 
 def ir_a_cotizador():
+    if not modulo_china_disponible_en_hub_actual("Cotizador"):
+        ir_a_inicio()
+        return
     avanzar_guia_si(1, 2)
     ir_a("Cotizador", hub="china")
 
@@ -2434,13 +2445,11 @@ def pintar_barra_inferior(total_cotizaciones=0):
     items = [("inicio", "🏠", "Inicio", inicio_activo)]
     if catalogo_disponible_en_hub_actual():
         items.append(("catalogo", "🔍", "Catálogo", catalogo_activo))
-    items.extend(
-        [
-            ("cotizaciones", "📄", "Cotiz.", cot_activo),
-            ("cotizador", "🧮", "Cotizador", cotizador_activo),
-            ("mas", "☰", "Más", mas_activo),
-        ]
-    )
+    if modulo_china_disponible_en_hub_actual("Mis Cotizaciones"):
+        items.append(("cotizaciones", "📄", "Cotiz.", cot_activo))
+    if modulo_china_disponible_en_hub_actual("Cotizador"):
+        items.append(("cotizador", "🧮", "Cotizador", cotizador_activo))
+    items.append(("mas", "☰", "Más", mas_activo))
     with st.container(key="bottom_nav"):
         cols = st.columns(len(items), gap="small")
         for col, (dest, icono, etiqueta, activo) in zip(cols, items):
