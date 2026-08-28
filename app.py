@@ -5857,6 +5857,27 @@ st.markdown(
             min-width: 100% !important;
             flex: 1 1 100% !important;
         }
+        /* La fila final se apila en móvil, pero conserva separación y área segura. */
+        .st-key-dialogo_perfil [data-testid="stHorizontalBlock"]:has(.st-key-perfil_cancelar),
+        .st-key-dialogo_perfil [data-testid="stHorizontalBlock"]:has(.st-key-perfil_guardar) {
+            gap: 12px !important;
+            margin-top: 20px !important;
+            margin-bottom: max(24px, env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: 8px !important;
+        }
+        .st-key-dialogo_perfil .st-key-perfil_cancelar,
+        .st-key-dialogo_perfil .st-key-perfil_guardar {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .st-key-dialogo_perfil .st-key-perfil_cancelar div.stButton,
+        .st-key-dialogo_perfil .st-key-perfil_guardar div.stButton {
+            margin: 0 !important;
+        }
+        .st-key-perfil_cancelar div.stButton > button,
+        .st-key-perfil_guardar div.stButton > button {
+            min-height: 50px !important;
+        }
     }
 
     @media (min-width: 641px) {
