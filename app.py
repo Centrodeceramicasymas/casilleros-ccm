@@ -1571,6 +1571,34 @@ def seleccionar_modalidad_entrega(opcion):
 CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in")
 
 
+def direcciones_sesion(casillero):
+    """Colección canónica de direcciones del usuario durante la sesión.
+
+    Se siembra UNA sola vez desde SQLite y luego vive en session_state: los renders
+    posteriores no la sobreescriben, así el desplegable nunca pierde lo guardado.
+    """
+    bolsa = st.session_state.setdefault("direcciones_usuario", {})
+    if casillero not in bolsa:
+        try:
+            filas = cargar_direcciones_db(casillero)
+        except Exception:
+            filas = []
+        bolsa[casillero] = [
+            {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
+            for d in filas
+        ]
+    return bolsa[casillero]
+
+
+def opciones_entrega_desde_sesion(casillero):
+    """Predeterminada + direcciones de la sesión + Crear Nueva, reconstruido en cada run."""
+    opciones = [OPCION_PREDETERMINADA]
+    for e in direcciones_sesion(casillero):
+        opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
+    opciones.append("➕ Crear Nueva Dirección de Envío")
+    return opciones
+
+
 def guardar_nueva_direccion(casillero):
     """on_click de Guardar Dirección: los valores del widget ya están confirmados al ejecutarse."""
     etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
@@ -1583,25 +1611,62 @@ def guardar_nueva_direccion(casillero):
         st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
         return
     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (casillero, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
-        )
-        conn.commit()
-    cargar_direcciones_db.clear()
-    bolsa_dir = st.session_state.setdefault("direcciones_usuario", {}).setdefault(casillero, [])
-    bolsa_dir.append({"etiqueta": etiqueta, "receptor": receptor, "ciudad": ciu, "direccion": dir_exacta})
+    id_dir_nuevo = None
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (casillero, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
+            )
+            id_dir_nuevo = cur.lastrowid
+            conn.commit()
+        cargar_direcciones_db.clear()
+    except Exception:
+        id_dir_nuevo = None
+    # La colección en memoria es la fuente del desplegable: se alimenta aunque la BD falle.
+    direcciones_sesion(casillero).append(
+        {
+            "id": id_dir_nuevo,
+            "etiqueta": etiqueta,
+            "receptor": receptor,
+            "telefono": tel,
+            "departamento": dep,
+            "ciudad": ciu,
+            "direccion": dir_exacta,
+        }
+    )
     seleccionar_modalidad_entrega(f"📍 {etiqueta} - {ciu}")
     st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
     st.toast(f"✅ Dirección '{etiqueta}' guardada y seleccionada.")
+
+
+def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
+    """Quita la dirección de la colección en memoria y de SQLite (si existe la fila)."""
+    if id_dir:
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
+                    (id_dir, casillero),
+                )
+                conn.commit()
+            cargar_direcciones_db.clear()
+        except Exception:
+            pass
+    lista = direcciones_sesion(casillero)
+    lista[:] = [
+        e for e in lista if not (e.get("etiqueta") == etiqueta and e.get("ciudad") == ciudad)
+    ]
+    if st.session_state.get("modalidad_envio_seleccionada") == f"📍 {etiqueta} - {ciudad}":
+        seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
 
 
 def cancelar_nueva_direccion():
@@ -7040,25 +7105,8 @@ elif st.session_state["rol"] == "cliente":
 
     lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
-    direcciones_guardadas = cargar_direcciones_db(casillero)
-    bolsa_dir_usuario = st.session_state.setdefault("direcciones_usuario", {})
-    dirs_db = [
-        {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
-        for d in direcciones_guardadas
-    ]
-    claves_db = {(e["etiqueta"], e["ciudad"]) for e in dirs_db}
-    # Las guardadas en esta sesión que la lectura (cache/BD) aún no refleja siguen visibles.
-    extras_sesion = [
-        e
-        for e in bolsa_dir_usuario.get(casillero, [])
-        if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
-    ]
-    bolsa_dir_usuario[casillero] = dirs_db + extras_sesion
-
-    opciones_modalidad = [OPCION_PREDETERMINADA]
-    for e in bolsa_dir_usuario[casillero]:
-        opciones_modalidad.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
-    opciones_modalidad.append("➕ Crear Nueva Dirección de Envío")
+    direcciones_guardadas = direcciones_sesion(casillero)
+    opciones_modalidad = opciones_entrega_desde_sesion(casillero)
 
     if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
         st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
@@ -7310,8 +7358,12 @@ elif st.session_state["rol"] == "cliente":
                         "<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>",
                         unsafe_allow_html=True,
                     )
-                    for dir_item in direcciones_guardadas:
-                        id_dir, etiq, rec, ciu_d, dir_e = dir_item
+                    for idx_dir, dir_item in enumerate(direcciones_guardadas):
+                        etiq = dir_item.get("etiqueta", "")
+                        rec = dir_item.get("receptor", "")
+                        ciu_d = dir_item.get("ciudad", "")
+                        dir_e = dir_item.get("direccion", "")
+                        id_dir = dir_item.get("id")
                         col_info_d, col_btn_del = st.columns([3.8, 1])
                         with col_info_d:
                             st.markdown(
@@ -7324,15 +7376,8 @@ elif st.session_state["rol"] == "cliente":
                                 unsafe_allow_html=True,
                             )
                         with col_btn_del:
-                            if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir}", type="secondary"):
-                                with get_db() as conn:
-                                    cur = conn.cursor()
-                                    cur.execute(
-                                        "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
-                                        (id_dir, casillero),
-                                    )
-                                    conn.commit()
-                                cargar_direcciones_db.clear()
+                            if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir or f'ses_{idx_dir}'}", type="secondary"):
+                                eliminar_direccion_usuario(casillero, etiq, ciu_d, id_dir)
                                 seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
                                 st.session_state.pop("datos_pdf_confirmado", None)
                                 st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
