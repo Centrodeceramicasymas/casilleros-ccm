@@ -1806,12 +1806,14 @@ def asegurar_esquema_direcciones():
             if "activa" not in columnas_dir:
                 c.execute("ALTER TABLE direcciones_entrega ADD COLUMN activa INTEGER NOT NULL DEFAULT 1")
             conn.commit()
+            return True
     except Exception as exc:
         # No ocultar fallos de esquema: el aviso aparece en el Cotizador.
         try:
             st.session_state["_dir_db_error"] = f"Esquema direcciones_entrega: {exc}"
         except Exception:
             pass
+        return False
 
 
 def direcciones_sesion(casillero):
@@ -1884,7 +1886,9 @@ def guardar_nueva_direccion(casillero):
     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     id_dir_nuevo = None
     error_db = None
-    asegurar_esquema_direcciones()
+    if not asegurar_esquema_direcciones():
+        st.session_state["_dir_form_error"] = "No se pudo preparar la base de datos para guardar la dirección."
+        return
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -1914,27 +1918,14 @@ def guardar_nueva_direccion(casillero):
         st.session_state["_dir_form_error"] = "No se pudo guardar la dirección. Revise el aviso e inténtelo de nuevo."
         return
     opcion_nueva = f"📍 {etiqueta} - {ciu}"
-    if error_db:
-        direcciones_sesion(cas_norm).append(
-            {
-                "id": None,
-                "etiqueta": etiqueta,
-                "receptor": receptor,
-                "telefono": tel,
-                "departamento": dep,
-                "ciudad": ciu,
-                "direccion": dir_exacta,
-            }
-        )
-    else:
-        direcciones_sesion(cas_norm)
+    # Relee la fila recién confirmada desde SQLite; el selector del siguiente
+    # rerun se construye desde esta fuente persistente, no desde una caché local.
+    direcciones_sesion(cas_norm)
     seleccionar_modalidad_entrega(opcion_nueva)
     st.session_state["destino_entrega_activo"] = opcion_nueva
-    st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
-    st.toast(f"✅ Dirección '{etiqueta}' guardada y seleccionada.")
 
 
 def destino_para_documentos():
@@ -8064,9 +8055,9 @@ elif st.session_state["rol"] == "cliente":
                 """,
                 unsafe_allow_html=True,
             )
-            exito_dir = st.session_state.pop("_dir_form_exito", None)
-            if exito_dir:
-                st.success(f"✅ {exito_dir}")
+            # No se muestra un banner de éxito persistente: la dirección elegida
+            # queda reflejada directamente en el selector y en la tarjeta destino.
+            st.session_state.pop("_dir_form_exito", None)
             error_db_dir = st.session_state.pop("_dir_db_error", None)
             if error_db_dir:
                 st.warning(
