@@ -6152,6 +6152,66 @@ st.markdown(
         100% { opacity: 0.35; }
     }
 
+    @keyframes ccmVersiculoBrillo {
+        0%, 100% {
+            opacity: 0.90;
+            box-shadow: 0 8px 22px rgba(0, 74, 193, 0.13);
+            border-color: rgba(96, 165, 250, 0.42);
+        }
+        50% {
+            opacity: 1;
+            box-shadow: 0 12px 30px rgba(0, 74, 193, 0.25), 0 0 0 4px rgba(96, 165, 250, 0.08);
+            border-color: rgba(147, 197, 253, 0.90);
+        }
+    }
+    .ccm-versiculo-banner {
+        position: relative;
+        overflow: hidden;
+        margin: 18px 0 8px;
+        padding: 18px 22px;
+        border: 1px solid rgba(96, 165, 250, 0.42);
+        border-radius: 18px;
+        background: linear-gradient(118deg, #003f9e 0%, #0756c9 54%, #0b6ddd 100%);
+        color: #ffffff;
+        text-align: center;
+        animation: ccmVersiculoBrillo 3.6s ease-in-out infinite;
+    }
+    .ccm-versiculo-banner::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, transparent 18%, rgba(255,255,255,0.12) 50%, transparent 82%);
+        transform: translateX(-72%);
+        animation: ccmVersiculoDestello 5.5s ease-in-out infinite;
+    }
+    @keyframes ccmVersiculoDestello {
+        0%, 56%, 100% { transform: translateX(-72%); }
+        75% { transform: translateX(72%); }
+    }
+    .ccm-versiculo-texto,
+    .ccm-versiculo-referencia {
+        position: relative;
+        z-index: 1;
+    }
+    .ccm-versiculo-texto {
+        font-size: clamp(0.86rem, 2.5vw, 1.04rem);
+        font-weight: 800;
+        line-height: 1.5;
+        letter-spacing: 0.035em;
+    }
+    .ccm-versiculo-referencia {
+        display: block;
+        margin-top: 7px;
+        color: #dbeafe;
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .ccm-versiculo-banner,
+        .ccm-versiculo-banner::before { animation: none !important; }
+    }
+
     @keyframes cotPulseBorde {
         0%, 100% {
             box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.38);
@@ -7432,6 +7492,15 @@ elif st.session_state["rol"] == "cliente":
                         args=("Inicio", hub_id),
                     ):
                         pass
+                st.markdown(
+                    """
+                    <section class="ccm-versiculo-banner" aria-label="Versículo bíblico inspirador">
+                        <div class="ccm-versiculo-texto">“ENCOMIENDA A JEHOVÁ TU CAMINO, CONFÍA EN ÉL; Y ÉL HARÁ.”</div>
+                        <span class="ccm-versiculo-referencia">SALMOS 37:5</span>
+                    </section>
+                    """,
+                    unsafe_allow_html=True,
+                )
             elif hub_sel == "china":
                 pintar_coach_guia()
                 hub_china = HUBS["china"]
