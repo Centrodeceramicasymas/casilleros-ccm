@@ -8451,21 +8451,28 @@ elif st.session_state["rol"] == "cliente":
                     fondo = "#eff6ff" if es_foco else "#f8fafc"
                     if es_foco:
                         st.markdown('<div id="cotizacion-envio-foco"></div>', unsafe_allow_html=True)
-                        st.success(
-                            f"CCM-COT-{id_e:05d} está lista para seguimiento. "
-                            "Descargue la Ficha y el PDF Tarifa de esta cotización consolidada."
-                        )
                         desplazar_a_ancla("cotizacion-envio-foco")
                     id_ancla_env = f'id="cotizacion-env-{id_e}"'
                     estado_envio = texto_estado_cotizacion(
                         fec_e, conf_e, ahora_hn, fecha_confirmacion_cotizacion(id_e, casillero)
                     )
+                    aviso_seguimiento = (
+                        '<div style="margin:10px 0 8px;padding:8px 10px;border-radius:8px;'
+                        'background:rgba(0,74,193,.08);color:#003b99;font-weight:700;">'
+                        '📦 Esta cotización está lista para seguimiento. Descargue su Ficha y PDF Tarifa a continuación.'</n+                        '</div>'
+                        if es_foco else ""
+                    )
                     st.markdown(
                         f"""
-                    <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
-                        <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_e)}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
-                        <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
-                        <small style="color:#1d4ed8; font-weight:700;">✅ {estado_envio}</small>
+                    <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:12px; padding:14px; margin-bottom:8px; font-size:0.88rem; box-shadow:0 3px 10px rgba(15,23,42,.06);">
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                            <b style="color:#0f172a;">🔖 CCM-COT-{id_e:05d}</b>
+                            <span style="color:#004ac1;font-weight:800;">✅ Confirmada</span>
+                        </div>
+                        {aviso_seguimiento}
+                        <div style="color:#475569;margin-top:5px;">Fecha de emisión: {formatear_fecha_pantalla(fec_e)}</div>
+                        <div style="color:#334155;margin-top:6px;">📐 <b>Medidas:</b> {al_e:.1f} × {an_e:.1f} × {la_e:.1f} cm &nbsp;|&nbsp; ⚖️ <b>Peso:</b> {pe_e:.1f} lbs &nbsp;|&nbsp; 💰 <b>Total:</b> ${tot_e:.2f} USD</div>
+                        <div style="color:#1d4ed8;font-weight:700;margin-top:8px;">⏳ {estado_envio}</div>
                     </div>
                     """,
                         unsafe_allow_html=True,
