@@ -829,6 +829,8 @@ RUTAS_LOGO = (
 
 VIGENCIA_COTIZACION_HORAS = 1
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
+VIGENCIA_COTIZACION_CONFIRMADA_HORAS = 48
+VIGENCIA_COTIZACION_CONFIRMADA = timedelta(hours=VIGENCIA_COTIZACION_CONFIRMADA_HORAS)
 FORMATOS_FECHA_COTIZACION = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S.%f",
@@ -926,6 +928,32 @@ def texto_vigencia_cotizacion(fecha_raw, ahora=None):
     if horas >= 1:
         return f"Vigente {horas} h {minutos} min {segundos} s (hasta {fin_txt})"
     return f"Vigente {minutos} min {segundos} s (hasta {fin_txt})"
+
+
+def cotizacion_confirmada_vigente(fecha_confirmacion, ahora=None):
+    """Una tarifa confirmada solo está disponible por 48 horas desde la confirmación."""
+    dt = parsear_fecha_cotizacion(fecha_confirmacion)
+    if dt is None:
+        return False
+    ahora = ahora or obtener_tiempo_honduras()
+    edad = ahora - dt
+    return timedelta(0) <= edad <= VIGENCIA_COTIZACION_CONFIRMADA
+
+
+def texto_vigencia_cotizacion_confirmada(fecha_confirmacion, ahora=None):
+    dt = parsear_fecha_cotizacion(fecha_confirmacion)
+    if dt is None:
+        return "Consolidada — sin fecha de confirmación"
+    ahora = ahora or obtener_tiempo_honduras()
+    fin = dt + VIGENCIA_COTIZACION_CONFIRMADA
+    restante = fin - ahora
+    fin_txt = fin.strftime("%d/%m/%Y %I:%M:%S %p")
+    if restante.total_seconds() <= 0:
+        return f"Consolidada — vigencia vencida (hasta {fin_txt})"
+    total_segundos = max(0, int(restante.total_seconds()))
+    horas, rem_segundos = divmod(total_segundos, 3600)
+    minutos, segundos = divmod(rem_segundos, 60)
+    return f"Consolidada — vigente {horas} h {minutos} min {segundos} s (hasta {fin_txt})"
 
 
 def leer_config_moneda(clave, valor_default):
@@ -1088,15 +1116,18 @@ def es_cotizacion_confirmada(valor):
         return False
 
 
-def cotizacion_visible_historial(fecha_raw, confirmada, ahora=None):
+def cotizacion_visible_historial(fecha_raw, confirmada, ahora=None, fecha_confirmacion=None):
     if es_cotizacion_confirmada(confirmada):
-        return True
+        # Las filas históricas anteriores a esta regla no tenían fecha de
+        # confirmación; su fecha de emisión es el respaldo seguro para no
+        # mantenerlas visibles indefinidamente.
+        return cotizacion_confirmada_vigente(fecha_confirmacion or fecha_raw, ahora)
     return cotizacion_vigente(fecha_raw, ahora)
 
 
-def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None):
+def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None, fecha_confirmacion=None):
     if es_cotizacion_confirmada(confirmada):
-        return "Consolidada — permanente en el historial del casillero"
+        return texto_vigencia_cotizacion_confirmada(fecha_confirmacion or fecha_raw, ahora)
     return texto_vigencia_cotizacion(fecha_raw, ahora)
 
 
@@ -1118,7 +1149,13 @@ def _limpiar_cotizacion_vencida_en_sesion(ahora):
         st.session_state.pop("ultima_cot_id", None)
         return None
     if cotizacion_esta_confirmada(id_cot):
-        return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+        fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot, st.session_state.get("casillero"))
+        fecha_base = fecha_confirmacion or d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+        if cotizacion_confirmada_vigente(fecha_base, ahora):
+            return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+        st.session_state.pop("datos_pdf_confirmado", None)
+        st.session_state.pop("ultima_cot_id", None)
+        return None
     fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
     if cotizacion_vigente(fecha_pdf, ahora) or en_sesion:
         return fecha_pdf
@@ -1225,6 +1262,28 @@ def cotizacion_esta_confirmada(id_cot, casillero=None):
         return bool(row and int(row[0]) == 1)
     except Exception:
         return False
+
+
+def fecha_confirmacion_cotizacion(id_cot, casillero=None):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return None
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            if cas:
+                cur.execute(
+                    "SELECT fecha_confirmacion FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
+                    (cid, cas),
+                )
+            else:
+                cur.execute("SELECT fecha_confirmacion FROM cotizaciones WHERE id = ?", (cid,))
+            row = cur.fetchone()
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None
 
 
 def bolsa_cotizaciones_sesion(casillero):
@@ -1342,6 +1401,7 @@ def hidratar_cotizaciones_sesion(casillero):
                     "fecha": fila[7],
                     "fecha_creacion": fila[7],
                     "confirmada": int(fila[8] or 0),
+                    "fecha_confirmacion": fecha_confirmacion_cotizacion(cid, cas),
                 }
             )
             conocidos.add(cid)
@@ -1366,11 +1426,22 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
         except (TypeError, ValueError):
             continue
     todas = ordenar_cotizaciones_desc([f for f in by_id.values() if f and f[0]])
-    visibles = [f for f in todas if cotizacion_visible_historial(f[7], f[8], ahora)]
+    confirmaciones_sesion = {
+        int(reg.get("id") or 0): reg.get("fecha_confirmacion")
+        for reg in lista
+        if reg.get("fecha_confirmacion")
+    }
+    visibles = [
+        f for f in todas
+        if cotizacion_visible_historial(
+            f[7], f[8], ahora,
+            confirmaciones_sesion.get(int(f[0])) or fecha_confirmacion_cotizacion(f[0], cas),
+        )
+    ]
     return todas, visibles
 
 
-def marcar_cotizacion_sesion_confirmada(id_cot, casillero):
+def marcar_cotizacion_sesion_confirmada(id_cot, casillero, fecha_confirmacion=None):
     cas, lista = bolsa_cotizaciones_sesion(casillero)
     try:
         cid = int(id_cot)
@@ -1379,6 +1450,7 @@ def marcar_cotizacion_sesion_confirmada(id_cot, casillero):
     for reg in lista:
         if int(reg.get("id") or 0) == cid:
             reg["confirmada"] = 1
+            reg["fecha_confirmacion"] = fecha_confirmacion or reg.get("fecha_confirmacion")
             break
 
 
@@ -1408,8 +1480,9 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         cargar_cotizaciones_db.clear()
     except Exception:
         actualizado = False
-    marcar_cotizacion_sesion_confirmada(cid, cas)
-    return True
+    if actualizado:
+        marcar_cotizacion_sesion_confirmada(cid, cas, ahora)
+    return actualizado
 
 
 def firma_parametros_cotizador(al, an, la, peso_lb, destino, tipo_carga):
@@ -1568,14 +1641,18 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute("SELECT id, fecha, IFNULL(confirmada, 0) FROM cotizaciones")
+            cur.execute(
+                "SELECT id, fecha, fecha_confirmacion, IFNULL(confirmada, 0) FROM cotizaciones"
+            )
         except sqlite3.OperationalError:
             return 0
         ids_borrar = []
-        for cid, fecha, confirmada in cur.fetchall():
+        for cid, fecha, fecha_confirmacion, confirmada in cur.fetchall():
             if es_cotizacion_confirmada(confirmada):
-                continue
-            if not cotizacion_vigente(fecha, ahora):
+                vencida = not cotizacion_confirmada_vigente(fecha_confirmacion or fecha, ahora)
+            else:
+                vencida = not cotizacion_vigente(fecha, ahora)
+            if vencida:
                 ids_borrar.append(cid)
         if not ids_borrar:
             return 0
@@ -2000,6 +2077,10 @@ def ir_a_historial_guia(id_cot):
 
 def on_confirmar_cot_historial(id_cot, casillero):
     if confirmar_cotizacion_casillero(id_cot, casillero):
+        fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot, casillero)
+        d_pdf = st.session_state.get("datos_pdf_confirmado")
+        if isinstance(d_pdf, dict) and int(d_pdf.get("id_cot") or 0) == int(id_cot or 0):
+            d_pdf["fecha_confirmacion"] = fecha_confirmacion
         st.session_state["china_modulos_desbloqueados"] = True
         try:
             st.session_state["cotizacion_envio_foco"] = int(id_cot)
@@ -2046,7 +2127,7 @@ PASOS_GUIA_INTERACTIVA = (
     {
         "paso": 5,
         "titulo": "Consolidación de tarifa",
-        "texto": "Pulse <b>Confirmar Cotización</b> en la tarifa resaltada para dejarla permanente en su casillero.",
+        "texto": "Pulse <b>Confirmar Cotización</b> en la tarifa resaltada para habilitarla durante 48 horas en su casillero.",
     },
     {
         "paso": 6,
@@ -7585,7 +7666,7 @@ elif st.session_state["rol"] == "cliente":
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
             st.caption(
                 "Las tarifas no confirmadas caducan al cumplirse 1 hora (hora de Honduras) y se eliminan. "
-                "Al confirmar, la cotización queda consolidada de forma permanente. "
+                "Al confirmar, la cotización queda disponible por 48 horas desde ese momento. "
                 "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
             )
 
@@ -7606,7 +7687,8 @@ elif st.session_state["rol"] == "cliente":
                 for cot in lista_mis_cotizaciones:
                     id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                     consolidada = es_cotizacion_confirmada(conf_c)
-                    estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn)
+                    fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot_item, casillero)
+                    estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn, fecha_confirmacion)
                     color_estado = "#1d4ed8" if consolidada else "#166534"
                     icono_estado = "✅" if consolidada else "⏳"
                     es_foco_hist = bool(foco_hist and int(id_cot_item) == foco_hist)
@@ -8108,10 +8190,25 @@ elif st.session_state["rol"] == "cliente":
                         int(r.get("id") or 0) == int(id_c) and int(r.get("confirmada") or 0) == 1
                         for r in (st.session_state.get("cotizaciones") or {}).get(casillero, [])
                     )
-                    tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
-                        d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+                    fecha_confirmacion = (
+                        d_pdf.get("fecha_confirmacion")
+                        or fecha_confirmacion_cotizacion(id_c, casillero)
                     )
-                    if not tarifa_sigue_visible and int(st.session_state.get("ultima_cot_id") or 0) == int(id_c):
+                    tarifa_sigue_visible = (
+                        cotizacion_confirmada_vigente(
+                            fecha_confirmacion or d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+                        )
+                        if tarifa_consolidada
+                        else cotizacion_vigente(d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn)
+                    )
+                    # El atajo de la última emisión solo evita ocultar una pendiente
+                    # durante el rerun inmediato; nunca prolonga una confirmada más
+                    # allá de sus 48 horas.
+                    if (
+                        not tarifa_consolidada
+                        and not tarifa_sigue_visible
+                        and int(st.session_state.get("ultima_cot_id") or 0) == int(id_c)
+                    ):
                         tarifa_sigue_visible = True
                     if not tarifa_sigue_visible:
                         st.session_state.pop("datos_pdf_confirmado", None)
@@ -8119,7 +8216,10 @@ elif st.session_state["rol"] == "cliente":
                         dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
                         fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
                         estado_doc = texto_estado_cotizacion(
-                            d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
+                            d_pdf.get("fecha_sql") or fecha_doc,
+                            1 if tarifa_consolidada else 0,
+                            ahora_hn,
+                            fecha_confirmacion,
                         )
                         if tarifa_consolidada:
                             titulo_emitida = (
@@ -8233,7 +8333,7 @@ elif st.session_state["rol"] == "cliente":
                 st.info("No tienes paquetes registrados en travesía.")
 
             st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
-            st.caption("Descargue la ficha de bodega y el PDF Tarifa de cada cotización consolidada.")
+            st.caption("Las cotizaciones confirmadas permanecen disponibles durante 48 horas desde su confirmación.")
             cotizaciones_despacho = ordenar_cotizaciones_desc(
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
@@ -8267,12 +8367,15 @@ elif st.session_state["rol"] == "cliente":
                         )
                         desplazar_a_ancla("cotizacion-envio-foco")
                     id_ancla_env = f'id="cotizacion-env-{id_e}"'
+                    estado_envio = texto_estado_cotizacion(
+                        fec_e, conf_e, ahora_hn, fecha_confirmacion_cotizacion(id_e, casillero)
+                    )
                     st.markdown(
                         f"""
                     <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
                         <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_e)}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
                         <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
-                        <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
+                        <small style="color:#1d4ed8; font-weight:700;">✅ {estado_envio}</small>
                     </div>
                     """,
                         unsafe_allow_html=True,
