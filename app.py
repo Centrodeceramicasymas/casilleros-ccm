@@ -285,7 +285,6 @@ def extraer_lista_productos(payload):
             return [nodo]
         if isinstance(nodo, list):
             return [x for x in nodo if isinstance(x, dict)]
-    # Recorrido amplio como último recurso.
     hallados = []
     for valor in payload.values():
         if isinstance(valor, (dict, list)):
@@ -331,7 +330,6 @@ def _calificacion(valor):
         return None
     texto = str(valor)
     if "%" in texto or numero > 5:
-        # evaluate_rate suele venir como 95.0% → 4.75 / 5
         return round(min(5.0, max(0.0, numero / 20.0)), 2) if numero > 5 else round(numero, 2)
     return round(min(5.0, numero), 2)
 
@@ -427,7 +425,6 @@ def normalizar_producto_ae(item, origen="api"):
             precio = None
     if precio is None:
         precio = 0.0
-    # Algunos listados envían centavos.
     if precio >= 1000 and str(item.get("target_sale_price") or "").isdigit():
         precio = precio / 100.0
     peso = _numero(item.get("product_weight") or item.get("weight") or item.get("peso_kg"), default=0.8)
@@ -951,6 +948,30 @@ def leer_config_moneda(clave, valor_default):
 
 OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
 
+MUNICIPIOS_HONDURAS = {
+    "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
+    "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
+    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
+    "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
+    "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
+    "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
+    "El Paraíso": ["Yuscarán", "Alauca", "Danlí", "El Paraíso", "Güinope", "Jacaleapa", "Liure", "Morocelí", "Oropolí", "Potrerillos", "San Antonio de Flores", "San Lucas", "San Matías", "Soledad", "Teupasenti", "Texiguat", "Vado Ancho", "Yauyupe", "Trojes"],
+    "Francisco Morazán": ["Distrito Central (Tegucigalpa / Comayagüela)", "Alubarén", "Cedros", "Curarén", "El Porvenir", "Guaimaca", "La Libertad", "La Venta", "Lepaterique", "Maraita", "Marale", "Nueva Armenia", "Ojojona", "Orica", "Reitoca", "Sabanagrande", "San Antonio de Oriente", "San Buenaventura", "San Ignacio", "San Juan de Flores (Cantarranas)", "San Miguelito", "Santa Ana", "Santa Lucía", "Talanga", "Tatumbla", "Valle de Ángeles", "Villa de San Francisco", "Vallecillo"],
+    "Gracias a Dios": ["Puerto Lempira", "Brus Laguna", "Ahuas", "Juan Francisco Bulnes", "Ramón Villeda Morales", "Wampusirpi"],
+    "Intibucá": ["San Juan", "La Esperanza", "Intibucá", "Camasca", "Colomoncagua", "Concepción", "Dolores", "Magdalena", "Masaguara", "San Antonio", "San Isidro", "San Marcos de la Sierra", "San Miguelito", "Santa Lucía", "Yamaranguila", "San Francisco de Opalaca"],
+    "Islas de la Bahía": ["Roatán", "Guanaja", "José Santos Guardiola", "Utila"],
+    "La Paz": ["La Paz", "Aguanqueterique", "Cabañas", "Cane", "Chinacla", "Guajiquiro", "Lauterique", "Marcala", "Mercedes de Oriente", "Opatoro", "San Antonio del Norte", "San José", "San Juan", "San Pedro de Tutule", "Santa Ana", "Santa Elena", "Santa María", "Santiago de Puringla", "Yarula"],
+    "Lempira": ["Gracias", "Belén", "Candelaria", "Cololaca", "Erandique", "Gualcince", "Guarita", "La Campa", "La Iguala", "La Unión", "La Virtud", "Lepaera", "Mapulaca", "Piraera", "San Andrés", "San Francisco", "San Juan Guarita", "San Manuel Colohete", "San Rafael", "San Sebastián", "Santa Cruz", "Talgua", "Tambla", "Tomalá", "Valladolid", "Virginia", "San Marcos de Caiquín"],
+    "Ocotepeque": ["Ocotepeque", "Belén Gualcho", "Concepción", "Dolores Merendón", "Fraternidad", "La Encarnación", "La Labor", "Lucerna", "Mercedes", "San Fernando", "San Francisco del Valle", "San Jorge", "San Marcos", "Santa Fe", "Sinuapa", "Sensenti"],
+    "Olancho": ["Juticalpa", "Campamento", "Catacamas", "Concordia", "Dulce Nombre de Culmí", "El Rosario", "Esquipulas del Norte", "Gualaco", "Guarizama", "Guata", "Guayape", "Jano", "La Unión", "Mangulile", "Manto", "Salamá", "San Esteban", "San Francisco de Becerra", "San Francisco de la Paz", "Santa María del Real", "Silca", "Yocón", "Patuca"],
+    "Santa Bárbara": ["Santa Bárbara", "Arada", "Atima", "Azacualpa", "Ceguaca", "Concepción del Norte", "Concepción del Sur", "Chinda", "El Níspero", "Gualala", "Ilama", "Las Vegas", "Macuelizo", "Naranjito", "Nuevo Celilac", "Petoa", "Protección", "Quimistán", "San Francisco de Ojuera", "San José de Colinas", "San Luis", "San Marcos", "San Nicolás", "San Pedro Zacapa", "Santa Rita", "San Vicente Centenario", "Trinidad"],
+    "Valle": ["Nacaome", "Alianza", "Amapala", "Aramecina", "Caridad", "Goascorán", "Langue", "San Francisco de Coray", "San Lorenzo"],
+    "Yoro": ["Yoro", "Arenal", "El Negrito", "El Progreso", "Jocón", "Morazán", "Olanchito", "Santa Rita", "Sulaco", "Victoria", "Yorito"]
+}
+
+DIAS_SEMANA_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+MESES_ES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
+
 if "vista_actual" not in st.session_state:
     st.session_state["vista_actual"] = "login"
 
@@ -968,91 +989,6 @@ if "mostrar_guia" not in st.session_state:
 
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
-
-# Hubs de origen: agregar módulos aquí no cambia la navegación general.
-HUBS = {
-    "china": {
-        "label": "China",
-        "icon": "🇨🇳",
-        "descripcion": "Consolidación marítima, catálogo y flete",
-        "activo": True,
-        "modulos": [
-            {
-                "id": "Mis Cotizaciones",
-                "label": "Mis Cotizaciones",
-                "nav": "📄 Mis Cotiz.",
-                "icon": "📄",
-                "detalle": "Historial y descarga de PDF",
-                "btn_key": "mod_cotizaciones",
-            },
-            {
-                "id": "Catálogo",
-                "label": "Catálogo",
-                "nav": "🛍️ Catálogo",
-                "icon": "🛍️",
-                "detalle": "Fábricas 1688 y costo en Honduras",
-                "btn_key": "mod_catalogo",
-            },
-            {
-                "id": "Cotizador",
-                "label": "Cotizador",
-                "nav": "📐 Cotizador",
-                "icon": "📐",
-                "detalle": "Flete marítimo por libra o CBM",
-                "btn_key": "mod_cotizador",
-            },
-            {
-                "id": "Mis Envíos",
-                "label": "Envíos",
-                "nav": "📦 Envíos",
-                "icon": "📦",
-                "detalle": "Paquetes en tránsito",
-                "btn_key": "mod_envios",
-            },
-            {
-                "id": "Etiqueta",
-                "label": "Fichas",
-                "nav": "🏷️ Fichas",
-                "icon": "🏷️",
-                "detalle": "Etiqueta bodega Guangzhou",
-                "btn_key": "mod_fichas",
-            },
-        ],
-    },
-    "eeuu": {
-        "label": "EE. UU.",
-        "icon": "🇺🇸",
-        "descripcion": "Búsqueda y cotización AliExpress con envío a Estados Unidos",
-        "activo": True,
-        "modulos": [],
-    },
-    "honduras": {
-        "label": "Honduras",
-        "icon": "🇭🇳",
-        "descripcion": "Módulo en preparación para operaciones locales",
-        "activo": False,
-        "modulos": [],
-    },
-}
-
-MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
-VISTAS_MODULO = set(MODULOS_POR_ID.keys())
-MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo", "Mis Cotizaciones")
-MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
-ROLES_ADMIN = ("admin", "superadmin")
-DNI_SUPERADMIN = "1301199800990"
-NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
-CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
-CLAVE_INICIAL_SUPERADMIN = "1301"
-PERMISOS_ABIERTOS_TEMPORAL = True
-HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
-MODULO_PERMISO_COL = {
-    "Cotizador": "mod_cotizador",
-    "Catálogo": "mod_catalogo",
-    "Mis Cotizaciones": "mod_cotizaciones",
-    "Mis Envíos": "mod_envios",
-    "Etiqueta": "mod_fichas",
-}
 
 
 def es_cotizacion_confirmada(valor):
@@ -1197,7 +1133,6 @@ def registro_sesion_a_fila(reg):
 
 
 def registrar_error_direcciones(exc, contexto):
-    """Registra fallos de SQLite en sesión y en logs; nunca silencia un INSERT/DELETE."""
     msg = f"{contexto}: {exc}"
     print(f"[CCM direcciones] {msg}", flush=True)
     try:
@@ -1207,18 +1142,12 @@ def registrar_error_direcciones(exc, contexto):
 
 
 def invalidar_cache_direcciones():
-    """Si la carga llega a cachearse, fuerza relectura inmediata tras escribir."""
     clear = getattr(cargar_direcciones_db, "clear", None)
     if callable(clear):
         clear()
 
 
 def cargar_direcciones_db(casillero):
-    """Lee SIEMPRE del archivo SQLite (sin @st.cache_data): F5, cambio de vista y re-login ven las filas reales.
-
-    Busca con coincidencias_casillero: una fila guardada como 15011985 también aparece
-    al consultar CCM-15011985 (y viceversa).
-    """
     cas = formatear_casillero(casillero or "")
     if not cas:
         return []
@@ -1364,7 +1293,6 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
 
 
 def firma_parametros_cotizador(al, an, la, peso_lb, destino, tipo_carga):
-    """Huella de los parámetros que definen una tarifa emitida."""
     return (
         round(float(al or 0), 4),
         round(float(an or 0), 4),
@@ -1392,7 +1320,6 @@ def firma_desde_emision(d_pdf):
 
 
 def invalidar_emision_visible_cotizador():
-    """Oculta la tarjeta verde y los PDFs de la última emisión (el pendiente en historial se conserva)."""
     st.session_state.pop("datos_pdf_confirmado", None)
     st.session_state.pop("_ccm_scroll_emit", None)
     st.session_state.pop("_ccm_emit_error", None)
@@ -1403,7 +1330,6 @@ def invalidar_emision_visible_cotizador():
 
 
 def sincronizar_emision_con_formulario(firma_actual):
-    """Si el formulario ya no coincide con la tarifa emitida, oculta documentos y código anteriores."""
     d_pdf = st.session_state.get("datos_pdf_confirmado")
     if not isinstance(d_pdf, dict):
         return False
@@ -1414,7 +1340,6 @@ def sincronizar_emision_con_formulario(firma_actual):
 
 
 def emitir_tarifa_desde_snapshot():
-    """on_click: guarda la tarifa en SQLite y en st.session_state['cotizaciones']."""
     snap = st.session_state.get("_cot_emit_snapshot")
     casillero = formatear_casillero(st.session_state.get("casillero") or "")
     if not isinstance(snap, dict) or not casillero:
@@ -1536,19 +1461,16 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
 
 
 def vista_muestra_envios_fichas():
-    """Envíos solo en la barra cuando el usuario está en Mis Cotizaciones o Envíos."""
     return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos")
 
 
 def china_seguimiento_habilitado():
-    """Compatibilidad: Envíos se habilita al abrir Mis Cotizaciones."""
     habilitado = vista_muestra_envios_fichas()
     st.session_state["china_modulos_desbloqueados"] = habilitado
     return habilitado
 
 
 def modulos_china_visibles():
-    """Tarjetas del hub China: nunca Envíos ni Fichas."""
     mods = HUBS["china"]["modulos"]
     permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
     bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
@@ -1556,7 +1478,6 @@ def modulos_china_visibles():
 
 
 def modulos_china_nav():
-    """Barra superior: Envíos solo en Mis Cotizaciones / Envíos. Fichas no va en el menú."""
     mods = HUBS["china"]["modulos"]
     permitidos = [m for m in mods if usuario_puede_modulo(m["id"]) and m["id"] != "Etiqueta"]
     if vista_muestra_envios_fichas():
@@ -1566,11 +1487,6 @@ def modulos_china_nav():
 
 
 def al_cambiar_modalidad_entrega():
-    """on_change del select de entrega: sincroniza la modalidad ANTES de decidir la vista.
-
-    Sin esto, elegir «Crear Nueva Dirección» solo mostraba el texto seleccionado y el
-    formulario aparecía hasta la siguiente interacción.
-    """
     invalidar_emision_visible_cotizador()
     nueva = st.session_state.get("sb_modalidad_entrega")
     if nueva:
@@ -1578,7 +1494,6 @@ def al_cambiar_modalidad_entrega():
 
 
 def seleccionar_modalidad_entrega(opcion):
-    """Fija la modalidad activa; el widget se actualiza en el siguiente run, antes de instanciarse."""
     st.session_state["modalidad_envio_seleccionada"] = opcion
     st.session_state["_mod_entrega_pendiente"] = opcion
 
@@ -1587,7 +1502,6 @@ CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "di
 
 
 def asegurar_esquema_direcciones():
-    """Garantiza tabla y columnas de direcciones_entrega (migra bases desplegadas viejas)."""
     try:
         with get_db() as conn:
             c = conn.cursor()
@@ -1620,11 +1534,6 @@ def asegurar_esquema_direcciones():
 
 
 def direcciones_sesion(casillero):
-    """Direcciones del casillero: SQLite es la fuente en CADA render (F5 / cambio de vista / re-login).
-
-    session_state solo conserva, además, entradas que la BD rechazó (id None) para que
-    no desaparezcan del desplegable durante la sesión actual.
-    """
     cas = formatear_casillero(casillero or "")
     bolsa = st.session_state.setdefault("direcciones_usuario", {})
     previa = []
@@ -1661,7 +1570,6 @@ def direcciones_sesion(casillero):
 
 
 def opciones_entrega_desde_sesion(casillero):
-    """Reconstruye el desplegable desde SQLite en cada run: almacén → direcciones activas → Crear Nueva."""
     opciones = [OPCION_PREDETERMINADA]
     for e in direcciones_sesion(casillero):
         opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
@@ -1670,7 +1578,6 @@ def opciones_entrega_desde_sesion(casillero):
 
 
 def guardar_nueva_direccion(casillero):
-    """on_click de Guardar Dirección: lee los widgets en el clic, INSERT + COMMIT inmediato."""
     etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
     receptor = (st.session_state.get("dir_receptor_in") or "").strip()
     tel = (st.session_state.get("dir_tel_in") or "").strip()
@@ -1729,7 +1636,6 @@ def guardar_nueva_direccion(casillero):
 
 
 def destino_para_documentos():
-    """Destino imprimible en PDFs y fichas: nunca la opción «Crear Nueva Dirección»."""
     mod = st.session_state.get("modalidad_envio_seleccionada")
     if mod and mod != "➕ Crear Nueva Dirección de Envío":
         return mod
@@ -1737,7 +1643,6 @@ def destino_para_documentos():
 
 
 def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
-    """Quita la dirección de la colección en memoria y de SQLite (si existe la fila)."""
     if id_dir:
         claves = coincidencias_casillero(casillero)
         placeholders = ",".join("?" * len(claves)) if claves else "?"
@@ -1765,7 +1670,6 @@ def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
 
 
 def cancelar_nueva_direccion():
-    """on_click de Cancelar: cierra el formulario y vuelve al destino previo (o al almacén)."""
     seleccionar_modalidad_entrega(st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA)
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
@@ -1773,7 +1677,6 @@ def cancelar_nueva_direccion():
 
 
 def selector_modalidad_entrega(opciones_modalidad):
-    """Select de entrega en el cuerpo del Cotizador (fuera del header sticky, sin CSS sobre Baseweb)."""
     pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
     if pendiente in opciones_modalidad:
         st.session_state["sb_modalidad_entrega"] = pendiente
@@ -1816,7 +1719,6 @@ ALIAS_VISTA = {
 
 
 def ir_a(vista, hub="_omit"):
-    """Cambia de vista en session_state. Pensado para on_click (un solo rerun)."""
     if vista == "Cerrar":
         logout()
         return
@@ -3161,6 +3063,1051 @@ def generar_pdf_confirmacion_cotizacion(
 ET"""
     return compilar_pdf_simple(stream)
 
+
+# ---------------------------------------------------------
+# BLOQUE PRINCIPAL DE LA APLICACIÓN SEGÚN ROL
+# ---------------------------------------------------------
+if st.session_state["rol"] == "cliente":
+    if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
+        st.session_state["hub"] = None
+        st.session_state["sub_tab_inicio"] = "Inicio"
+        st.session_state["vista_activa"] = "Inicio"
+        st.query_params["vista"] = "Inicio"
+        if "hub" in st.query_params:
+            del st.query_params["hub"]
+        st.rerun()
+    if st.session_state.get("sub_tab_inicio") in VISTAS_MODULO and not usuario_puede_modulo(
+        st.session_state["sub_tab_inicio"]
+    ):
+        st.session_state["sub_tab_inicio"] = "Inicio"
+        st.session_state["vista_activa"] = "Inicio"
+        st.session_state["hub"] = None
+        st.query_params["vista"] = "Inicio"
+        st.rerun()
+
+    st.session_state.pop("_ccm_rerun_app", None)
+    casillero = formatear_casillero(st.session_state["casillero"])
+    if casillero != st.session_state["casillero"]:
+        st.session_state["casillero"] = casillero
+    ahora_hn = obtener_tiempo_honduras()
+    purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
+    _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
+    hidratar_cotizaciones_sesion(casillero)
+    nombre_completo = st.session_state["nombre"]
+    tel_cli = st.session_state.get("telefono", "+504 9577-1099")
+    ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
+
+    partes_nombre = nombre_completo.strip().split()
+    if len(partes_nombre) >= 2:
+        nombre_display = f"{partes_nombre[0]} {partes_nombre[1]}"
+    elif len(partes_nombre) == 1:
+        nombre_display = partes_nombre[0]
+    else:
+        nombre_display = "Cliente"
+
+    hora_actual = ahora_hn.hour
+    if 5 <= hora_actual < 12:
+        saludo_horario = "Buenos días"
+    elif 12 <= hora_actual < 19:
+        saludo_horario = "Buenas tardes"
+    else:
+        saludo_horario = "Buenas noches"
+
+    dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
+    mes_nombre = MESES_ES.get(ahora_hn.month, "")
+    hora_formato = ahora_hn.strftime("%I:%M %p")
+    fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
+
+    lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
+    total_cotizaciones = len(lista_mis_cotizaciones)
+    direcciones_guardadas = direcciones_sesion(casillero)
+    opciones_modalidad = opciones_entrega_desde_sesion(casillero)
+    crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
+    mod_actual = st.session_state.get("modalidad_envio_seleccionada")
+    previa_destino = st.session_state.get("destino_entrega_activo")
+    if mod_actual != crear_nueva_dir:
+        if mod_actual in opciones_modalidad:
+            st.session_state["destino_entrega_activo"] = mod_actual
+        elif previa_destino in opciones_modalidad:
+            st.session_state["modalidad_envio_seleccionada"] = previa_destino
+        else:
+            st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+            st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
+
+    with st.container(key="sticky_top_header"):
+        st.markdown(
+            html_encabezado_institucional(
+                f'<div class="app-greeting-title">{saludo_horario}, {nombre_display}</div>'
+                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
+                f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+
+        with st.container(key="nav_scroll"):
+            c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
+
+            with c_nav_p:
+                if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
+                    logout()
+
+            with c_nav_c:
+                if st.button("🏠 Inicio", type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary", key="btn_inicio_cliente"):
+                    st.session_state["sub_tab_inicio"] = "Inicio"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Inicio"
+                    st.rerun()
+
+            with c_nav1:
+                if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
+                    st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Mis Cotizaciones"
+                    st.rerun()
+
+            with c_nav2:
+                if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
+                    st.session_state["sub_tab_inicio"] = "Catálogo"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Catálogo"
+                    st.rerun()
+
+            with c_nav3:
+                if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
+                    st.session_state["sub_tab_inicio"] = "Cotizador"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Cotizador"
+                    st.rerun()
+
+            with c_nav4:
+                if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
+                    st.session_state["sub_tab_inicio"] = "Mis Envíos"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Mis Envíos"
+                    st.rerun()
+
+            with c_nav5:
+                if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
+                    st.session_state["sub_tab_inicio"] = "Etiqueta"
+                    st.query_params["casillero"] = str(casillero)
+                    st.query_params["vista"] = "Etiqueta"
+                    st.rerun()
+
+        if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
+            st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
+
+        if st.session_state["sub_tab_inicio"] == "Cotizador":
+            st.markdown("""
+            <div class="app-delivery-container">
+                <span style="font-size:1.2rem;">🏪</span>
+                <div style="flex:1;">
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
+            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+
+            mod_elegida = st.selectbox(
+                "¿Cómo deseas recibir tu compra?",
+                opciones_modalidad,
+                index=idx_mod,
+                label_visibility="visible",
+                key="sb_modalidad_header"
+            )
+            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
+                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+                st.session_state.pop("datos_pdf_confirmado", None)
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown("""
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    sincronizar_altura_encabezado_fijo()
+    detectar_avance_descarga_guia()
+    aplicar_clase_guia_js()
+
+    if st.session_state["sub_tab_inicio"] == "Inicio":
+        hub_sel = st.session_state.get("hub")
+        with st.container(key="vista_inicio"):
+            if not hub_sel:
+                st.markdown("#### 🏠 Inicio")
+                st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+                visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
+                if not visibles_hub:
+                    st.info("Su cuenta no tiene hubs habilitados. Contacte al administrador.")
+                for hub_id, hub in HUBS.items():
+                    if not usuario_puede_hub(hub_id):
+                        continue
+                    if st.button(
+                        f"{hub['icon']}  {hub['label']}",
+                        type="secondary",
+                        key=f"hub_{hub_id}",
+                        use_container_width=True,
+                        on_click=ir_a,
+                        args=("Inicio", hub_id),
+                    ):
+                        pass
+            elif hub_sel == "china":
+                pintar_coach_guia()
+                hub_china = HUBS["china"]
+                st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
+                st.caption("Consolidación marítima China ➔ Honduras")
+                pintar_banner_promocional_china(casillero)
+            elif hub_sel == "eeuu":
+                pintar_modulo_aliexpress_eeuu(casillero)
+            elif hub_sel in HUBS:
+                hub_vacio = HUBS[hub_sel]
+                st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
+                st.markdown(
+                    f'<div class="hub-empty-box">'
+                    f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
+                    f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">{hub_vacio["label"]}</div>'
+                    f'<div style="font-size:0.86rem;font-weight:600;">{hub_vacio["descripcion"]}</div>'
+                    f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Espacio reservado para integrar funciones en una fase posterior.</div>'
+                    f'<div style="font-size:0.78rem;margin-top:8px;color:#64748b;">Pulse <b>Guía</b> en el menú para el recorrido interactivo China → Honduras.</div>'
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+    if st.session_state["sub_tab_inicio"] == "Más":
+        pintar_vista_mas()
+
+    if st.session_state["sub_tab_inicio"] == "Consultas":
+        cas_txt = formatear_casillero(casillero)
+        msg_wa = urllib.parse.quote(
+            f"Hola Centro de Cerámicas y Más, tengo una consulta de mi casillero {cas_txt}."
+        )
+        st.markdown("#### 🔍 Consultas")
+        st.caption("Pregunte a CCM por WhatsApp o busque productos para importar.")
+        st.link_button("💬 Preguntar por WhatsApp", f"https://wa.me/50495771099?text={msg_wa}", use_container_width=True)
+        c_q1, c_q2 = st.columns(2)
+        with c_q1:
+            st.button("📖 Catálogo 1688", key="btn_consultas_1688", use_container_width=True, on_click=ir_a_catalogo)
+        with c_q2:
+            st.button("🇺🇸 AliExpress", key="btn_consultas_ae", use_container_width=True, on_click=ir_a, args=("Inicio", "eeuu"))
+
+    if st.session_state["sub_tab_inicio"] == "Configuración":
+        st.markdown("#### ⚙️ Configuración")
+        st.caption("Datos de su casillero. La sesión se conserva al cambiar de vista.")
+        st.info(
+            f"**Casillero:** `{casillero}`  \n"
+            f"**Nombre:** {st.session_state.get('nombre') or '—'}  \n"
+            f"**Correo:** {st.session_state.get('usuario') or '—'}  \n"
+            f"**Entrega:** {destino_para_documentos()}"
+        )
+        st.link_button(
+            "💬 Actualizar datos por WhatsApp",
+            "https://wa.me/50495771099?text=" + urllib.parse.quote(
+                f"Hola, necesito actualizar los datos de mi casillero {casillero}."
+            ),
+            use_container_width=True,
+        )
+
+    if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
+        with st.container(key="vista_historial"):
+            st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
+            pintar_banner_promocional_china(casillero)
+            st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
+            st.caption(
+                "Las tarifas no confirmadas caducan a las 24 horas (hora de Honduras) y se eliminan. "
+                "Al confirmar, la cotización queda consolidada de forma permanente. "
+                "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
+            )
+
+            if lista_mis_cotizaciones:
+                try:
+                    foco_hist = int(st.session_state.get("cotizacion_historial_foco") or 0)
+                except (TypeError, ValueError):
+                    foco_hist = 0
+                if foco_hist:
+                    lista_mis_cotizaciones = sorted(
+                        lista_mis_cotizaciones,
+                        key=lambda r: (
+                            0 if int(r[0]) == foco_hist else 1,
+                            *clave_orden_cotizacion(r[7], r[0]),
+                        ),
+                    )
+                scroll_pendiente_hecho = False
+                for cot in lista_mis_cotizaciones:
+                    id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
+                    consolidada = es_cotizacion_confirmada(conf_c)
+                    estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn)
+                    color_estado = "#1d4ed8" if consolidada else "#166534"
+                    icono_estado = "✅" if consolidada else "⏳"
+                    es_foco_hist = bool(foco_hist and int(id_cot_item) == foco_hist)
+                    pendiente_foco = es_foco_hist and not consolidada
+                    clase_foco = "cotizacion-pendiente-foco" if pendiente_foco else ""
+                    clase_pendiente = "cotizacion-pendiente-caja" if not consolidada else ""
+                    id_ancla = 'id="cotizacion-foco-pendiente"' if pendiente_foco else f'id="cotizacion-ccm-{id_cot_item}"'
+                    insignia = (
+                        '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
+                        if not consolidada
+                        else ""
+                    )
+                    with st.container(key=f"tarjeta_cot_{id_cot_item}"):
+                        with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
+                            st.markdown(
+                                f'<div {id_ancla} class="cot-card-body {clase_pendiente} {clase_foco}">'
+                                f'<div class="cot-card-head">'
+                                f'<span class="cot-card-id">🔖 CCM-COT-{id_cot_item:05d} • Fecha: {formatear_fecha_pantalla(fec_c)}</span>'
+                                f"{insignia}"
+                                f"</div>"
+                                f'<div class="cot-card-meta">📐 Medidas: {al_c:.1f}x{an_c:.1f}x{la_c:.1f} cm | Peso: {pe_lb_c:.1f} lbs | 💰 Total: <b>${tot_c:.2f} USD</b></div>'
+                                f'<div class="cot-card-vigencia" style="color:{color_estado};">{icono_estado} {estado_txt}</div>'
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+
+                        pdf_historial = generar_pdf_confirmacion_cotizacion(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            tipo_carga="Cotización Histórica",
+                            al=al_c,
+                            an=an_c,
+                            la=la_c,
+                            peso_lb=pe_lb_c,
+                            peso_kg=pe_lb_c / 2.20462,
+                            vol_m3=vol_m3_c,
+                            vol_ft3=vol_m3_c * 35.3147,
+                            total_usd=tot_c,
+                            detalle_tarifa="Tarifa Calculada Sistema CCM",
+                            id_cot=id_cot_item,
+                            destino_entrega=destino_para_documentos(),
+                            fecha_emision=fec_c,
+                        )
+                        if consolidada:
+                            es_foco_envios_guia = bool(
+                                guia_esta_activa()
+                                and guia_paso_actual() == 6
+                                and int(st.session_state.get("cotizacion_envio_foco") or 0) == int(id_cot_item)
+                            )
+                            env_ctx = (
+                                st.container(key=f"foco_ir_envios_{id_cot_item}")
+                                if es_foco_envios_guia
+                                else st.container()
+                            )
+                            with env_ctx:
+                                st.button(
+                                    "📦 Ir a Envíos",
+                                    type="primary",
+                                    key=f"btn_ir_envios_{id_cot_item}",
+                                    use_container_width=True,
+                                    on_click=ir_a_envios_de_cotizacion,
+                                    args=(id_cot_item,),
+                                )
+                            st.download_button(
+                                f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
+                                pdf_historial,
+                                f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                                "application/pdf",
+                                key=f"dl_cot_{id_cot_item}",
+                                use_container_width=True,
+                            )
+                        else:
+                            confirmar_ctx = (
+                                st.container(key=f"foco_confirmar_{id_cot_item}")
+                                if pendiente_foco
+                                else st.container()
+                            )
+                            with confirmar_ctx:
+                                st.button(
+                                    "Confirmar Cotización",
+                                    type="primary",
+                                    key=f"btn_confirmar_cot_{id_cot_item}",
+                                    use_container_width=True,
+                                    on_click=on_confirmar_cot_historial,
+                                    args=(id_cot_item, casillero),
+                                )
+                            st.download_button(
+                                f"📥 PDF CCM-COT-{id_cot_item:05d}",
+                                pdf_historial,
+                                f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                                "application/pdf",
+                                key=f"dl_cot_{id_cot_item}",
+                                use_container_width=True,
+                            )
+                        if pendiente_foco and not scroll_pendiente_hecho:
+                            desplazar_a_cotizacion_pendiente()
+                            scroll_pendiente_hecho = True
+            else:
+                st.info(
+                    "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
+                    "tiene 24 horas para confirmarla y habilitar Envíos."
+                )
+            espaciador_barra_inferior("safe_historial")
+
+    if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
+        with st.container(key="vista_cotizador"):
+            with st.container(key="formulario_direcciones"):
+                selector_modalidad_entrega(opciones_modalidad)
+                st.markdown("#### 📍 Administrar Direcciones de Envío")
+
+                st.markdown(
+                    f"""
+                <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
+                    <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
+                    <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+
+                if direcciones_guardadas:
+                    st.markdown(
+                        "<p style='font-weight:700; font-size:0.88rem; margin:10px 0 6px 0;'>Tus direcciones personalizadas:</p>",
+                        unsafe_allow_html=True,
+                    )
+                    for idx_dir, dir_item in enumerate(direcciones_guardadas):
+                        etiq = dir_item.get("etiqueta", "")
+                        rec = dir_item.get("receptor", "")
+                        ciu_d = dir_item.get("ciudad", "")
+                        dir_e = dir_item.get("direccion", "")
+                        id_dir = dir_item.get("id")
+                        col_info_d, col_btn_del = st.columns([3.8, 1])
+                        with col_info_d:
+                            st.markdown(
+                                f"""
+                            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
+                                <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
+                                <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
+                            </div>
+                            """,
+                                unsafe_allow_html=True,
+                            )
+                        with col_btn_del:
+                            if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir or f'ses_{idx_dir}'}", type="secondary"):
+                                eliminar_direccion_usuario(casillero, etiq, ciu_d, id_dir)
+                                st.session_state.pop("datos_pdf_confirmado", None)
+                                st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
+                                st.rerun()
+
+                st.markdown("---")
+                st.markdown("##### ➕ Agregar Nueva Dirección de Entrega")
+                if st.session_state.pop("_dir_form_reset", None):
+                    for _campo_dir in CAMPOS_FORM_DIRECCION:
+                        st.session_state.pop(_campo_dir, None)
+                if "dir_receptor_in" not in st.session_state:
+                    st.session_state["dir_receptor_in"] = nombre_completo
+                if "dir_tel_in" not in st.session_state:
+                    st.session_state["dir_tel_in"] = tel_cli
+                st.text_input(
+                    "Etiqueta de la dirección *",
+                    key="dir_etiqueta_in",
+                    placeholder="Ej: Mi Casa, Sucursal 2, Taller",
+                )
+                st.text_input("Nombre de quien recibe *", key="dir_receptor_in")
+                st.text_input("Teléfono de contacto *", key="dir_tel_in")
+                dep_dir_in = st.selectbox(
+                    "Departamento *",
+                    list(MUNICIPIOS_HONDURAS.keys()),
+                    index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
+                    key="sb_dep_nueva_dir",
+                )
+                st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_dir_in], key="sb_ciu_nueva_dir")
+                st.text_area(
+                    "Dirección exacta y referencias *",
+                    key="dir_exacta_in",
+                    placeholder="Barrio, calle, número de casa, puntos clave...",
+                )
+                error_dir = st.session_state.pop("_dir_form_error", None)
+                if error_dir:
+                    st.error(error_dir)
+                st.button(
+                    "💾 Guardar Dirección",
+                    type="primary",
+                    key="btn_guardar_nueva_dir",
+                    use_container_width=True,
+                    on_click=guardar_nueva_direccion,
+                    args=(casillero,),
+                )
+                st.button(
+                    "Cancelar",
+                    type="secondary",
+                    key="btn_cancelar_dir",
+                    use_container_width=True,
+                    on_click=cancelar_nueva_direccion,
+                )
+
+    if st.session_state["sub_tab_inicio"] == "Catálogo":
+        with st.container(key="vista_catalogo"):
+            with st.container(key="catalogo_formulario"):
+                st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+
+                modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+
+                resultados_1688 = []
+                if modo_busq == "🔎 Por Nombre / Palabras":
+                    kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+                    if st.button(
+                        "Buscar Productos en China ➔",
+                        type="primary",
+                        key="btn_buscar_china",
+                        use_container_width=True,
+                    ) and kw:
+                        with st.spinner("Consultando catálogo de 1688..."):
+                            resultados_1688 = buscar_productos_1688_texto(kw)
+                else:
+                    img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+                    if img_up and st.button(
+                        "Escanear Coincidencia Visual ➔",
+                        type="primary",
+                        key="btn_escanear_catalogo",
+                        use_container_width=True,
+                    ):
+                        with st.spinner("Buscando por reconocimiento visual..."):
+                            resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
+
+            if resultados_1688:
+                st.markdown("---")
+                for prod in resultados_1688:
+                    calc = calcular_costo_puesto_honduras(
+                        prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
+                    )
+
+                    c_img, c_det = st.columns([1, 1.8])
+                    with c_img:
+                        st.image(prod["imagen_url"], use_container_width=True)
+                    with c_det:
+                        st.markdown(f"**{prod['nombre']}**")
+                        st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                        st.markdown(
+                            f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
+                        )
+                        st.success(
+                            f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {destino_para_documentos()})*"
+                        )
+
+                        msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {destino_para_documentos()}. Enlace: {prod['url_proveedor']}"
+                        url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+
+                        c_b1, c_b2 = st.columns(2)
+                        with c_b1:
+                            st.markdown(
+                                f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                        with c_b2:
+                            st.markdown(
+                                f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+            espaciador_barra_inferior("safe_catalogo")
+
+    elif (
+        st.session_state["sub_tab_inicio"] == "Cotizador"
+        and st.session_state["modalidad_envio_seleccionada"] != "➕ Crear Nueva Dirección de Envío"
+    ):
+        with st.container(key="vista_cotizador"):
+            st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+            selector_modalidad_entrega(opciones_modalidad)
+            destino_estampado = html.escape(destino_para_documentos())
+            st.markdown(
+                f"""
+                <div class="destino-seleccionado-card">
+                    <div class="destino-seleccionado-kicker">📍 Destino de Entrega Seleccionado</div>
+                    <div class="destino-seleccionado-dir">{destino_estampado}</div>
+                    <div class="destino-seleccionado-nota">(Se imprimirá en todos los formatos y fichas de bodega)</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            exito_dir = st.session_state.pop("_dir_form_exito", None)
+            if exito_dir:
+                st.success(f"✅ {exito_dir}")
+            error_db_dir = st.session_state.pop("_dir_db_error", None)
+            if error_db_dir:
+                st.warning(
+                    "⚠️ La dirección quedó activa en esta sesión, pero no pudo grabarse en la base de datos "
+                    f"y se perderá al recargar. Detalle técnico: {error_db_dir}"
+                )
+
+            t_lb = get_tarifa("tarifa_libra")
+            t_m3 = get_tarifa("tarifa_m3")
+            min_usd = get_tarifa("minimo_cobro_usd")
+            umbral_min = float(get_tarifa("umbral_minimo_lb") or 3.0)
+            umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
+            divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
+
+            tipo_opts = [
+                f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
+                "🚢 Carga Comercial por CBM (hasta contenedor 40')",
+            ]
+            tipo_kwargs = {"key": "sb_tipo_carga_select", "on_change": invalidar_emision_visible_cotizador}
+            if "sb_tipo_carga_select" not in st.session_state:
+                tipo_kwargs["index"] = 0
+            tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
+
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+
+            c_u1, c_u2 = st.columns(2)
+            with c_u1:
+                unidad_medida = st.selectbox(
+                    "Unidad de Medida:",
+                    ["Centímetros (cm)", "Pulgadas (in)", "Metros (m)"],
+                    key="sb_unidad_medida",
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+            with c_u2:
+                unidad_peso = st.selectbox(
+                    "Unidad de Peso:",
+                    ["Libras (lb)", "Kilogramos (kg)"],
+                    key="sb_unidad_peso",
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+
+            es_paqueteria = "Paquetería Menor" in tipo_carga
+            dim = limites_dimensiones(unidad_medida, comercial=not es_paqueteria)
+            pes = limites_peso(unidad_peso, paqueteria=es_paqueteria)
+            etiqueta_medida = unidad_medida.split()[1].strip("()")
+            etiqueta_peso = unidad_peso.split()[1].strip("()")
+
+            st.caption(
+                f"Tope de medidas: contenedor 40' High Cube interno "
+                f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
+                f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
+                f"({peso_max_contenedor_hn_lb():,.0f} lb)."
+                + (f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb." if es_paqueteria else "")
+            )
+
+            st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+
+            pref = "menor" if es_paqueteria else "com"
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                al_input = campo_numerico(
+                    f"Alto ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["alto"],
+                    dim["max"]["alto"],
+                    dim["step"],
+                    f"in_al_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+            with c2:
+                an_input = campo_numerico(
+                    f"Ancho ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["ancho"],
+                    dim["max"]["ancho"],
+                    dim["step"],
+                    f"in_an_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+            with c3:
+                la_input = campo_numerico(
+                    f"Largo ({etiqueta_medida})",
+                    dim["min"],
+                    dim["defaults"]["largo"],
+                    dim["max"]["largo"],
+                    dim["step"],
+                    f"in_la_{pref}_{dim['codigo']}",
+                    dim["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+            with c4:
+                pe_input = campo_numerico(
+                    f"Peso ({etiqueta_peso})",
+                    pes["min"],
+                    pes["default"],
+                    pes["max"],
+                    pes["step"],
+                    f"in_pe_{pref}_{pes['codigo']}",
+                    pes["formato"],
+                    on_change=invalidar_emision_visible_cotizador,
+                )
+
+            if "Pulgadas" in unidad_medida:
+                al_val = al_input * 2.54
+                an_val = an_input * 2.54
+                la_val = la_input * 2.54
+            elif "Metros" in unidad_medida:
+                al_val = al_input * 100.0
+                an_val = an_input * 100.0
+                la_val = la_input * 100.0
+            else:
+                al_val = al_input
+                an_val = an_input
+                la_val = la_input
+
+            if "Kilogramos" in unidad_peso:
+                pe_lb = pe_input * 2.20462
+                pe_kg = pe_input
+            else:
+                pe_lb = pe_input
+                pe_kg = pe_input / 2.20462
+
+            vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+            vol_ft3_val = vol_m3_val * 35.3147
+
+            if es_paqueteria:
+                if pe_lb <= umbral_min:
+                    tot = min_usd
+                    desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
+                else:
+                    tot = pe_lb * t_lb
+                    desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
+
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Volumen (m³)", f"{vol_m3_val:.4f} m³")
+                with m2:
+                    st.metric("Pies Cúbicos", f"{vol_ft3_val:.2f} ft³")
+                with m3:
+                    st.metric("Total Estimado", f"${tot:.2f} USD")
+
+                modalidad_pdf = f"Paquetería Menor (1 a {umbral_paq:.0f} lbs)"
+                detalle_pdf = desc
+
+            else:
+                vol_m3_peso = pe_kg / divisor_vol
+                cbm_facturable = max(vol_m3_val, vol_m3_peso)
+                tot = cbm_facturable * t_m3
+
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Volumen Físico", f"{vol_m3_val:.4f} m³")
+                with m2:
+                    st.metric("CBM Facturable", f"{cbm_facturable:.4f} CBM")
+                with m3:
+                    st.metric("Total Estimado", f"${tot:.2f} USD")
+
+                modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
+                detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+
+            firma_actual = firma_parametros_cotizador(
+                al_val,
+                an_val,
+                la_val,
+                pe_lb,
+                st.session_state["modalidad_envio_seleccionada"],
+                modalidad_pdf,
+            )
+            sincronizar_emision_con_formulario(firma_actual)
+            st.session_state["_cot_emit_snapshot"] = {
+                "al": al_val,
+                "an": an_val,
+                "la": la_val,
+                "peso_lb": pe_lb,
+                "peso_kg": pe_kg,
+                "vol_m3": vol_m3_val,
+                "vol_ft3": vol_ft3_val,
+                "total_usd": tot,
+                "tipo_carga": modalidad_pdf,
+                "detalle_tarifa": detalle_pdf,
+                "destino": destino_para_documentos(),
+                "firma_params": list(firma_actual),
+            }
+            with st.container(key="guia_foco_tarifa"):
+                pulso_confirmar = st.button(
+                    "🤝 Confirmar Tarifa & Emitir Documentos",
+                    type="primary",
+                    key="btn_confirmar_tarifa",
+                    use_container_width=True,
+                    on_click=emitir_tarifa_desde_snapshot,
+                )
+            if pulso_confirmar and not isinstance(st.session_state.get("datos_pdf_confirmado"), dict):
+                emitir_tarifa_desde_snapshot()
+            if st.session_state.get("_ccm_emit_error"):
+                st.error(
+                    "No se pudo guardar la tarifa en la base de datos. "
+                    "Igual puede descargar el formato y abrir Mis Cotizaciones con la emisión en memoria."
+                )
+
+            if "datos_pdf_confirmado" in st.session_state and isinstance(st.session_state["datos_pdf_confirmado"], dict):
+                d_pdf = st.session_state["datos_pdf_confirmado"]
+                try:
+                    id_c = int(d_pdf.get("id_cot") or 0)
+                except (TypeError, ValueError):
+                    id_c = 0
+                if not id_c:
+                    st.session_state.pop("datos_pdf_confirmado", None)
+                else:
+                    tarifa_consolidada = cotizacion_esta_confirmada(id_c, casillero) or any(
+                        int(r.get("id") or 0) == int(id_c) and int(r.get("confirmada") or 0) == 1
+                        for r in (st.session_state.get("cotizaciones") or {}).get(casillero, [])
+                    )
+                    tarifa_sigue_visible = tarifa_consolidada or cotizacion_vigente(
+                        d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc"), ahora_hn
+                    )
+                    if not tarifa_sigue_visible and int(st.session_state.get("ultima_cot_id") or 0) == int(id_c):
+                        tarifa_sigue_visible = True
+                    if not tarifa_sigue_visible:
+                        st.session_state.pop("datos_pdf_confirmado", None)
+                    else:
+                        dest_pdf = d_pdf.get("destino_entrega", st.session_state["modalidad_envio_seleccionada"])
+                        fecha_doc = d_pdf.get("fecha_hora_doc", obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"))
+                        estado_doc = texto_estado_cotizacion(
+                            d_pdf.get("fecha_sql") or fecha_doc, 1 if tarifa_consolidada else 0, ahora_hn
+                        )
+                        if tarifa_consolidada:
+                            titulo_emitida = (
+                                f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está listo."
+                            )
+                            detalle_emitida = f"✅ {estado_doc}"
+                        else:
+                            titulo_emitida = (
+                                f"Tarifa CCM-COT-{id_c:05d} · Pendiente de Confirmar"
+                            )
+                            detalle_emitida = (
+                                f"⏳ {estado_doc}. Código de seguimiento CCM-COT-{id_c:05d}. "
+                                "Descargue el formato para el fabricante o vaya a Mis Cotizaciones para confirmarla antes de 24 horas."
+                            )
+
+                        st.markdown(
+                            f"""
+                        <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                                <span style="font-size: 1.4rem;">🎉</span>
+                                <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
+                            </div>
+                            <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
+                        </div>
+                        """,
+                            unsafe_allow_html=True,
+                        )
+
+                        pdf_fab = b""
+                        try:
+                            pdf_fab = generar_pdf_etiqueta_proveedor(
+                                casillero=casillero,
+                                nombre=nombre_completo,
+                                telefono=tel_cli,
+                                ciudad=ciu_cli,
+                                al=d_pdf.get("al", 0),
+                                an=d_pdf.get("an", 0),
+                                la=d_pdf.get("la", 0),
+                                pe_lb=d_pdf.get("peso_lb", 0),
+                                pe_kg=d_pdf.get("peso_kg", 0),
+                                vol_m3=d_pdf.get("vol_m3", 0),
+                                destino_entrega=dest_pdf,
+                                fecha_emision=fecha_doc,
+                            ) or b""
+                        except Exception:
+                            pdf_fab = b""
+
+                        with st.container(key="acciones_emit_cotizador"):
+                            st.markdown(
+                                '<div id="ccm-acciones-emit" class="ccm-acciones-emit-ancla"></div>',
+                                unsafe_allow_html=True,
+                            )
+                            with st.container(key="guia_foco_pdf_fab"):
+                                if pdf_fab:
+                                    if st.download_button(
+                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        pdf_fab,
+                                        f"Shipping_Label_Fabricante_{casillero}.pdf",
+                                        "application/pdf",
+                                        key=f"dl_pdf_fab_{id_c}",
+                                        use_container_width=True,
+                                    ):
+                                        avanzar_guia_si(3, 4)
+                                else:
+                                    st.button(
+                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        key=f"dl_pdf_fab_fallback_{id_c}",
+                                        use_container_width=True,
+                                        disabled=True,
+                                    )
+                                    st.caption("El PDF no se pudo generar en este momento. Use Ir a Mis Cotizaciones.")
+                            with st.container(key="guia_foco_ver_cot"):
+                                st.button(
+                                    "📋 Ir a Mis Cotizaciones",
+                                    type="primary",
+                                    key=f"btn_ver_mis_cotizaciones_{id_c}",
+                                    use_container_width=True,
+                                    on_click=ir_a_historial_guia,
+                                    args=(id_c,),
+                                )
+                        if st.session_state.pop("_ccm_scroll_emit", None):
+                            pass
+
+            espaciador_barra_inferior("safe_cotizador_fin")
+
+    elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
+        with st.container(key="vista_envios"):
+            pintar_banner_promocional_china(casillero)
+            st.markdown("#### 📦 Mis Paquetes en Tránsito")
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute(
+                    "SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?",
+                    (casillero,),
+                )
+                paquetes = c.fetchall()
+
+            if paquetes:
+                for p in paquetes:
+                    st.markdown(
+                        f"""
+                    <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:10px; padding:12px; margin-bottom:8px;">
+                        <b>Tracking:</b> {p[0]} | <b>Contenedor:</b> {p[2]}<br>
+                        <b>Estado:</b> <span style="color:#004ac1; font-weight:bold;">{p[3]}</span><br>
+                        <small style="color:#64748b;">Actualizado: {p[4]}</small>
+                    </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.info("No tienes paquetes registrados en travesía.")
+
+            st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
+            st.caption("Descargue la ficha de bodega y el PDF Tarifa de cada cotización consolidada.")
+            cotizaciones_despacho = ordenar_cotizaciones_desc(
+                [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
+            )
+            try:
+                foco_envios = int(st.session_state.get("cotizacion_envio_foco") or 0)
+            except (TypeError, ValueError):
+                foco_envios = 0
+            if foco_envios:
+                cotizaciones_despacho = sorted(
+                    cotizaciones_despacho,
+                    key=lambda r: (
+                        0 if int(r[0]) == foco_envios else 1,
+                        *clave_orden_cotizacion(r[7], r[0]),
+                    ),
+                )
+                if not any(int(r[0]) == foco_envios for r in cotizaciones_despacho):
+                    extra_foco = next((r for r in lista_mis_cotizaciones if int(r[0]) == foco_envios), None)
+                    if extra_foco:
+                        cotizaciones_despacho = [extra_foco] + list(cotizaciones_despacho)
+            if cotizaciones_despacho:
+                for cot_env in cotizaciones_despacho:
+                    id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
+                    es_foco = foco_envios and int(id_e) == foco_envios
+                    borde = "#004ac1" if es_foco else "#e2e8f0"
+                    fondo = "#eff6ff" if es_foco else "#f8fafc"
+                    if es_foco:
+                        st.markdown('<div id="cotizacion-envio-foco"></div>', unsafe_allow_html=True)
+                        st.success(
+                            f"CCM-COT-{id_e:05d} está lista para seguimiento. "
+                            "Descargue la Ficha y el PDF Tarifa de esta cotización consolidada."
+                        )
+                        desplazar_a_ancla("cotizacion-envio-foco")
+                    id_ancla_env = f'id="cotizacion-env-{id_e}"'
+                    st.markdown(
+                        f"""
+                    <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                        <b>🔖 CCM-COT-{id_e:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_e)}{" &bull; <span style='color:#004ac1;font-weight:800;'>En seguimiento</span>" if es_foco else ""}<br>
+                        <small style="color:#475569;">📐 Medidas: {al_e:.1f}x{an_e:.1f}x{la_e:.1f} cm | Peso: {pe_e:.1f} lbs | 💰 Total: <b>${tot_e:.2f} USD</b></small><br>
+                        <small style="color:#1d4ed8; font-weight:700;">✅ Consolidada — permanente en el historial del casillero</small>
+                    </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+                    pdf_ficha_env = generar_pdf_etiqueta_proveedor(
+                        casillero=casillero,
+                        nombre=nombre_completo,
+                        telefono=tel_cli,
+                        ciudad=ciu_cli,
+                        al=al_e,
+                        an=an_e,
+                        la=la_e,
+                        pe_lb=pe_e,
+                        pe_kg=pe_e / 2.20462,
+                        vol_m3=vol_e,
+                        destino_entrega=destino_para_documentos(),
+                        fecha_emision=fec_e,
+                    )
+                    pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
+                        casillero=casillero,
+                        nombre=nombre_completo,
+                        telefono=tel_cli,
+                        ciudad=ciu_cli,
+                        tipo_carga="Cotización Confirmada",
+                        al=al_e,
+                        an=an_e,
+                        la=la_e,
+                        peso_lb=pe_e,
+                        peso_kg=pe_e / 2.20462,
+                        vol_m3=vol_e,
+                        vol_ft3=vol_e * 35.3147,
+                        total_usd=tot_e,
+                        detalle_tarifa="Tarifa Calculada Sistema CCM",
+                        id_cot=id_e,
+                        destino_entrega=destino_para_documentos(),
+                        fecha_emision=fec_e,
+                    )
+                    with st.container(key=f"docs_env_{id_e}"):
+                        st.download_button(
+                            f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
+                            pdf_ficha_env,
+                            f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_ficha_env_{id_e}",
+                            use_container_width=True,
+                        )
+                        st.download_button(
+                            f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
+                            pdf_tarifa_env,
+                            f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_tarifa_env_{id_e}",
+                            use_container_width=True,
+                        )
+            else:
+                st.info("Confirme una cotización para consultar y descargar la Ficha y el PDF Tarifa en este módulo.")
+            espaciador_barra_inferior("safe_envios")
+
+    elif st.session_state["sub_tab_inicio"] == "Etiqueta":
+        with st.container(key="vista_fichas"):
+            pintar_banner_promocional_china(casillero)
+            st.markdown("#### 📋 Fichas")
+            st.caption("Ficha técnica de bodega Guangzhou de cada cotización consolidada.")
+            cotizaciones_ficha = ordenar_cotizaciones_desc(
+                [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
+            )
+            if cotizaciones_ficha:
+                for cot_f in cotizaciones_ficha:
+                    id_f, al_f, an_f, la_f, pe_f, vol_f, tot_f, fec_f, conf_f = cot_f
+                    st.markdown(
+                        f"""
+                    <div style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
+                        <b>🔖 CCM-COT-{id_f:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_f)}<br>
+                        <small style="color:#475569;">📐 Medidas: {al_f:.1f}x{an_f:.1f}x{la_f:.1f} cm | Peso: {pe_f:.1f} lbs | 💰 Total: <b>${tot_f:.2f} USD</b></small>
+                    </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+                    pdf_ficha_mod = generar_pdf_etiqueta_proveedor(
+                        casillero=casillero,
+                        nombre=nombre_completo,
+                        telefono=tel_cli,
+                        ciudad=ciu_cli,
+                        al=al_f,
+                        an=an_f,
+                        la=la_f,
+                        pe_lb=pe_f,
+                        pe_kg=pe_f / 2.20462,
+                        vol_m3=vol_f,
+                        destino_entrega=destino_para_documentos(),
+                        fecha_emision=fec_f,
+                    )
+                    st.download_button(
+                        f"🏷️ Descargar Ficha CCM-COT-{id_f:05d}",
+                        pdf_ficha_mod,
+                        f"Ficha_Bodega_{casillero}_COT{id_f:05d}.pdf",
+                        "application/pdf",
+                        key=f"dl_ficha_mod_{id_f}",
+                        use_container_width=True,
+                    )
+                    st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
+            else:
+                st.info("Confirme una cotización para descargar su ficha de bodega.")
+            espaciador_barra_inferior("safe_fichas")
+
+    pintar_barra_inferior(total_cotizaciones)
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
