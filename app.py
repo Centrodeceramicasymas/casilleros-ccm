@@ -1244,6 +1244,8 @@ def cargar_direcciones_db(casillero):
     Busca con coincidencias_casillero: una fila guardada como 15011985 también aparece
     al consultar CCM-15011985 (y viceversa).
     """
+    # La consulta nunca debe depender de una escritura previa: si SQLite está ocupado,
+    # igual debe devolver las direcciones que ya existan.
     cas = formatear_casillero(casillero or "")
     if not cas:
         return []
@@ -1258,21 +1260,13 @@ def cargar_direcciones_db(casillero):
             SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta
             FROM direcciones_entrega
             WHERE codigo_casillero IN ({placeholders})
-              AND COALESCE(activa, 1) = 1
             ORDER BY id ASC
             """,
             claves,
         )
         filas = cur.fetchall()
-        cur.execute(
-            f"""
-            UPDATE direcciones_entrega
-            SET codigo_casillero = ?
-            WHERE codigo_casillero IN ({placeholders}) AND codigo_casillero != ?
-            """,
-            (cas, *claves, cas),
-        )
-        conn.commit()
+        # No se normaliza mediante UPDATE durante una lectura. La coincidencia IN(...)
+        # ya cubre casilleros antiguos y evita que una contención de escritura oculte filas.
         return filas
 
 
@@ -1693,8 +1687,13 @@ def direcciones_sesion(casillero):
 def opciones_entrega_desde_sesion(casillero):
     """Reconstruye el desplegable desde SQLite en cada run: almacén → direcciones activas → Crear Nueva."""
     opciones = [OPCION_PREDETERMINADA]
-    for e in direcciones_sesion(casillero):
-        opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
+    try:
+        filas = cargar_direcciones_db(casillero)
+    except Exception as exc:
+        registrar_error_direcciones(exc, "Consulta directa para selector de entrega")
+        filas = []
+    for _, etiqueta, _, ciudad, _ in filas:
+        opciones.append(f"📍 {etiqueta} - {ciudad}")
     opciones.append("➕ Crear Nueva Dirección de Envío")
     return opciones
 
@@ -1729,6 +1728,12 @@ def guardar_nueva_direccion(casillero):
             conn.commit()
             if not id_dir_nuevo:
                 raise sqlite3.Error("INSERT direcciones_entrega no devolvió lastrowid.")
+            cur.execute(
+                "SELECT id FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
+                (id_dir_nuevo, cas_norm),
+            )
+            if cur.fetchone() is None:
+                raise sqlite3.Error("La dirección no pudo verificarse después de confirmar la escritura.")
     except Exception as exc:
         id_dir_nuevo = None
         error_db = str(exc)
