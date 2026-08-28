@@ -990,2084 +990,846 @@ if "mostrar_guia" not in st.session_state:
 if "modalidad_envio_seleccionada" not in st.session_state:
     st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
 
+HUBS = {
+    "china": {
+        "label": "China",
+        "icon": "🇨🇳",
+        "descripcion": "Consolidación marítima, catálogo y flete",
+        "activo": True,
+        "modulos": [
+            {
+                "id": "Mis Cotizaciones",
+                "label": "Mis Cotizaciones",
+                "nav": "📄 Mis Cotiz.",
+                "icon": "📄",
+                "detalle": "Historial y descarga de PDF",
+                "btn_key": "mod_cotizaciones",
+            },
+            {
+                "id": "Catálogo",
+                "label": "Catálogo",
+                "nav": "🛍️ Catálogo",
+                "icon": "🛍️",
+                "detalle": "Fábricas 1688 y costo en Honduras",
+                "btn_key": "mod_catalogo",
+            },
+            {
+                "id": "Cotizador",
+                "label": "Cotizador",
+                "nav": "📐 Cotizador",
+                "icon": "📐",
+                "detalle": "Flete marítimo por libra o CBM",
+                "btn_key": "mod_cotizador",
+            },
+            {
+                "id": "Mis Envíos",
+                "label": "Envíos",
+                "nav": "📦 Envíos",
+                "icon": "📦",
+                "detalle": "Paquetes en tránsito",
+                "btn_key": "mod_envios",
+            },
+            {
+                "id": "Etiqueta",
+                "label": "Fichas",
+                "nav": "🏷️ Fichas",
+                "icon": "🏷️",
+                "detalle": "Etiqueta bodega Guangzhou",
+                "btn_key": "mod_fichas",
+            },
+        ],
+    },
+    "eeuu": {
+        "label": "EE. UU.",
+        "icon": "🇺🇸",
+        "descripcion": "Búsqueda y cotización AliExpress con envío a Estados Unidos",
+        "activo": True,
+        "modulos": [],
+    },
+    "honduras": {
+        "label": "Honduras",
+        "icon": "🇭🇳",
+        "descripcion": "Módulo en preparación para operaciones locales",
+        "activo": False,
+        "modulos": [],
+    },
+}
 
-def es_cotizacion_confirmada(valor):
-    try:
-        return int(valor or 0) == 1
-    except (TypeError, ValueError):
-        return False
+MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
+VISTAS_MODULO = set(MODULOS_POR_ID.keys())
+MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo", "Mis Cotizaciones")
+MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
+ROLES_ADMIN = ("admin", "superadmin")
+DNI_SUPERADMIN = "1301199800990"
+NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
+CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
+CLAVE_INICIAL_SUPERADMIN = "1301"
+PERMISOS_ABIERTOS_TEMPORAL = True
+HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
+MODULO_PERMISO_COL = {
+    "Cotizador": "mod_cotizador",
+    "Catálogo": "mod_catalogo",
+    "Mis Cotizaciones": "mod_cotizaciones",
+    "Mis Envíos": "mod_envios",
+    "Etiqueta": "mod_fichas",
+}
 
 
-def cotizacion_visible_historial(fecha_raw, confirmada, ahora=None):
-    if es_cotizacion_confirmada(confirmada):
-        return True
-    return cotizacion_vigente(fecha_raw, ahora)
+def es_rol_admin(rol=None):
+    return (rol if rol is not None else st.session_state.get("rol")) in ROLES_ADMIN
 
 
-def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None):
-    if es_cotizacion_confirmada(confirmada):
-        return "Consolidada — permanente en el historial del casillero"
-    return texto_vigencia_cotizacion(fecha_raw, ahora)
+def es_superadmin(rol=None):
+    return (rol if rol is not None else st.session_state.get("rol")) == "superadmin"
 
 
-def _limpiar_cotizacion_vencida_en_sesion(ahora):
-    d_pdf = st.session_state.get("datos_pdf_confirmado")
-    if not isinstance(d_pdf, dict):
-        return None
-    id_cot = d_pdf.get("id_cot")
-    try:
-        cid = int(id_cot or 0)
-    except (TypeError, ValueError):
-        cid = 0
-    en_sesion = False
-    if cid:
-        _, lista = bolsa_cotizaciones_sesion(st.session_state.get("casillero"))
-        en_sesion = any(int(r.get("id") or 0) == cid for r in lista)
-    if not cotizacion_existe_en_casillero(id_cot) and not en_sesion:
-        st.session_state.pop("datos_pdf_confirmado", None)
-        st.session_state.pop("ultima_cot_id", None)
-        return None
-    if cotizacion_esta_confirmada(id_cot):
-        return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
-    fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
-    if cotizacion_vigente(fecha_pdf, ahora) or en_sesion:
-        return fecha_pdf
-    st.session_state.pop("datos_pdf_confirmado", None)
-    st.session_state.pop("ultima_cot_id", None)
-    return None
+def permisos_default(rol="cliente"):
+    return {
+        "hub_china": 1,
+        "hub_eeuu": 1,
+        "hub_honduras": 1,
+        "mod_cotizador": 1,
+        "mod_catalogo": 1,
+        "mod_cotizaciones": 1,
+        "mod_envios": 1,
+        "mod_fichas": 1,
+    }
 
 
-def fechas_cotizaciones_casillero(casillero):
-    cas = formatear_casillero(casillero or "")
+def asegurar_permisos_casillero(casillero, rol="cliente"):
+    cas = formatear_casillero(casillero)
     if not cas:
-        return []
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COALESCE(fecha_creacion, fecha) FROM cotizaciones WHERE codigo_casillero = ? ORDER BY fecha_creacion DESC, id DESC",
-                (cas,),
-            )
-            return [fila[0] for fila in cur.fetchall()]
-    except Exception:
-        return []
-
-
-def casillero_tiene_cotizacion_confirmada(casillero):
-    cas = formatear_casillero(casillero or "")
-    if not cas:
-        return False
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT 1 FROM cotizaciones WHERE codigo_casillero = ? AND IFNULL(confirmada, 0) = 1 LIMIT 1",
-                (cas,),
-            )
-            return cur.fetchone() is not None
-    except Exception:
-        return False
-
-
-def cotizacion_existe_en_casillero(id_cot, casillero=None):
-    try:
-        cid = int(id_cot)
-    except (TypeError, ValueError):
-        return False
-    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            if cas:
-                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ? AND codigo_casillero = ?", (cid, cas))
-            else:
-                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ?", (cid,))
-            return cur.fetchone() is not None
-    except Exception:
-        return False
-
-
-def cotizacion_esta_confirmada(id_cot, casillero=None):
-    try:
-        cid = int(id_cot)
-    except (TypeError, ValueError):
-        return False
-    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            if cas:
-                cur.execute(
-                    "SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
-                    (cid, cas),
-                )
-            else:
-                cur.execute("SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ?", (cid,))
-            row = cur.fetchone()
-        return bool(row and int(row[0]) == 1)
-    except Exception:
-        return False
-
-
-def bolsa_cotizaciones_sesion(casillero):
-    cas = formatear_casillero(casillero or "")
-    if "cotizaciones" not in st.session_state or not isinstance(st.session_state["cotizaciones"], dict):
-        st.session_state["cotizaciones"] = {}
-    if not cas:
-        return cas, []
-    return cas, st.session_state["cotizaciones"].setdefault(cas, [])
-
-
-def registro_sesion_a_fila(reg):
-    return (
-        int(reg.get("id") or 0),
-        float(reg.get("alto_cm") or 0),
-        float(reg.get("ancho_cm") or 0),
-        float(reg.get("largo_cm") or 0),
-        float(reg.get("peso_lb") or 0),
-        float(reg.get("volumen_m3") or 0),
-        float(reg.get("total_usd") or 0),
-        reg.get("fecha_creacion") or reg.get("fecha"),
-        int(reg.get("confirmada") or 0),
-    )
-
-
-def registrar_error_direcciones(exc, contexto):
-    msg = f"{contexto}: {exc}"
-    print(f"[CCM direcciones] {msg}", flush=True)
-    try:
-        st.session_state["_dir_db_error"] = msg
-    except Exception:
-        pass
-
-
-def invalidar_cache_direcciones():
-    clear = getattr(cargar_direcciones_db, "clear", None)
-    if callable(clear):
-        clear()
-
-
-def cargar_direcciones_db(casillero):
-    cas = formatear_casillero(casillero or "")
-    if not cas:
-        return []
-    claves = coincidencias_casillero(casillero)
-    if not claves:
-        return []
-    placeholders = ",".join("?" * len(claves))
+        return
+    vals = permisos_default(rol)
     with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta
-            FROM direcciones_entrega
-            WHERE codigo_casillero IN ({placeholders})
-            ORDER BY id ASC
-            """,
-            claves,
-        )
-        filas = cur.fetchall()
-        cur.execute(
-            f"""
-            UPDATE direcciones_entrega
-            SET codigo_casillero = ?
-            WHERE codigo_casillero IN ({placeholders}) AND codigo_casillero != ?
-            """,
-            (cas, *claves, cas),
-        )
-        conn.commit()
-        return filas
-
-
-@st.cache_data(ttl=20, show_spinner=False)
-def cargar_cotizaciones_db(casillero):
-    cas = formatear_casillero(casillero or "")
-    if not cas:
-        return []
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
+        c = conn.cursor()
+        c.execute(
             """
-            SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
-                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
-            FROM cotizaciones
-            WHERE codigo_casillero = ?
-            ORDER BY fecha_creacion DESC, id DESC
+            INSERT INTO permisos_usuario (
+                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(codigo_casillero) DO UPDATE SET
+                hub_china = excluded.hub_china,
+                hub_eeuu = excluded.hub_eeuu,
+                hub_honduras = excluded.hub_honduras,
+                mod_cotizador = excluded.mod_cotizador,
+                mod_catalogo = excluded.mod_catalogo,
+                mod_cotizaciones = excluded.mod_cotizaciones,
+                mod_envios = excluded.mod_envios,
+                mod_fichas = excluded.mod_fichas
             """,
-            (cas,),
+            (
+                cas,
+                vals["hub_china"],
+                vals["hub_eeuu"],
+                vals["hub_honduras"],
+                vals["mod_cotizador"],
+                vals["mod_catalogo"],
+                vals["mod_cotizaciones"],
+                vals["mod_envios"],
+                vals["mod_fichas"],
+            ),
         )
-        return cur.fetchall()
 
 
-def hidratar_cotizaciones_sesion(casillero):
-    cas, lista = bolsa_cotizaciones_sesion(casillero)
-    if not cas:
-        return
-    conocidos = {int(r.get("id") or 0) for r in lista}
-    try:
-        for fila in cargar_cotizaciones_db(cas):
-            cid = int(fila[0])
-            if cid in conocidos:
-                continue
-            lista.append(
-                {
-                    "id": cid,
-                    "codigo_casillero": cas,
-                    "alto_cm": fila[1],
-                    "ancho_cm": fila[2],
-                    "largo_cm": fila[3],
-                    "peso_lb": fila[4],
-                    "volumen_m3": fila[5],
-                    "total_usd": fila[6],
-                    "fecha": fila[7],
-                    "fecha_creacion": fila[7],
-                    "confirmada": int(fila[8] or 0),
-                }
-            )
-            conocidos.add(cid)
-    except Exception:
-        pass
-
-
-def filas_cotizaciones_casillero(casillero, ahora=None):
-    cas = formatear_casillero(casillero or "")
-    ahora = ahora or obtener_tiempo_honduras()
-    hidratar_cotizaciones_sesion(cas)
-    by_id = {}
-    try:
-        for fila in cargar_cotizaciones_db(cas):
-            by_id[int(fila[0])] = fila
-    except Exception:
-        pass
-    _, lista = bolsa_cotizaciones_sesion(cas)
-    for reg in lista:
-        try:
-            by_id[int(reg.get("id") or 0)] = registro_sesion_a_fila(reg)
-        except (TypeError, ValueError):
-            continue
-    todas = ordenar_cotizaciones_desc([f for f in by_id.values() if f and f[0]])
-    visibles = [f for f in todas if cotizacion_visible_historial(f[7], f[8], ahora)]
-    return todas, visibles
-
-
-def marcar_cotizacion_sesion_confirmada(id_cot, casillero):
-    cas, lista = bolsa_cotizaciones_sesion(casillero)
-    try:
-        cid = int(id_cot)
-    except (TypeError, ValueError):
-        return
-    for reg in lista:
-        if int(reg.get("id") or 0) == cid:
-            reg["confirmada"] = 1
-            break
-
-
-def confirmar_cotizacion_casillero(id_cot, casillero):
-    try:
-        cid = int(id_cot)
-    except (TypeError, ValueError):
-        return False
-    cas = formatear_casillero(casillero or "")
-    if not cas:
-        return False
-    _, ahora = estampa_tiempo_honduras()
-    actualizado = False
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE cotizaciones
-                SET confirmada = 1, fecha_confirmacion = ?
-                WHERE id = ? AND codigo_casillero = ? AND IFNULL(confirmada, 0) = 0
-                """,
-                (ahora, cid, cas),
-            )
-            conn.commit()
-            actualizado = cur.rowcount > 0
-        cargar_cotizaciones_db.clear()
-    except Exception:
-        actualizado = False
-    marcar_cotizacion_sesion_confirmada(cid, cas)
-    return True
-
-
-def firma_parametros_cotizador(al, an, la, peso_lb, destino, tipo_carga):
-    return (
-        round(float(al or 0), 4),
-        round(float(an or 0), 4),
-        round(float(la or 0), 4),
-        round(float(peso_lb or 0), 4),
-        str(destino or "").strip(),
-        str(tipo_carga or "").strip(),
-    )
-
-
-def firma_desde_emision(d_pdf):
-    if not isinstance(d_pdf, dict):
-        return None
-    guardada = d_pdf.get("firma_params")
-    if isinstance(guardada, (list, tuple)) and len(guardada) == 6:
-        return tuple(guardada)
-    return firma_parametros_cotizador(
-        d_pdf.get("al"),
-        d_pdf.get("an"),
-        d_pdf.get("la"),
-        d_pdf.get("peso_lb"),
-        d_pdf.get("destino_entrega"),
-        d_pdf.get("tipo_carga"),
-    )
-
-
-def invalidar_emision_visible_cotizador():
-    st.session_state.pop("datos_pdf_confirmado", None)
-    st.session_state.pop("_ccm_scroll_emit", None)
-    st.session_state.pop("_ccm_emit_error", None)
-    for clave in list(st.session_state.keys()):
-        ks = str(clave)
-        if ks.startswith("dl_pdf_fab_") or ks.startswith("btn_ver_mis_cotizaciones_"):
-            st.session_state.pop(clave, None)
-
-
-def sincronizar_emision_con_formulario(firma_actual):
-    d_pdf = st.session_state.get("datos_pdf_confirmado")
-    if not isinstance(d_pdf, dict):
-        return False
-    if firma_desde_emision(d_pdf) != tuple(firma_actual):
-        invalidar_emision_visible_cotizador()
-        return True
-    return False
-
-
-def emitir_tarifa_desde_snapshot():
-    snap = st.session_state.get("_cot_emit_snapshot")
-    casillero = formatear_casillero(st.session_state.get("casillero") or "")
-    if not isinstance(snap, dict) or not casillero:
-        return
-    firma_snap = snap.get("firma_params") or firma_parametros_cotizador(
-        snap.get("al"),
-        snap.get("an"),
-        snap.get("la"),
-        snap.get("peso_lb"),
-        snap.get("destino"),
-        snap.get("tipo_carga"),
-    )
-    firma_snap = tuple(firma_snap)
-    d_emitida = st.session_state.get("datos_pdf_confirmado")
-    if isinstance(d_emitida, dict) and firma_desde_emision(d_emitida) == firma_snap:
-        return
-    ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
-    f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
-    id_generado = None
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO cotizaciones (
-                    codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
-                    total_usd, fecha, confirmada, fecha_creacion
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                """,
-                (
-                    casillero,
-                    snap.get("al"),
-                    snap.get("an"),
-                    snap.get("la"),
-                    snap.get("peso_lb"),
-                    snap.get("vol_m3"),
-                    snap.get("vol_ft3"),
-                    snap.get("total_usd"),
-                    f_hoy_sql,
-                    f_hoy_sql,
-                ),
-            )
-            id_generado = cur.lastrowid
-            conn.commit()
-        cargar_cotizaciones_db.clear()
-    except Exception as exc:
-        id_generado = None
-        st.session_state["_ccm_emit_error"] = str(exc)
-    if not id_generado:
-        id_generado = int(st.session_state.get("_seq_cot") or 900000) + 1
-        st.session_state["_seq_cot"] = id_generado
-    registro = {
-        "id": int(id_generado),
-        "codigo_casillero": casillero,
-        "alto_cm": snap.get("al"),
-        "ancho_cm": snap.get("an"),
-        "largo_cm": snap.get("la"),
-        "peso_lb": snap.get("peso_lb"),
-        "peso_kg": snap.get("peso_kg"),
-        "volumen_m3": snap.get("vol_m3"),
-        "volumen_ft3": snap.get("vol_ft3"),
-        "total_usd": snap.get("total_usd"),
-        "fecha": f_hoy_sql,
-        "fecha_creacion": f_hoy_sql,
-        "confirmada": 0,
-        "tipo_carga": snap.get("tipo_carga"),
-        "detalle_tarifa": snap.get("detalle_tarifa"),
-        "destino_entrega": snap.get("destino"),
-        "fecha_hora_doc": f_hoy_doc,
-    }
-    _, lista = bolsa_cotizaciones_sesion(casillero)
-    lista.insert(0, registro)
-    st.session_state["ultima_cot_id"] = int(id_generado)
-    st.session_state["cotizacion_historial_foco"] = int(id_generado)
-    st.session_state["datos_pdf_confirmado"] = {
-        "tipo_carga": snap.get("tipo_carga"),
-        "al": snap.get("al"),
-        "an": snap.get("an"),
-        "la": snap.get("la"),
-        "peso_lb": snap.get("peso_lb"),
-        "peso_kg": snap.get("peso_kg"),
-        "vol_m3": snap.get("vol_m3"),
-        "vol_ft3": snap.get("vol_ft3"),
-        "total_usd": snap.get("total_usd"),
-        "detalle_tarifa": snap.get("detalle_tarifa"),
-        "id_cot": int(id_generado),
-        "destino_entrega": snap.get("destino"),
-        "fecha_hora_doc": f_hoy_doc,
-        "fecha_sql": f_hoy_sql,
-        "firma_params": list(firma_snap),
-    }
-    st.session_state["china_modulos_desbloqueados"] = True
-    st.session_state.pop("_ccm_emit_error", None)
-    avanzar_guia_si(2, 3)
-    st.session_state["_ccm_rerun_app"] = True
-    st.session_state["_ccm_scroll_emit"] = True
-
-
-def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
-    ahora = ahora or obtener_tiempo_honduras()
+def abrir_permisos_todos_los_usuarios():
     with get_db() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute("SELECT id, fecha, IFNULL(confirmada, 0) FROM cotizaciones")
-        except sqlite3.OperationalError:
-            return 0
-        ids_borrar = []
-        for cid, fecha, confirmada in cur.fetchall():
-            if es_cotizacion_confirmada(confirmada):
-                continue
-            if not cotizacion_vigente(fecha, ahora):
-                ids_borrar.append(cid)
-        if not ids_borrar:
-            return 0
-        cur.executemany("DELETE FROM cotizaciones WHERE id = ?", [(cid,) for cid in ids_borrar])
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE permisos_usuario SET
+                hub_china=1, hub_eeuu=1, hub_honduras=1,
+                mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+            """
+        )
         conn.commit()
-        return len(ids_borrar)
 
 
-def vista_muestra_envios_fichas():
-    return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos")
-
-
-def china_seguimiento_habilitado():
-    habilitado = vista_muestra_envios_fichas()
-    st.session_state["china_modulos_desbloqueados"] = habilitado
-    return habilitado
-
-
-def modulos_china_visibles():
-    mods = HUBS["china"]["modulos"]
-    permitidos = [m for m in mods if usuario_puede_modulo(m["id"])]
-    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
-    return [m for m in permitidos if m["id"] not in bloqueados]
-
-
-def modulos_china_nav():
-    mods = HUBS["china"]["modulos"]
-    permitidos = [m for m in mods if usuario_puede_modulo(m["id"]) and m["id"] != "Etiqueta"]
-    if vista_muestra_envios_fichas():
-        return permitidos
-    bloqueados = set(MODULOS_CHINA_BLOQUEADOS)
-    return [m for m in permitidos if m["id"] not in bloqueados]
-
-
-def al_cambiar_modalidad_entrega():
-    invalidar_emision_visible_cotizador()
-    nueva = st.session_state.get("sb_modalidad_entrega")
-    if nueva:
-        st.session_state["modalidad_envio_seleccionada"] = nueva
-
-
-def seleccionar_modalidad_entrega(opcion):
-    st.session_state["modalidad_envio_seleccionada"] = opcion
-    st.session_state["_mod_entrega_pendiente"] = opcion
-
-
-CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in")
-
-
-def asegurar_esquema_direcciones():
+def permisos_de(casillero=None):
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
+    base = permisos_default(st.session_state.get("rol", "cliente"))
+    if not cas:
+        return base
     try:
         with get_db() as conn:
             c = conn.cursor()
             c.execute(
                 """
-                CREATE TABLE IF NOT EXISTS direcciones_entrega (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo_casillero TEXT NOT NULL,
-                    etiqueta TEXT NOT NULL,
-                    receptor_nombre TEXT NOT NULL,
-                    telefono TEXT NOT NULL,
-                    departamento TEXT NOT NULL,
-                    ciudad TEXT NOT NULL,
-                    direccion_exacta TEXT NOT NULL,
-                    fecha_creacion TEXT NOT NULL
-                )
-                """
-            )
-            c.execute("PRAGMA table_info(direcciones_entrega)")
-            columnas_dir = {fila[1] for fila in c.fetchall()}
-            for col in ("receptor_nombre", "telefono", "departamento", "ciudad", "direccion_exacta", "fecha_creacion"):
-                if col not in columnas_dir:
-                    c.execute(f"ALTER TABLE direcciones_entrega ADD COLUMN {col} TEXT")
-            conn.commit()
-    except Exception as exc:
-        try:
-            st.session_state["_dir_db_error"] = f"Esquema direcciones_entrega: {exc}"
-        except Exception:
-            pass
-
-
-def direcciones_sesion(casillero):
-    cas = formatear_casillero(casillero or "")
-    bolsa = st.session_state.setdefault("direcciones_usuario", {})
-    previa = []
-    vistos_prev = set()
-    for clave in (*coincidencias_casillero(casillero), casillero, cas):
-        if not clave or clave in vistos_prev:
-            continue
-        vistos_prev.add(clave)
-        previa.extend(bolsa.get(clave) or [])
-    try:
-        filas = cargar_direcciones_db(casillero)
-    except Exception as exc:
-        registrar_error_direcciones(exc, "Consulta direcciones_entrega")
-        filas = None
-    if filas is None:
-        bolsa[cas] = previa
-        return bolsa[cas]
-    dirs_db = [
-        {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
-        for d in filas
-    ]
-    claves_db = {(e["etiqueta"], e["ciudad"]) for e in dirs_db}
-    extras_sesion = [
-        e
-        for e in previa
-        if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
-    ]
-    combinadas = dirs_db + extras_sesion
-    bolsa[cas] = combinadas
-    for clave in coincidencias_casillero(casillero):
-        if clave != cas:
-            bolsa.pop(clave, None)
-    return combinadas
-
-
-def opciones_entrega_desde_sesion(casillero):
-    opciones = [OPCION_PREDETERMINADA]
-    for e in direcciones_sesion(casillero):
-        opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
-    opciones.append("➕ Crear Nueva Dirección de Envío")
-    return opciones
-
-
-def guardar_nueva_direccion(casillero):
-    etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
-    receptor = (st.session_state.get("dir_receptor_in") or "").strip()
-    tel = (st.session_state.get("dir_tel_in") or "").strip()
-    dep = (st.session_state.get("sb_dep_nueva_dir") or "").strip()
-    ciu = (st.session_state.get("sb_ciu_nueva_dir") or "").strip()
-    dir_exacta = (st.session_state.get("dir_exacta_in") or "").strip()
-    if not (etiqueta and receptor and tel and dep and ciu and dir_exacta):
-        st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
-        return
-    cas_norm = formatear_casillero(casillero)
-    f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-    id_dir_nuevo = None
-    error_db = None
-    asegurar_esquema_direcciones()
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT hub_china, hub_eeuu, hub_honduras, mod_cotizador, mod_catalogo,
+                       mod_cotizaciones, mod_envios, mod_fichas
+                FROM permisos_usuario WHERE codigo_casillero = ?
                 """,
-                (cas_norm, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
+                (cas,),
             )
-            id_dir_nuevo = cur.lastrowid
-            conn.commit()
-            if not id_dir_nuevo:
-                raise sqlite3.Error("INSERT direcciones_entrega no devolvió lastrowid.")
-    except Exception as exc:
-        id_dir_nuevo = None
-        error_db = str(exc)
-        registrar_error_direcciones(exc, "INSERT direcciones_entrega")
-    invalidar_cache_direcciones()
-    opcion_nueva = f"📍 {etiqueta} - {ciu}"
-    if error_db:
-        direcciones_sesion(cas_norm).append(
-            {
-                "id": None,
-                "etiqueta": etiqueta,
-                "receptor": receptor,
-                "telefono": tel,
-                "departamento": dep,
-                "ciudad": ciu,
-                "direccion": dir_exacta,
-            }
+            row = c.fetchone()
+        if not row:
+            asegurar_permisos_casillero(cas, st.session_state.get("rol", "cliente"))
+            return permisos_default(st.session_state.get("rol", "cliente"))
+        claves = (
+            "hub_china",
+            "hub_eeuu",
+            "hub_honduras",
+            "mod_cotizador",
+            "mod_catalogo",
+            "mod_cotizaciones",
+            "mod_envios",
+            "mod_fichas",
         )
-    else:
-        direcciones_sesion(cas_norm)
-    seleccionar_modalidad_entrega(opcion_nueva)
-    st.session_state["destino_entrega_activo"] = opcion_nueva
-    st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
-    st.session_state["_dir_form_reset"] = True
-    st.session_state.pop("_dir_form_error", None)
-    st.session_state.pop("datos_pdf_confirmado", None)
-    st.toast(f"✅ Dirección '{etiqueta}' guardada y seleccionada.")
+        return dict(zip(claves, [int(v or 0) for v in row]))
+    except Exception:
+        return base
 
 
-def destino_para_documentos():
-    mod = st.session_state.get("modalidad_envio_seleccionada")
-    if mod and mod != "➕ Crear Nueva Dirección de Envío":
-        return mod
-    return st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA
+def usuario_puede_hub(hub_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
+    col = HUB_PERMISO_COL.get(hub_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
 
 
-def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
-    if id_dir:
-        claves = coincidencias_casillero(casillero)
-        placeholders = ",".join("?" * len(claves)) if claves else "?"
-        params = (id_dir, *(claves or (formatear_casillero(casillero),)))
-        try:
-            with get_db() as conn:
-                cur = conn.cursor()
-                cur.execute(
-                    f"DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero IN ({placeholders})",
-                    params,
-                )
-                conn.commit()
-        except Exception as exc:
-            registrar_error_direcciones(exc, "DELETE direcciones_entrega")
-        invalidar_cache_direcciones()
-    lista = direcciones_sesion(casillero)
-    lista[:] = [
-        e for e in lista if not (e.get("etiqueta") == etiqueta and e.get("ciudad") == ciudad)
-    ]
-    opcion_borrada = f"📍 {etiqueta} - {ciudad}"
-    if st.session_state.get("destino_entrega_activo") == opcion_borrada:
-        st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
-    if st.session_state.get("modalidad_envio_seleccionada") == opcion_borrada:
-        seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
+def usuario_puede_modulo(mod_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
+    col = MODULO_PERMISO_COL.get(mod_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
 
 
-def cancelar_nueva_direccion():
-    seleccionar_modalidad_entrega(st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA)
-    st.session_state["_dir_form_reset"] = True
-    st.session_state.pop("_dir_form_error", None)
-    st.session_state.pop("datos_pdf_confirmado", None)
-
-
-def selector_modalidad_entrega(opciones_modalidad):
-    pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
-    if pendiente in opciones_modalidad:
-        st.session_state["sb_modalidad_entrega"] = pendiente
-        st.session_state["modalidad_envio_seleccionada"] = pendiente
-    elif pendiente:
-        st.session_state["_mod_entrega_pendiente"] = pendiente
-        if st.session_state.get("sb_modalidad_entrega") == "➕ Crear Nueva Dirección de Envío":
-            st.session_state["sb_modalidad_entrega"] = OPCION_PREDETERMINADA
-    idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-    sel_kwargs = {"key": "sb_modalidad_entrega"}
-    if "sb_modalidad_entrega" not in st.session_state:
-        sel_kwargs["index"] = idx_mod
-    elif st.session_state.get("sb_modalidad_entrega") not in opciones_modalidad:
-        st.session_state["sb_modalidad_entrega"] = opciones_modalidad[idx_mod]
-    mod_elegida = st.selectbox(
-        "🏪 ¿Cómo deseas recibir tu compra?",
-        opciones_modalidad,
-        on_change=al_cambiar_modalidad_entrega,
-        **sel_kwargs,
-    )
-    previa = st.session_state.get("modalidad_envio_seleccionada")
-    st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-    if mod_elegida != "➕ Crear Nueva Dirección de Envío":
-        st.session_state["destino_entrega_activo"] = mod_elegida
-    if (
-        st.session_state.get("_mod_entrega_lista")
-        and previa is not None
-        and mod_elegida != previa
-    ):
-        invalidar_emision_visible_cotizador()
-    st.session_state["_mod_entrega_lista"] = True
-
-
-ALIAS_VISTA = {
-    "Fichas": "Etiqueta",
-    "Mis cotizaciones": "Mis Cotizaciones",
-    "Mis envíos": "Mis Envíos",
-    "Envíos": "Mis Envíos",
-}
-
-
-def ir_a(vista, hub="_omit"):
-    if vista == "Cerrar":
-        logout()
-        return
-    vista = ALIAS_VISTA.get(vista, vista)
-    if vista in VISTAS_MODULO and not usuario_puede_modulo(vista):
-        vista = "Inicio"
-        hub = None
-    if hub != "_omit":
-        st.session_state["hub"] = hub
-    elif vista in MODULOS_POR_ID:
-        st.session_state["hub"] = MODULOS_POR_ID[vista]
-    if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
-        st.session_state["hub"] = None
-        if vista != "Inicio":
-            vista = "Inicio"
-    st.session_state["sub_tab_inicio"] = vista
-    st.session_state["vista_activa"] = vista
-    cas = formatear_casillero(st.session_state.get("casillero", ""))
-    if cas:
-        st.query_params["casillero"] = cas
-    st.query_params["vista"] = vista
-    hub_actual = st.session_state.get("hub")
-    if hub_actual:
-        st.query_params["hub"] = hub_actual
-    elif "hub" in st.query_params:
-        del st.query_params["hub"]
-
-
-def ir_a_inicio():
-    ir_a("Inicio", hub=None)
-
-
-def ir_a_catalogo():
-    ir_a("Catálogo", hub="china")
-
-
-def ir_a_mis_cotizaciones():
-    ir_a("Mis Cotizaciones", hub="china")
-
-
-def ir_a_cotizador():
-    avanzar_guia_si(1, 2)
-    ir_a("Cotizador", hub="china")
-
-
-def ir_a_mas():
-    ir_a("Más")
-
-
-def iniciar_guia_desde_mas():
-    st.session_state["mostrar_guia"] = True
-    iniciar_guia_interactiva(1)
-    ir_a("Inicio", hub="china")
-
-
-def ir_a_envios():
-    ir_a("Mis Envíos", hub="china")
-
-
-def ir_a_fichas():
-    ir_a("Fichas", hub="china")
-
-
-def ir_a_envios_de_cotizacion(id_cot):
-    try:
-        st.session_state["cotizacion_envio_foco"] = int(id_cot)
-    except (TypeError, ValueError):
-        st.session_state.pop("cotizacion_envio_foco", None)
-    st.session_state["china_modulos_desbloqueados"] = True
-    avanzar_guia_si(6, completar=True)
-    ir_a("Mis Envíos", hub="china")
-
-
-def ir_a_historial_guia(id_cot):
-    if guia_paso_actual() in (3, 4):
-        st.session_state["guia_paso"] = 5
-    ir_a_cotizacion_emitida(id_cot)
-
-
-def on_confirmar_cot_historial(id_cot, casillero):
-    if confirmar_cotizacion_casillero(id_cot, casillero):
-        st.session_state["china_modulos_desbloqueados"] = True
-        try:
-            st.session_state["cotizacion_envio_foco"] = int(id_cot)
-        except (TypeError, ValueError):
-            pass
-        if int(st.session_state.get("cotizacion_historial_foco") or 0) == int(id_cot or 0):
-            st.session_state.pop("cotizacion_historial_foco", None)
-        avanzar_guia_si(5, 6)
-
-
-def ir_a_cotizacion_emitida(id_cot):
-    try:
-        cid = int(id_cot)
-    except (TypeError, ValueError):
-        cid = 0
-    if cid:
-        st.session_state["cotizacion_historial_foco"] = cid
-        st.session_state["ultima_cot_id"] = cid
-    ir_a("Mis Cotizaciones", hub="china")
-
-
-PASOS_GUIA_INTERACTIVA = (
-    {
-        "paso": 1,
-        "titulo": "Acceso al Cotizador",
-        "texto": "Pulse <b>Cotizador</b> en la barra inferior para calcular el flete de su carga.",
-    },
-    {
-        "paso": 2,
-        "titulo": "Emisión de la tarifa",
-        "texto": "Complete medidas y peso. Luego pulse <b>Confirmar Tarifa &amp; Emitir Documentos</b> para generar la tarifa.",
-    },
-    {
-        "paso": 3,
-        "titulo": "Documento del proveedor",
-        "texto": "Descarga este archivo y envíalo a tu proveedor en China para rotular el paquete.",
-    },
-    {
-        "paso": 4,
-        "titulo": "Traslado al historial",
-        "texto": "Pasa a tus cotizaciones para asegurar tu tarifa antes de 24 horas.",
-    },
-    {
-        "paso": 5,
-        "titulo": "Consolidación de tarifa",
-        "texto": "Pulse <b>Confirmar Cotización</b> en la tarifa resaltada para dejarla permanente en su casillero.",
-    },
-    {
-        "paso": 6,
-        "titulo": "Gestión en Envíos",
-        "texto": "¡Listo! Ahora puedes dar seguimiento a tu paquete y descargar tu ficha/etiqueta y comprobante de tarifa.",
-    },
-)
-
-
-def guia_esta_activa():
-    return bool(st.session_state.get("guia_activa"))
-
-
-def guia_paso_actual():
-    try:
-        return int(st.session_state.get("guia_paso") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def iniciar_guia_interactiva(paso=1):
-    st.session_state["guia_activa"] = True
-    st.session_state["guia_omitida"] = False
-    st.session_state["guia_completada"] = False
-    st.session_state["guia_paso"] = int(paso)
-    st.session_state["guia_china_auto_vista"] = True
-    st.session_state["abrir_guia_rapida"] = False
-    for clave in list(st.session_state.keys()):
-        if str(clave).startswith("dl_pdf_fab_"):
-            st.session_state[clave] = False
-
-
-def omitir_guia_interactiva():
-    st.session_state["guia_activa"] = False
-    st.session_state["mostrar_guia"] = False
-    st.session_state["guia_omitida"] = True
-    st.session_state["guia_paso"] = 0
-    st.session_state["abrir_guia_rapida"] = False
-
-
-def completar_guia_interactiva():
-    st.session_state["guia_activa"] = False
-    st.session_state["mostrar_guia"] = False
-    st.session_state["guia_completada"] = True
-    st.session_state["guia_paso"] = 0
-
-
-def avanzar_guia_si(paso_esperado, siguiente=None, completar=False):
-    if not guia_esta_activa() or guia_paso_actual() != int(paso_esperado):
-        return
-    if completar:
-        completar_guia_interactiva()
-        return
-    if siguiente is not None:
-        st.session_state["guia_paso"] = int(siguiente)
-
-
-def detectar_avance_descarga_guia():
-    if not guia_esta_activa() or guia_paso_actual() != 3:
-        return
-    for clave in list(st.session_state.keys()):
-        if str(clave).startswith("dl_pdf_fab_") and st.session_state.get(clave):
-            avanzar_guia_si(3, 4)
-            return
-
-
-def html_globo_guia():
-    actual = guia_paso_actual()
-    dato = next((p for p in PASOS_GUIA_INTERACTIVA if p["paso"] == actual), None)
-    if not dato:
-        return ""
-    return (
-        f'<div class="guia-globo ccm-guia-card">'
-        f'<div class="guia-globo-kicker">Paso {dato["paso"]} de 6</div>'
-        f'<div class="guia-globo-titulo">{dato["titulo"]}</div>'
-        f'<p class="guia-globo-txt">{dato["texto"]}</p>'
-        f"</div>"
-    )
-
-
-def aplicar_clase_guia_js():
-    paso = guia_paso_actual() if guia_esta_activa() else 0
-    components.html(
-        f"""
-        <script>
-        (function () {{
-          const doc = window.parent.document;
-          const aplicar = () => {{
-            const app = doc.querySelector(".stApp") || doc.body;
-            if (!app) return;
-            for (let n = 1; n <= 6; n++) app.classList.remove("guia-paso-" + n);
-            app.classList.toggle("guia-activa", {str(paso > 0).lower()});
-            if ({paso}) app.classList.add("guia-paso-{paso}");
-            doc.querySelectorAll(".ccm-guia-pulse").forEach((el) => el.classList.remove("ccm-guia-pulse"));
-            const mapa = {{
-              1: [".st-key-mod_cotizador button", ".st-key-bnav_cotizador button", ".st-key-nav_mod_cotizador button", "[class*='st-key-mod_cotizador'] button", "[class*='st-key-bnav_cotizador'] button"],
-              2: [".st-key-guia_foco_tarifa button", ".st-key-btn_confirmar_tarifa button", "[class*='btn_confirmar_tarifa'] button"],
-              3: [".st-key-guia_foco_pdf_fab button", "[class*='dl_pdf_fab_'] button"],
-              4: [".st-key-guia_foco_ver_cot button", "[class*='btn_ver_mis_cotizaciones_'] button"],
-              5: ["[class*='st-key-foco_confirmar_'] button", "[class*='btn_confirmar_cot_'] button"],
-              6: ["[class*='st-key-foco_ir_envios_'] button", "[class*='btn_ir_envios_'] button"]
-            }};
-            (mapa[{paso}] || []).forEach((sel) => {{
-              doc.querySelectorAll(sel).forEach((el) => el.classList.add("ccm-guia-pulse"));
-            }});
-          }};
-          aplicar();
-          setTimeout(aplicar, 80);
-          setTimeout(aplicar, 280);
-          setTimeout(aplicar, 800);
-        }})();
-        </script>
-        """,
-        height=0,
-        scrolling=False,
-    )
-
-
-def guia_tarjeta_visible():
-    vista_actual = st.session_state.get("sub_tab_inicio") or st.session_state.get("vista_activa")
-    return bool(
-        st.session_state.get("mostrar_guia")
-        and guia_esta_activa()
-        and not st.session_state.get("guia_omitida")
-        and not st.session_state.get("guia_completada")
-        and vista_actual == "Inicio"
-        and st.session_state.get("hub") == "china"
-    )
-
-
-@st.fragment
-def pintar_coach_guia():
-    aplicar_clase_guia_js()
-    with st.container(key="guia_coach"):
-        if not guia_tarjeta_visible():
-            st.markdown('<div class="ccm-guia-vacia" aria-hidden="true"></div>', unsafe_allow_html=True)
-            return
-        st.markdown(html_globo_guia(), unsafe_allow_html=True)
-        if st.button("Omitir Guía", type="secondary", key="btn_omitir_guia", on_click=omitir_guia_interactiva):
-            pass
-
-
-def disparar_guia_china_si_aplica():
-    return
-
-
-def proximo_cierre_contenedor(ahora=None):
-    ahora = ahora or obtener_tiempo_honduras()
-    dias = (4 - ahora.weekday()) % 7
-    if dias == 0 and ahora.hour >= 17:
-        dias = 7
-    cierre = ahora + timedelta(days=dias)
-    dia = DIAS_SEMANA_ES.get(cierre.weekday(), "")
-    mes = MESES_ES.get(cierre.month, "")
-    return f"{dia} {cierre.day} {mes} {cierre.year}"
-
-
-@st.fragment
-def pintar_banner_promocional_china(casillero):
-    cas_txt = formatear_casillero(casillero) or "su casillero"
-    cierre = proximo_cierre_contenedor()
-    msg = urllib.parse.quote(
-        f"Hola Centro de Cerámicas y Más, soy del casillero {cas_txt}. "
-        "Quiero consultar la promoción de consolidación marítima China → Honduras "
-        f"y el cierre de contenedor del {cierre}."
-    )
-    url_wa = f"https://wa.me/50495771099?text={msg}"
-    st.markdown(
-        f'<div class="promo-ad-card">'
-        f'<div class="promo-ad-kicker">Promoción vigente · Casillero {cas_txt}</div>'
-        f'<div class="promo-ad-title">Tarifa especial de consolidación marítima</div>'
-        f'<div class="promo-ad-body">'
-        f"Reserve cupo en el contenedor 40&prime; HC China ➔ Honduras. "
-        f"Próximo cierre: <b>{cierre}</b>. Paquetería por libra o carga comercial por CBM, "
-        f"con asesoría de casillero incluida."
-        f"</div>"
-        f'<div class="promo-ad-pills">'
-        f'<span class="promo-ad-pill">Cierre {cierre}</span>'
-        f'<span class="promo-ad-pill">Cerámica y carga mixta</span>'
-        f'<span class="promo-ad-pill">Asesor CCM</span>'
-        f"</div>"
-        f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
-        f"Consultar Promoción</a>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-
-CLAVES_WIDGET_PERFIL = (
-    "perfil_nom",
-    "perfil_tel",
-    "perfil_dep",
-    "perfil_ciu",
-    "perfil_dir",
-    "perfil_dni",
-)
-
-
-def cargar_perfil_usuario(casillero):
+def guardar_permisos(casillero, datos):
     cas = formatear_casillero(casillero)
-    if not cas:
-        return None
-    claves = coincidencias_casillero(cas)
-    placeholders = ",".join("?" * len(claves))
     with get_db() as conn:
         c = conn.cursor()
         c.execute(
-            f"""
-            SELECT codigo_casillero, nombre_completo, dni, correo_principal,
-                   telefono_principal, departamento, ciudad, direccion_exacta
-            FROM usuarios
-            WHERE codigo_casillero IN ({placeholders}) AND activo = 1
+            """
+            INSERT INTO permisos_usuario (
+                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(codigo_casillero) DO UPDATE SET
+                hub_china = excluded.hub_china,
+                hub_eeuu = excluded.hub_eeuu,
+                hub_honduras = excluded.hub_honduras,
+                mod_cotizador = excluded.mod_cotizador,
+                mod_catalogo = excluded.mod_catalogo,
+                mod_cotizaciones = excluded.mod_cotizaciones,
+                mod_envios = excluded.mod_envios,
+                mod_fichas = excluded.mod_fichas
             """,
-            claves,
+            (
+                cas,
+                int(datos.get("hub_china", 0)),
+                int(datos.get("hub_eeuu", 0)),
+                int(datos.get("hub_honduras", 0)),
+                int(datos.get("mod_cotizador", 0)),
+                int(datos.get("mod_catalogo", 0)),
+                int(datos.get("mod_cotizaciones", 0)),
+                int(datos.get("mod_envios", 0)),
+                int(datos.get("mod_fichas", 0)),
+            ),
         )
-        row = c.fetchone()
-    if not row:
-        return None
+
+
+def _migrar_casillero_tablas(conn, origen, destino):
+    for tabla in ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo", "permisos_usuario"):
+        try:
+            conn.execute(
+                f"UPDATE {tabla} SET codigo_casillero = ? WHERE codigo_casillero = ?",
+                (destino, origen),
+            )
+        except sqlite3.IntegrityError:
+            if tabla == "permisos_usuario":
+                conn.execute("DELETE FROM permisos_usuario WHERE codigo_casillero = ?", (origen,))
+
+
+def asegurar_superadmin():
+    cas_root = generar_codigo_casillero_dni(DNI_SUPERADMIN)
+    hash_root = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, codigo_casillero, correo_principal, rol FROM usuarios WHERE dni = ? OR codigo_casillero = ?",
+            (DNI_SUPERADMIN, cas_root),
+        )
+        ocupantes = c.fetchall()
+        for uid, cas_old, correo, rol in ocupantes:
+            if rol == "superadmin" or correo == CORREO_SUPERADMIN:
+                continue
+            nuevo_dni = "1501198500990"
+            nuevo_cas = generar_codigo_casillero_dni(nuevo_dni)
+            c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo_cas, uid))
+            if c.fetchone():
+                nuevo_cas = f"CCM-1501{str(uid).zfill(4)}"
+            _migrar_casillero_tablas(conn, cas_old, nuevo_cas)
+            c.execute(
+                "UPDATE usuarios SET dni = ?, codigo_casillero = ? WHERE id = ?",
+                (nuevo_dni, nuevo_cas, uid),
+            )
+
+        c.execute(
+            "SELECT id FROM usuarios WHERE rol = 'superadmin' OR correo_principal = ? OR dni = ?",
+            (CORREO_SUPERADMIN, DNI_SUPERADMIN),
+        )
+        existente = c.fetchone()
+        if existente:
+            c.execute(
+                """
+                UPDATE usuarios SET nombre_completo = ?, dni = ?, codigo_casillero = ?,
+                    correo_principal = ?, password_hash = ?, rol = 'superadmin', activo = 1
+                WHERE id = ?
+                """,
+                (NOMBRE_SUPERADMIN, DNI_SUPERADMIN, cas_root, CORREO_SUPERADMIN, hash_root, existente[0]),
+            )
+        else:
+            c.execute(
+                """
+                INSERT INTO usuarios (
+                    codigo_casillero, nombre_completo, dni, correo_principal,
+                    telefono_principal, departamento, ciudad, direccion_exacta,
+                    password_hash, rol, activo, fecha_creacion
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'superadmin', 1, ?)
+                """,
+                (
+                    cas_root,
+                    NOMBRE_SUPERADMIN,
+                    DNI_SUPERADMIN,
+                    CORREO_SUPERADMIN,
+                    "+504 9577-1099",
+                    "Intibucá",
+                    "San Juan",
+                    "Oficina Central CCM",
+                    hash_root,
+                    obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+        c.execute("SELECT codigo_casillero, rol FROM usuarios")
+        cuentas = c.fetchall()
+        for cas, rol in cuentas:
+            vals = permisos_default(rol)
+            c.execute(
+                """
+                INSERT OR IGNORE INTO permisos_usuario (
+                    codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                    mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cas,
+                    vals["hub_china"],
+                    vals["hub_eeuu"],
+                    vals["hub_honduras"],
+                    vals["mod_cotizador"],
+                    vals["mod_catalogo"],
+                    vals["mod_cotizaciones"],
+                    vals["mod_envios"],
+                    vals["mod_fichas"],
+                ),
+            )
+            if rol in ROLES_ADMIN or PERMISOS_ABIERTOS_TEMPORAL:
+                c.execute(
+                    """
+                    UPDATE permisos_usuario SET hub_china=1, hub_eeuu=1, hub_honduras=1,
+                        mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+                    WHERE codigo_casillero = ?
+                    """,
+                    (cas,),
+                )
+        conn.commit()
+
+
+def restaurar_datos_operativos_cliente():
+    if get_config_sistema("datos_operativos_restaurados", "") == "1":
+        return
+    set_config_sistema("datos_operativos_restaurados", "1", "Módulos habilitados sin alterar timestamps de cotización")
+
+
+def migrar_prefijo_casillero():
+    tablas_hijas = ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, codigo_casillero, dni FROM usuarios")
+        filas = c.fetchall()
+        for uid, codigo, dni in filas:
+            nuevo = codigo_casillero_desde_usuario(codigo, dni)
+            if not nuevo or nuevo == codigo:
+                continue
+            c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo, uid))
+            destino_existe = c.fetchone() is not None
+            _migrar_casillero_tablas(conn, codigo, nuevo)
+            if destino_existe:
+                continue
+            c.execute("UPDATE usuarios SET codigo_casillero = ? WHERE id = ?", (nuevo, uid))
+        conn.commit()
+
+
+migrar_prefijo_casillero()
+asegurar_superadmin()
+abrir_permisos_todos_los_usuarios()
+restaurar_datos_operativos_cliente()
+purgar_cotizaciones_no_confirmadas_vencidas()
+
+
+def generar_clave_provisional():
+    caracteres = string.ascii_letters + string.digits + "@#"
+    return "".join(random.choice(caracteres) for _ in range(8))
+
+
+CONTENEDOR_40_ALTO_M = 2.69
+CONTENEDOR_40_ANCHO_M = 2.35
+CONTENEDOR_40_LARGO_M = 12.03
+PESO_MAX_CONTENEDOR_HN_KG = 25_000.0
+LB_POR_KG = 2.20462
+PESO_MAX_PAQUETERIA_LB = 99.0
+
+
+def peso_max_contenedor_hn_lb():
+    return round(PESO_MAX_CONTENEDOR_HN_KG * LB_POR_KG, 2)
+
+
+def max_alineado(min_v, max_v, step):
+    n = math.floor((max_v - min_v) / step + 1e-9)
+    return round(min_v + n * step, 4)
+
+
+def limites_dimensiones(unidad_medida, comercial=False):
+    if "Metros" in unidad_medida:
+        factor = 1.0
+        step = 0.01
+        min_v = 0.01
+        formato = "%.2f"
+        defaults_paq = {"alto": 0.30, "ancho": 0.30, "largo": 0.40}
+        defaults_com = {"alto": 1.20, "ancho": 1.20, "largo": 1.20}
+        codigo = "m"
+    elif "Pulgadas" in unidad_medida:
+        factor = 1.0 / 0.0254
+        step = 0.5
+        min_v = 0.5
+        formato = "%.1f"
+        defaults_paq = {"alto": 12.0, "ancho": 12.0, "largo": 16.0}
+        defaults_com = {"alto": 47.0, "ancho": 47.0, "largo": 47.0}
+        codigo = "in"
+    else:
+        factor = 100.0
+        step = 1.0
+        min_v = 1.0
+        formato = "%.0f"
+        defaults_paq = {"alto": 30.0, "ancho": 30.0, "largo": 40.0}
+        defaults_com = {"alto": 120.0, "ancho": 120.0, "largo": 120.0}
+        codigo = "cm"
+
+    maxes = {
+        "alto": max_alineado(min_v, CONTENEDOR_40_ALTO_M * factor, step),
+        "ancho": max_alineado(min_v, CONTENEDOR_40_ANCHO_M * factor, step),
+        "largo": max_alineado(min_v, CONTENEDOR_40_LARGO_M * factor, step),
+    }
+    base = defaults_com if comercial else defaults_paq
+    defaults = {k: min(v, maxes[k]) for k, v in base.items()}
     return {
-        "casillero": formatear_casillero(row[0]),
-        "nombre": row[1] or "",
-        "dni": row[2] or "",
-        "correo": row[3] or "",
-        "telefono": row[4] or "",
-        "departamento": row[5] or "",
-        "ciudad": row[6] or "",
-        "direccion": row[7] or "",
+        "min": min_v,
+        "step": step,
+        "formato": formato,
+        "codigo": codigo,
+        "defaults": defaults,
+        "max": maxes,
     }
 
 
-def aplicar_perfil_en_sesion(perfil):
-    if not perfil:
-        return
-    st.session_state["casillero"] = perfil["casillero"]
-    st.session_state["nombre"] = perfil["nombre"]
-    st.session_state["dni"] = perfil["dni"]
-    st.session_state["usuario"] = perfil["correo"]
-    st.session_state["telefono"] = perfil["telefono"]
-    st.session_state["departamento"] = perfil["departamento"]
-    st.session_state["ciudad"] = perfil["ciudad"]
-    st.session_state["direccion_exacta"] = perfil["direccion"]
-
-
-def persistir_perfil_usuario(casillero, nombre, telefono, departamento, ciudad, direccion, dni):
-    actual = cargar_perfil_usuario(casillero)
-    if not actual:
-        return False, "No se encontró el casillero."
-    nombre = (nombre or "").strip()
-    telefono = (telefono or "").strip()
-    departamento = (departamento or "").strip()
-    ciudad = (ciudad or "").strip()
-    direccion = (direccion or "").strip()
-    dni = (dni or "").strip()
-    dni_dig = "".join(filter(str.isdigit, dni))
-    if not nombre:
-        return False, "Ingrese el nombre completo."
-    if not telefono:
-        return False, "Ingrese el teléfono / WhatsApp."
-    if not departamento or not ciudad or not direccion:
-        return False, "Ingrese departamento, ciudad y dirección de entrega."
-    if len(dni_dig) < 8:
-        return False, "Ingrese un DNI válido (mínimo 8 dígitos)."
-    claves = coincidencias_casillero(actual["casillero"])
-    placeholders = ",".join("?" * len(claves))
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
-            f"""
-            SELECT 1 FROM usuarios
-            WHERE dni = ? AND codigo_casillero NOT IN ({placeholders})
-            LIMIT 1
-            """,
-            (dni, *claves),
-        )
-        if c.fetchone():
-            return False, "Ese DNI ya está registrado en otro casillero."
-        c.execute(
-            f"""
-            UPDATE usuarios
-            SET nombre_completo = ?, dni = ?, telefono_principal = ?,
-                departamento = ?, ciudad = ?, direccion_exacta = ?
-            WHERE codigo_casillero IN ({placeholders})
-            """,
-            (nombre, dni, telefono, departamento, ciudad, direccion, *claves),
-        )
-        conn.commit()
-    aplicar_perfil_en_sesion(
-        {
-            **actual,
-            "nombre": nombre,
-            "dni": dni,
-            "telefono": telefono,
-            "departamento": departamento,
-            "ciudad": ciudad,
-            "direccion": direccion,
-        }
-    )
-    return True, "¡Datos actualizados exitosamente!"
-
-
-@st.dialog("Editar Perfil", width="large")
-def dialogo_editar_perfil():
-    perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
-    if not perfil:
-        st.error("No se encontró el perfil de este casillero.")
-        return
-    with st.container(key="dialogo_perfil"):
-        st.markdown(
-            '<p class="perfil-dialog-nota">El correo electrónico y el código de casillero no se pueden modificar.</p>',
-            unsafe_allow_html=True,
-        )
-        c_nom, c_tel = st.columns(2, gap="medium")
-        with c_nom:
-            nom = st.text_input("Nombre completo", value=perfil["nombre"], key="perfil_nom")
-        with c_tel:
-            tel = st.text_input("Teléfono / WhatsApp", value=perfil["telefono"], key="perfil_tel")
-        c_dep, c_ciu = st.columns(2, gap="medium")
-        with c_dep:
-            dep = st.text_input("Departamento", value=perfil["departamento"], key="perfil_dep")
-        with c_ciu:
-            ciu = st.text_input("Ciudad", value=perfil["ciudad"], key="perfil_ciu")
-        dir_e = st.text_area("Dirección de entrega", value=perfil["direccion"], key="perfil_dir")
-        dni = st.text_input("Número de Identidad / DNI", value=perfil["dni"], key="perfil_dni")
-        c_mail, c_cas = st.columns(2, gap="medium")
-        with c_mail:
-            st.text_input("Correo electrónico", value=perfil["correo"], disabled=True, key="perfil_mail")
-        with c_cas:
-            st.text_input("Código de casillero", value=perfil["casillero"], disabled=True, key="perfil_cas")
-        c_cancel, c_ok = st.columns(2, gap="small")
-        with c_cancel:
-            if st.button("Cancelar", type="secondary", key="perfil_cancelar", use_container_width=True):
-                for k in CLAVES_WIDGET_PERFIL:
-                    st.session_state.pop(k, None)
-                st.rerun()
-        with c_ok:
-            if st.button("Guardar Cambios", type="primary", key="perfil_guardar", use_container_width=True):
-                ok, msg = persistir_perfil_usuario(
-                    perfil["casillero"], nom, tel, dep, ciu, dir_e, dni
-                )
-                if ok:
-                    st.session_state["flash_perfil"] = msg
-                    for k in CLAVES_WIDGET_PERFIL:
-                        st.session_state.pop(k, None)
-                    st.rerun()
-                st.error(msg)
-
-
-def abrir_dialogo_editar_perfil():
-    for k in CLAVES_WIDGET_PERFIL:
-        st.session_state.pop(k, None)
-    dialogo_editar_perfil()
-
-
-def pintar_vista_mas():
-    hub_activo = st.session_state.get("hub")
-    mostrar_btn_guia = hub_activo == "china"
-    perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
-    if perfil:
-        aplicar_perfil_en_sesion(perfil)
-        nombre = perfil["nombre"] or "Cliente"
-        cas = perfil["casillero"] or "—"
-        correo = perfil["correo"] or "—"
+def limites_peso(unidad_peso, paqueteria):
+    if paqueteria:
+        max_lb = float(get_tarifa("umbral_paqueteria_lb") or PESO_MAX_PAQUETERIA_LB)
+        default_lb = 4.0
+        min_lb = 0.5
+        step_lb = 0.5
     else:
-        nombre = st.session_state.get("nombre") or "Cliente"
-        cas = formatear_casillero(st.session_state.get("casillero", "")) or "—"
-        correo = st.session_state.get("usuario") or "—"
+        max_lb = peso_max_contenedor_hn_lb()
+        default_lb = 500.0
+        min_lb = 1.0
+        step_lb = 10.0
 
-    with st.container(key="vista_mas"):
-        aviso = st.session_state.pop("flash_perfil", None)
-        if aviso:
-            st.success(aviso)
-        st.markdown('<div class="mas-seccion mas-seccion-cuenta">Cuenta</div>', unsafe_allow_html=True)
-        with st.container(key="mas_cuenta"):
+    if "Kilogramos" in unidad_peso:
+        min_v = 0.1 if paqueteria else 1.0
+        default = round(default_lb / LB_POR_KG, 1)
+        max_v = round(max_lb / LB_POR_KG, 1)
+        step = 0.1 if paqueteria else 1.0
+        codigo = "kg"
+        formato = "%.1f"
+    else:
+        min_v = min_lb
+        default = default_lb
+        max_v = max_lb
+        step = step_lb
+        codigo = "lb"
+        formato = "%.1f"
+
+    max_v = max_alineado(min_v, max_v, step)
+    default = min(default, max_v)
+    return {
+        "min": min_v,
+        "default": default,
+        "max": max_v,
+        "step": step,
+        "codigo": codigo,
+        "formato": formato,
+    }
+
+
+def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato, on_change=None):
+    kwargs = {}
+    if on_change is not None:
+        kwargs["on_change"] = on_change
+    if clave in st.session_state:
+        try:
+            actual = float(st.session_state[clave])
+            limitado = min(max(actual, float(lim_min)), float(lim_max))
+            if limitado != actual:
+                st.session_state[clave] = limitado
+        except (TypeError, ValueError):
+            st.session_state[clave] = float(valor)
+        return st.number_input(
+            label,
+            min_value=float(lim_min),
+            max_value=float(lim_max),
+            step=float(paso),
+            format=formato,
+            key=clave,
+            **kwargs,
+        )
+    return st.number_input(
+        label,
+        min_value=float(lim_min),
+        max_value=float(lim_max),
+        value=float(valor),
+        step=float(paso),
+        format=formato,
+        key=clave,
+        **kwargs,
+    )
+
+
+PREFIJO_CASILLERO = "CCM-"
+
+
+def nucleo_casillero_desde_id(valor):
+    texto = str(valor or "").strip().upper()
+    if texto.startswith(PREFIJO_CASILLERO):
+        texto = texto[len(PREFIJO_CASILLERO) :]
+    digitos = "".join(filter(str.isdigit, texto))
+    if len(digitos) >= 8:
+        return digitos[:8]
+    if digitos:
+        return digitos.zfill(8)
+    return ""
+
+
+def generar_codigo_casillero_dni(dni_raw):
+    nucleo = nucleo_casillero_desde_id(dni_raw)
+    if not nucleo:
+        return ""
+    return f"{PREFIJO_CASILLERO}{nucleo}"
+
+
+def formatear_casillero(codigo):
+    return generar_codigo_casillero_dni(codigo) or str(codigo or "").strip()
+
+
+def codigo_casillero_desde_usuario(codigo, dni):
+    dni_digitos = "".join(filter(str.isdigit, str(dni or "")))
+    if len(dni_digitos) >= 8:
+        return generar_codigo_casillero_dni(dni)
+    return formatear_casillero(codigo)
+
+
+def coincidencias_casillero(valor):
+    vistos = []
+    for candidato in (str(valor or "").strip(), formatear_casillero(valor), nucleo_casillero_desde_id(valor)):
+        if candidato and candidato not in vistos:
+            vistos.append(candidato)
+    nucleo = nucleo_casillero_desde_id(valor)
+    if nucleo:
+        con_prefijo = f"{PREFIJO_CASILLERO}{nucleo}"
+        if con_prefijo not in vistos:
+            vistos.append(con_prefijo)
+    return vistos
+
+
+# ---------------------------------------------------------
+# 7. ROUTING Y VISTAS DE LA APLICACIÓN
+# ---------------------------------------------------------
+if not st.session_state.get("autenticado", False):
+    if st.session_state.get("vista_actual") == "login":
+        with st.container(key="login_header"):
             st.markdown(
-                f'<div class="mas-cuenta">'
-                f'<div class="mas-cuenta-nombre">{html.escape(nombre)}</div>'
-                f'<div class="mas-cuenta-cas">Casillero {html.escape(cas)}</div>'
-                f'<div class="mas-cuenta-mail">{html.escape(correo)}</div>'
-                f"</div>",
+                html_encabezado_institucional(
+                    '<div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>',
+                    extra_class="app-header-login",
+                    extra_style="margin-bottom: 2rem; border-radius: 16px;",
+                ),
                 unsafe_allow_html=True,
             )
-            if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
-                abrir_dialogo_editar_perfil()
-        st.markdown('<div class="mas-seccion mas-seccion-modulos">Módulos y operaciones</div>', unsafe_allow_html=True)
-        with st.container(key="mas_modulos"):
-            st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
-            st.button("📋  Fichas", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
-            st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True, on_click=ir_a_mis_cotizaciones)
-            st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
-            st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True, on_click=ir_a_cotizador)
-        with st.container(key="mas_sesion"):
-            st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
-            if mostrar_btn_guia:
-                st.button(
-                    "Guía",
-                    type="secondary",
-                    key="btn_guia_rapida",
-                    use_container_width=True,
-                    on_click=iniciar_guia_desde_mas,
-                )
-            if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
-                ir_a("Cerrar")
-        espaciador_barra_inferior("safe_mas")
 
+        st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
+        u_ident = st.text_input(
+            "Casillero, DNI o correo",
+            placeholder="Ej: CCM-13011998 o correo@gmail.com",
+            key="log_cas",
+        )
+        u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
 
-def espaciador_barra_inferior(clave):
-    with st.container(key=clave):
-        st.markdown("&nbsp;")
-
-
-def pintar_barra_inferior(total_cotizaciones=0):
-    vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
-    inicio_activo = vista == "Inicio"
-    catalogo_activo = vista == "Catálogo"
-    cot_activo = vista in ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
-    cotizador_activo = vista == "Cotizador"
-    mas_activo = vista in ("Más", "Configuración", "Consultas")
-    n_badge = int(total_cotizaciones or 0)
-
-    st.markdown(
-        f"<style>:root {{ --ccm-cot-badge: \"{n_badge}\"; }}</style>",
-        unsafe_allow_html=True,
-    )
-
-    items = (
-        ("inicio", "🏠", "Inicio", inicio_activo),
-        ("catalogo", "🔍", "Catálogo", catalogo_activo),
-        ("cotizaciones", "📄", "Cotiz.", cot_activo),
-        ("cotizador", "🧮", "Cotizador", cotizador_activo),
-        ("mas", "☰", "Más", mas_activo),
-    )
-    with st.container(key="bottom_nav"):
-        cols = st.columns(5, gap="small")
-        for col, (dest, icono, etiqueta, activo) in zip(cols, items):
-            with col:
-                if dest == "inicio":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_inicio,
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+        if st.button("➔ Ingresar a mi Casillero", type="primary", key="btn_login_submit"):
+            u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
+            u_pass = st.session_state.get("log_pwd") or u_pass or ""
+            if u_ident and u_pass:
+                p_hash = hash_pwd(u_pass)
+                claves = coincidencias_casillero(u_ident)
+                placeholders = ",".join("?" * len(claves))
+                with get_db() as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        f"""
+                        SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad
+                        FROM usuarios
+                        WHERE (correo_principal = ? OR dni = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
+                        """,
+                        (u_ident, u_ident, *claves, p_hash),
                     )
-                elif dest == "catalogo":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_catalogo,
-                    )
-                elif dest == "cotizaciones":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_mis_cotizaciones,
-                    )
-                elif dest == "cotizador":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_cotizador,
-                    )
+                    user = c.fetchone()
+
+                if user:
+                    if user[5] == 0:
+                        st.error("⛔ Cuenta inactiva. Contacte al soporte.")
+                    else:
+                        st.session_state["autenticado"] = True
+                        st.session_state["rol"] = user[4]
+                        perfil_login = cargar_perfil_usuario(user[1])
+                        if perfil_login:
+                            aplicar_perfil_en_sesion(perfil_login)
+                        else:
+                            st.session_state["casillero"] = formatear_casillero(user[1])
+                            st.session_state["nombre"] = user[2]
+                            st.session_state["usuario"] = user[3]
+                            st.session_state["telefono"] = user[6]
+                            st.session_state["ciudad"] = user[7]
+                        st.session_state.pop("datos_pdf_confirmado", None)
+                        st.session_state["china_modulos_desbloqueados"] = False
+                        st.session_state["sub_tab_inicio"] = "Inicio"
+                        st.session_state["hub"] = None
+                        hidratar_cotizaciones_sesion(formatear_casillero(user[1]))
+
+                        st.query_params["casillero"] = formatear_casillero(user[1])
+                        st.query_params["vista"] = "Inicio"
+                        st.rerun()
                 else:
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_mas,
-                    )
-    anclar_barra_inferior()
+                    st.error("❌ Credenciales inválidas.")
+            else:
+                st.warning("Complete todos los campos.")
 
+        c_b1, c_b2 = st.columns(2)
+        with c_b1:
+            if st.button("Recuperar Clave", type="secondary"):
+                st.session_state["vista_actual"] = "recuperar"
+                st.rerun()
+        with c_b2:
+            if st.button("Crear Casillero", type="secondary"):
+                st.session_state["vista_actual"] = "registro"
+                st.rerun()
 
-def anclar_barra_inferior():
-    with st.container(key="bottom_nav_pin"):
-        components.html(
-            """
-            <script>
-            (function () {
-              const doc = window.parent.document;
-              const win = window.parent;
-              const nodoNav = () =>
-                doc.querySelector('[class~="st-key-bottom_nav"]') ||
-                doc.querySelector(".st-key-bottom_nav");
-              const anclar = () => {
-                const nav = nodoNav();
-                if (nav) {
-                  nav.style.setProperty("position", "fixed", "important");
-                  nav.style.setProperty("bottom", "20px", "important");
-                  nav.style.setProperty("left", "50%", "important");
-                  nav.style.setProperty("right", "auto", "important");
-                  nav.style.setProperty("margin", "0", "important");
-                  nav.style.setProperty("transform", "translateX(-50%)", "important");
-                  nav.style.setProperty("z-index", "9999", "important");
-                  nav.style.setProperty("width", "min(96vw, 520px)", "important");
-                  nav.style.setProperty("max-width", "520px", "important");
-                  const cajaNav = nav.closest('[data-testid="stElementContainer"]') || nav.parentElement;
-                  if (cajaNav && cajaNav !== doc.body) {
-                    cajaNav.style.setProperty("height", "0", "important");
-                    cajaNav.style.setProperty("min-height", "0", "important");
-                    cajaNav.style.setProperty("margin", "0", "important");
-                    cajaNav.style.setProperty("padding", "0", "important");
-                    cajaNav.style.setProperty("overflow", "visible", "important");
-                    cajaNav.style.setProperty("border", "0", "important");
-                  }
-                }
-                const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
-                const inicio = doc.querySelector('[class~="st-key-vista_inicio"]') || doc.querySelector(".st-key-vista_inicio");
-                const catalogo = doc.querySelector('[class~="st-key-vista_catalogo"]') || doc.querySelector(".st-key-vista_catalogo");
-                const cotizador = doc.querySelector('[class~="st-key-vista_cotizador"]') || doc.querySelector(".st-key-vista_cotizador");
-                const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
-                  doc.querySelector(".st-key-btn_logout_cliente") ||
-                  Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
-                const accion = doc.querySelector('[class~="st-key-btn_confirmar_tarifa"]') ||
-                  doc.querySelector(".st-key-btn_confirmar_tarifa") ||
-                  doc.querySelector('[class~="st-key-btn_buscar_china"]') ||
-                  doc.querySelector(".st-key-btn_buscar_china") ||
-                  doc.querySelector('[class~="st-key-btn_escanear_catalogo"]') ||
-                  doc.querySelector(".st-key-btn_escanear_catalogo");
-                const vistaModulo = catalogo || cotizador;
-                const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                let hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
-                if (mas || vistaModulo || inicio) hueco = "0px";
-                else if (historial) hueco = "calc(var(--ccm-nav-clearance, 109px) + 16px)";
-                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
-                  el.style.setProperty("padding-bottom", hueco, "important");
-                });
-                if (inicio) {
-                  inicio.style.setProperty("padding-bottom", "180px", "important");
-                  inicio.style.setProperty("box-sizing", "border-box", "important");
-                }
-                const GAP_OBJETIVO = 12;
-                const esVistaMas = (nodo) =>
-                  !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
-                if (vistaModulo || mas) {
-                  doc.querySelectorAll("[data-testid='stBottomBlockContainer']").forEach((el) => {
-                    el.style.setProperty("min-height", "0px", "important");
-                    el.style.setProperty("padding-top", "0px", "important");
-                    el.style.setProperty("padding-bottom", "0px", "important");
-                    el.style.setProperty("margin-top", "0px", "important");
-                    el.style.setProperty("margin-bottom", "0px", "important");
-                  });
-                }
-                const dockVista = (caja, ancla) => {
-                  if (!caja || !nav) return;
-                  const navCaja = nav.getBoundingClientRect();
-                  const app = doc.querySelector(".stApp") || doc.documentElement;
-                  const isMas = esVistaMas(caja);
-                  if (isMas) {
-                    caja.style.setProperty("min-height", "0px", "important");
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    if (!ancla) return;
-                    const scrollTop = app.scrollTop || 0;
-                    const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
-                    const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
-                    const anclaNow = ancla.getBoundingClientRect().bottom;
-                    const anclaAtMax = anclaNow + scrollTop - maxScroll;
-                    const objetivo = navCaja.top - GAP_OBJETIVO;
-                    let huecoNav = Math.round(currentPad + (anclaAtMax - objetivo));
-                    huecoNav = Math.max(8, Math.min(240, huecoNav));
-                    caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
-                    return;
-                  }
-                  const formDir = caja.querySelector('[class~="st-key-formulario_direcciones"]') || caja.querySelector(".st-key-formulario_direcciones");
-                  if (formDir) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    caja.style.setProperty("height", "auto", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "0px", "important");
-                    formDir.style.setProperty("display", "flex", "important");
-                    formDir.style.setProperty("flex-direction", "column", "important");
-                    formDir.style.setProperty("height", "auto", "important");
-                    formDir.style.setProperty("min-height", "0", "important");
-                    formDir.style.setProperty("padding-bottom", "220px", "important");
-                    return;
-                  }
-                  const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
-                  const host = form || caja;
-                  const posteriores = [];
-                  let nodoRef = form || (ancla && ancla.parentElement);
-                  while (nodoRef && nodoRef !== caja) {
-                    let sig = nodoRef.nextElementSibling;
-                    while (sig) {
-                      posteriores.push(sig);
-                      sig = sig.nextElementSibling;
-                    }
-                    nodoRef = nodoRef.parentElement;
-                  }
-                  const hayMas = posteriores.some((ch) =>
-                    ch.querySelector("button, a, img, [data-testid='stDownloadButton']")
-                  );
-                  const esCatalogo = !!(caja && ((caja.className || "").indexOf("st-key-vista_catalogo") >= 0));
-                  if (esCatalogo) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    if (form) {
-                      form.style.setProperty("display", "flex", "important");
-                      form.style.setProperty("flex-direction", "column", "important");
-                      form.style.setProperty("width", "100%", "important");
-                      form.style.setProperty("flex", "0 0 auto", "important");
-                      form.style.setProperty("min-height", "0", "important");
-                    }
-                    const itemCat = ancla ? Array.from((form || caja).children).find((ch) => ch.contains(ancla)) : null;
-                    if (itemCat) itemCat.style.setProperty("margin-top", "0", "important");
-                    if (hayMas) {
-                      caja.style.setProperty("justify-content", "flex-start", "important");
-                      caja.style.setProperty("padding-bottom", "180px", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                    } else {
-                      caja.style.setProperty("justify-content", "center", "important");
-                      caja.style.setProperty("padding-top", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                      const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                      const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                      caja.style.setProperty("min-height", minH + "px", "important");
-                    }
-                    return;
-                  }
-                  if (form) {
-                    form.style.setProperty("display", "flex", "important");
-                    form.style.setProperty("flex-direction", "column", "important");
-                    form.style.setProperty("width", "100%", "important");
-                    form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                    form.style.setProperty("min-height", hayMas ? "0" : "100%", "important");
-                  }
-                  if (!hayMas && form) {
-                    const cadena = [];
-                    let p = form.parentElement;
-                    while (p && p !== caja) {
-                      cadena.push(p);
-                      p = p.parentElement;
-                    }
-                    cadena.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                  }
-                  const hijosHost = Array.from(host.children);
-                  const item = ancla ? hijosHost.find((ch) => ch.contains(ancla)) : null;
-                  if (form) form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                  if (item) {
-                    if (hayMas) item.style.setProperty("margin-top", "0", "important");
-                    else item.style.setProperty("margin-top", "auto", "important");
-                  }
-                  caja.style.setProperty("box-sizing", "border-box", "important");
-                  const emitAcciones = caja.querySelector('[class~="st-key-acciones_emit_cotizador"]') ||
-                    caja.querySelector(".st-key-acciones_emit_cotizador");
-                  if (emitAcciones) {
-                    caja.style.setProperty("display", "flex", "important");
-                    caja.style.setProperty("flex-direction", "column", "important");
-                    caja.style.setProperty("justify-content", "flex-start", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                    const cajaTopEmit = Math.max(0, caja.getBoundingClientRect().top);
-                    caja.style.setProperty("min-height", Math.max(0, Math.round(win.innerHeight - cajaTopEmit)) + "px", "important");
-                    emitAcciones.style.setProperty("margin-top", "auto", "important");
-                    emitAcciones.style.setProperty("margin-bottom", "0px", "important");
-                    const cadenaEmit = [];
-                    let pEmit = emitAcciones.parentElement;
-                    while (pEmit && pEmit !== caja) {
-                      cadenaEmit.push(pEmit);
-                      pEmit = pEmit.parentElement;
-                    }
-                    cadenaEmit.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                    if (item) item.style.setProperty("margin-top", "0", "important");
-                    return;
-                  }
-                  if (hayMas) {
-                    caja.style.setProperty("padding-bottom", "200px", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    return;
-                  }
-                  const scrollTop = app.scrollTop || 0;
-                  const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
-                  const vistaLarga = maxScroll > 80;
-                  if (scrollTop < 4 || !vistaLarga) {
-                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                    const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                    caja.style.setProperty("min-height", minH + "px", "important");
-                  } else {
-                    caja.style.setProperty("min-height", "0px", "important");
-                  }
-                  if (!ancla) return;
-                  const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
-                  const anclaNow = ancla.getBoundingClientRect().bottom;
-                  const anclaAtMax = anclaNow + scrollTop - maxScroll;
-                  const objetivo = navCaja.top - GAP_OBJETIVO;
-                  const enPantalla = anclaNow <= win.innerHeight + 8 && anclaNow >= 40;
-                  const referencia = (!vistaLarga || (scrollTop < 4 && enPantalla)) ? anclaNow : anclaAtMax;
-                  let nextPad = Math.round(currentPad + (referencia - objetivo));
-                  nextPad = Math.max(0, Math.min(160, nextPad));
-                  caja.style.setProperty("padding-bottom", nextPad + "px", "important");
-                };
-                if (mas) {
-                  doc.querySelectorAll("[data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'], .stMainBlockContainer > [data-testid='stVerticalBlock']").forEach((col) => {
-                    col.style.setProperty("gap", "0px", "important");
-                    col.style.setProperty("row-gap", "0px", "important");
-                  });
-                }
-                if (mas && nav) dockVista(mas, logout);
-                if (!mas && vistaModulo && nav) dockVista(vistaModulo, accion);
-                const chromeCss =
-                  '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
-                  '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
-                  '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
-                  '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
-                  '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
-                  '[data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stMainMenu"],' +
-                  '[data-testid="stHeader"] [data-testid="stBaseButton-header"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],' +
-                  '[data-testid="stHeader"] button[title="Deploy"], #recordMenuPopoverButton,' +
-                  'iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i],' +
-                  'a[href*="share.streamlit.io"], a[href*="streamlit.io/cloud"]' +
-                  ' { display:none !important; visibility:hidden !important;' +
-                  ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
-                const inyectarCss = (rootDoc) => {
-                  if (!rootDoc || !rootDoc.documentElement) return;
-                  let tag = rootDoc.getElementById("ccm-hide-chrome");
-                  if (!tag) {
-                    tag = rootDoc.createElement("style");
-                    tag.id = "ccm-hide-chrome";
-                    rootDoc.documentElement.appendChild(tag);
-                  }
-                  tag.textContent = chromeCss;
-                };
-                const docs = [doc];
-                try {
-                  if (win.parent && win.parent.document && win.parent.document !== doc) {
-                    docs.push(win.parent.document);
-                  }
-                } catch (e) {}
-                try {
-                  if (win.top && win.top.document && win.top.document !== doc) {
-                    docs.push(win.top.document);
-                  }
-                } catch (e) {}
-                docs.forEach((rootDoc) => {
-                  inyectarCss(rootDoc);
-                  rootDoc.querySelectorAll(
-                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], #recordMenuPopoverButton, iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i]'
-                  ).forEach((el) => {
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    el.style.setProperty("display", "none", "important");
-                    el.style.setProperty("visibility", "hidden", "important");
-                    el.style.setProperty("pointer-events", "none", "important");
-                    el.style.setProperty("opacity", "0", "important");
-                  });
-                  const vista = rootDoc.defaultView || win;
-                  rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
-                    if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    const etiqueta = ((el.innerText || el.getAttribute("aria-label") || el.title || "") + "").replace(/\\s+/g, " ").trim();
-                    if (/^(Manage app|Deploy this app|Deploy|Stop|Record a screencast|Record)$/i.test(etiqueta)) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                      return;
-                    }
-                    const stilo = vista.getComputedStyle(el);
-                    if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
-                    const r = el.getBoundingClientRect();
-                    if (r.width === 0 || r.height === 0 || r.width > 280 || r.height > 140) return;
-                    if (r.right > vista.innerWidth - 180 && r.bottom > vista.innerHeight - 180) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                    }
-                  });
-                });
-              };
-              anclar();
-              setTimeout(anclar, 80);
-              setTimeout(anclar, 280);
-              setTimeout(anclar, 800);
-              if (!win.__ccmBottomNavBound) {
-                win.__ccmBottomNavBound = true;
-                win.addEventListener("resize", anclar, { passive: true });
-                win.addEventListener("orientationchange", anclar, { passive: true });
-                const appScroll = doc.querySelector(".stApp");
-                if (appScroll) {
-                  appScroll.addEventListener("scroll", () => {
-                    if (win.__ccmDockScrollTO) win.cancelAnimationFrame(win.__ccmDockScrollTO);
-                    win.__ccmDockScrollTO = win.requestAnimationFrame(anclar);
-                  }, { passive: true });
-                }
-                try {
-                  let espera;
-                  const anclarSuave = () => {
-                    clearTimeout(espera);
-                    espera = setTimeout(anclar, 60);
-                  };
-                  new MutationObserver(anclarSuave).observe(doc.body, { childList: true, subtree: true });
-                } catch (e) {}
-              }
-            })();
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
+    elif st.session_state.get("vista_actual") == "registro":
+        st.markdown("### 📋 Apertura de Casillero en China")
+        if st.session_state.get("reg_exito"):
+            creado = st.session_state["reg_exito"]
+            st.markdown(
+                f"""
+                <div class="reg-confirm-card">
+                    <h4>🎉 Casillero y correo confirmados</h4>
+                    <div>Guarde estos datos para iniciar sesión:</div>
+                    <div>👤 {creado.get("nombre", "")}</div>
+                    <div>📧 Correo: <b>{creado.get("correo", "")}</b></div>
+                    <div>🔑 Casillero: <b>{creado.get("casillero", "")}</b></div>
+                    <div>🔒 Contraseña: <b>{creado.get("password", "")}</b></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Ir al inicio de sesión", type="primary"):
+                st.session_state["reg_exito"] = None
+                st.session_state["reg_paso"] = 1
+                st.session_state["reg_datos"] = {}
+                st.session_state["vista_actual"] = "login"
+                st.rerun()
+            if st.button("Volver al Login", type="secondary"):
+                st.session_state["reg_exito"] = None
+                st.session_state["vista_actual"] = "login"
+                st.rerun()
+            st.stop()
 
+        paso = st.session_state.get("reg_paso", 1)
+        st.progress(paso / 4.0, text=f"Paso {paso} de 4")
 
-def sincronizar_altura_encabezado_fijo():
-    with st.container(key="header_offset_sync"):
-        components.html(
-            """
-            <script>
-            (function () {
-              const doc = window.parent.document;
-              const win = window.parent;
-              const nodosHeader = () => {
-                const exactos = Array.from(doc.querySelectorAll('[class~="st-key-sticky_top_header"]'));
-                return exactos.length ? exactos : Array.from(doc.querySelectorAll(".st-key-sticky_top_header"));
-              };
-              const medir = () => {
-                let bottom = 0;
-                nodosHeader().forEach((nodo) => {
-                  const r = nodo.getBoundingClientRect();
-                  if (r.bottom > bottom) bottom = r.bottom;
-                });
-                if (bottom < 40) return;
-                const estilos = win.getComputedStyle(doc.documentElement);
-                const gapRaw = estilos.getPropertyValue("--header-gap").trim();
-                const gap = Number.parseFloat(gapRaw) || 16;
-                const offset = Math.ceil(Math.max(bottom + gap, 208)) + "px";
-                const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
-                destinos.forEach((nodo) => {
-                  if (nodo && nodo.style) {
-                    nodo.style.setProperty("--header-offset", offset);
-                    nodo.style.setProperty("--header-box", Math.round(bottom) + "px");
-                  }
-                });
-              };
-              win.__ccmMedirHeader = medir;
-              medir();
-              if (win.__ccmHeaderOffsetRO) {
-                try { win.__ccmHeaderOffsetRO.disconnect(); } catch (e) {}
-              }
-              if (typeof win.ResizeObserver === "function") {
-                const ro = new win.ResizeObserver(medir);
-                nodosHeader().forEach((nodo) => ro.observe(nodo));
-                win.__ccmHeaderOffsetRO = ro;
-              }
-              if (!win.__ccmHeaderOffsetBound) {
-                win.__ccmHeaderOffsetBound = true;
-                win.addEventListener("resize", medir, { passive: true });
-                win.addEventListener("orientationchange", medir, { passive: true });
-              }
-              setTimeout(medir, 80);
-              setTimeout(medir, 280);
-              setTimeout(medir, 800);
-            })();
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
-    st.markdown('<div class="ccm-header-spacer" aria-hidden="true"></div>', unsafe_allow_html=True)
+        if paso == 1:
+            nom = st.text_input("Nombre Completo *", value=st.session_state["reg_datos"].get("nom", ""))
+            dni = st.text_input(
+                "Número de Identidad (DNI - 13 dígitos) *",
+                value=st.session_state["reg_datos"].get("dni", ""),
+                placeholder="Ej: 1301199800990",
+            )
+            if dni:
+                st.caption(f"ℹ️ Su casillero asignado será: **{generar_codigo_casillero_dni(dni)}**")
+            if st.button("Siguiente ➔", type="primary"):
+                if nom and dni and len("".join(filter(str.isdigit, dni))) >= 8:
+                    st.session_state["reg_datos"].update({"nom": nom, "dni": dni})
+                    st.session_state["reg_paso"] = 2
+                    st.rerun()
+                else:
+                    st.error("Ingrese un DNI válido.")
 
+        elif paso == 2:
+            cor = st.text_input("Correo Electrónico *", value=st.session_state["reg_datos"].get("cor", ""))
+            tel = st.text_input("Teléfono / WhatsApp *", value=st.session_state["reg_datos"].get("tel", ""))
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("⬅️ Atrás", type="secondary"):
+                    st.session_state["reg_paso"] = 1
+                    st.rerun()
+            with c2:
+                if st.button("Siguiente ➔", type="primary"):
+                    if cor and tel:
+                        st.session_state["reg_datos"].update({"cor": cor, "tel": tel})
+                        st.session_state["reg_paso"] = 3
+                        st.rerun()
+                    else:
+                        st.error("Complete correo y teléfono.")
 
-def desplazar_a_ancla(element_id, alinear="start"):
-    eid = str(element_id or "").replace("\\", "").replace('"', "")
-    if not eid:
-        return
-    bloque = "end" if alinear == "end" else "start"
-    components.html(
-        f"""
-        <script>
-        (function () {{
-          const ir = () => {{
-            const doc = window.parent.document;
-            const win = window.parent;
-            const el = doc.getElementById("{eid}");
-            if (!el) return;
-            if (typeof win.__ccmMedirHeader === "function") win.__ccmMedirHeader();
-            let bottom = 0;
-            doc.querySelectorAll('[class~="st-key-sticky_top_header"], .st-key-sticky_top_header').forEach((nodo) => {{
-              const r = nodo.getBoundingClientRect();
-              if (r.bottom > bottom) bottom = r.bottom;
-            }});
-            const estilos = win.getComputedStyle(doc.documentElement);
-            const gapRaw = estilos.getPropertyValue("--header-gap").trim();
-            const gap = Number.parseFloat(gapRaw) || 16;
-            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 196);
-            const nav = doc.querySelector('[class~="st-key-bottom_nav"]') || doc.querySelector(".st-key-bottom_nav");
-            let huecoNav = 125;
-            if (nav) {{
-              const nr = nav.getBoundingClientRect();
-              huecoNav = Math.max(109, Math.round(win.innerHeight - nr.top + 16));
-            }}
-            el.style.scrollMarginTop = margen + "px";
-            el.style.scrollMarginBottom = huecoNav + "px";
-            el.scrollIntoView({{ behavior: "smooth", block: "{bloque}" }});
-          }};
-          setTimeout(ir, 180);
-          setTimeout(ir, 480);
-          setTimeout(ir, 900);
-        }})();
-        </script>
-        """,
-        height=0,
-        scrolling=False,
-    )
+        elif paso == 3:
+            dep_reg = st.selectbox(
+                "Departamento *",
+                list(MUNICIPIOS_HONDURAS.keys()),
+                index=9 if "Intibucá" in MUNICIPIOS_HONDURAS else 0,
+                key="sb_dep_reg",
+            )
+            ciu_reg = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_reg], key="sb_ciu_reg")
+            dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("⬅️ Atrás", type="secondary"):
+                    st.session_state["reg_paso"] = 2
+                    st.rerun()
+            with c2:
+                if st.button("Siguiente ➔", type="primary"):
+                    if ciu_reg and dir_e:
+                        st.session_state["reg_datos"].update({"dep": dep_reg, "ciu": ciu_reg, "dir": dir_e})
+                        st.session_state["reg_paso"] = 4
+                        st.rerun()
+                    else:
+                        st.error("Complete la dirección.")
 
+        elif paso == 4:
+            rub = st.selectbox(
+                "Rubro Principal",
+                ["Ferretería & Construcción", "Cerámica & Acabados", "Electrónica", "Ropa & Calzado", "Repuestos", "General"],
+            )
+            with st.container(key="reg_modalidad"):
+                mod = st.radio(
+                    "Modalidad de Entrega",
+                    [
+                        "Retiro en Bodega Central (San Juan, Intibucá)",
+                        "Envío con Forza a Domicilio",
+                    ],
+                    captions=[
+                        "Recoge su carga en el almacén principal",
+                        "Entrega a domicilio con mensajería Forza",
+                    ],
+                )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("⬅️ Atrás", type="secondary"):
+                    st.session_state["reg_paso"] = 3
+                    st.rerun()
+            with c2:
+                if st.button("🚀 Confirmar y Crear", type="primary"):
+                    d = st.session_state["reg_datos"]
+                    n_cod = generar_codigo_casillero_dni(d["dni"])
+                    n_pwd = generar_clave_provisional()
+                    f_crea = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
 
-def desplazar_a_cotizacion_pendiente():
-    desplazar_a_ancla("cotizacion-foco-pendiente")
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero IN ({})".format(
+                                ",".join("?" * len(coincidencias_casillero(n_cod)))
+                            ),
+                            (d["cor"], d["dni"], *coincidencias_casillero(n_cod)),
+                        )
+                        if cur.fetchone():
+                            url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(
+                                "Hola, necesito asistencia con mi casillero ya registrado."
+                            )
+                            st.markdown(
+                                '<div class="reg-warn-card">⚠️ Ya existe un casillero registrado con este DNI o correo. Use otro correo o consulte a soporte.</div>',
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(
+                                f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            cur.execute(
+                                "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)",
+                                (
+                                    n_cod,
+                                    d["nom"],
+                                    d["dni"],
+                                    d["cor"],
+                                    d["tel"],
+                                    d["dep"],
+                                    d["ciu"],
+                                    d["dir"],
+                                    rub,
+                                    mod,
+                                    hash_pwd(n_pwd),
+                                    f_crea,
+                                ),
+                            )
+                            conn.commit()
+                            asegurar_permisos_casillero(n_cod, "cliente")
+                            st.session_state["reg_exito"] = {
+                                "nombre": d["nom"],
+                                "correo": d["cor"],
+                                "casillero": n_cod,
+                                "password": n_pwd,
+                            }
+                            st.session_state["reg_paso"] = 1
+                            st.session_state["reg_datos"] = {}
+                            st.rerun()
 
+        if st.button("Volver al Login", type="secondary"):
+            st.session_state["vista_actual"] = "login"
+            st.rerun()
 
-def desplazar_a_acciones_emit():
-    desplazar_a_ancla("ccm-acciones-emit", alinear="end")
+    elif st.session_state.get("vista_actual") == "recuperar":
+        st.markdown("### 🔄 Restablecer Contraseña")
+        r_mail = st.text_input("Correo Registrado")
+        if st.button("Generar Nueva Contraseña", type="primary"):
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute("SELECT id FROM usuarios WHERE correo_principal = ?", (r_mail,))
+                u = c.fetchone()
+            if u:
+                nueva_p = generar_clave_provisional()
+                with get_db() as conn:
+                    cur = conn.cursor()
+                    cur.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(nueva_p), u[0]))
+                st.success(f"✅ Nueva clave: **{nueva_p}**")
+            else:
+                st.error("Correo no registrado.")
+        if st.button("Volver al Login", type="secondary"):
+            st.session_state["vista_actual"] = "login"
+            st.rerun()
 
-
-@lru_cache(maxsize=1)
-def cargar_logo_jpeg():
-    for ruta in RUTAS_LOGO:
-        if not ruta.is_file():
-            continue
-        try:
-            from PIL import Image
-
-            with Image.open(ruta) as im:
-                rgb = im.convert("RGB")
-                if ruta.suffix.lower() == ".png":
-                    mascara = rgb.convert("L").point(lambda p: 0 if p > 248 else 255)
-                    recorte = mascara.getbbox()
-                    if recorte:
-                        rgb = rgb.crop(recorte)
-                    rgb.thumbnail((320, 320), Image.Resampling.LANCZOS)
-                    buf = io.BytesIO()
-                    rgb.save(buf, format="JPEG", quality=88, optimize=True)
-                    return buf.getvalue(), rgb.size[0], rgb.size[1]
-                return ruta.read_bytes(), rgb.size[0], rgb.size[1]
-        except Exception:
-            continue
-    return None, 0, 0
-
-
-def _prefijo_logo_pdf(ancho_pt=118.0):
-    datos, pix_w, pix_h = cargar_logo_jpeg()
-    if not datos or not pix_w:
-        return b"", None, 0, 0
-    alto_pt = ancho_pt * (pix_h / float(pix_w))
-    x = (595.0 - ancho_pt) / 2.0
-    y = 842.0 - 18.0 - alto_pt
-    ops = f"q\n{ancho_pt:.2f} 0 0 {alto_pt:.2f} {x:.2f} {y:.2f} cm\n/Im1 Do\nQ\n".encode("ascii")
-    return ops, datos, pix_w, pix_h
-
-
-def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""):
-    clases = "app-header-blue"
-    if extra_class:
-        clases = f"{clases} {extra_class}"
-    estilo = f' style="{extra_style}"' if extra_style else ""
-    cuerpo = textwrap.dedent(cuerpo_html or "").strip()
-    cuerpo_html_out = f'<div class="app-header-copy">{cuerpo}</div>' if cuerpo else ""
-    return (
-        f'<div class="{clases}"{estilo}>'
-        f'<div class="app-header-top">'
-        f'<div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>'
-        f"</div>"
-        f"{cuerpo_html_out}"
-        f"</div>"
-    )
-
-
-def compilar_pdf_simple(stream_content):
-    texto = stream_content.encode("latin-1", "replace")
-    logo_ops, jpeg, pix_w, pix_h = _prefijo_logo_pdf()
-    stream_bytes = (logo_ops + texto) if jpeg else texto
-    stream_len = len(stream_bytes)
-    con_logo = bool(jpeg)
-
-    pdf_buffer = io.BytesIO()
-    pdf_buffer.write(b"%PDF-1.4\n")
-    offsets = []
-
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-
-    recursos = (
-        b"/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >>"
-        if con_logo
-        else b"/Resources << /Font << /F1 5 0 R >> >>"
-    )
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
-        + recursos
-        + b" >>\nendobj\n"
-    )
-
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode("latin-1"))
-    pdf_buffer.write(stream_bytes)
-    pdf_buffer.write(b"\nendstream\nendobj\n")
-
-    offsets.append(pdf_buffer.tell())
-    pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
-
-    if con_logo:
-        offsets.append(pdf_buffer.tell())
-        pdf_buffer.write(
-            (
-                f"6 0 obj\n<< /Type /XObject /Subtype /Image /Width {pix_w} /Height {pix_h} "
-                f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(jpeg)} >>\nstream\n"
-            ).encode("ascii")
-        )
-        pdf_buffer.write(jpeg)
-        pdf_buffer.write(b"\nendstream\nendobj\n")
-
-    xref_offset = pdf_buffer.tell()
-    n_obj = 6 if con_logo else 5
-    pdf_buffer.write(f"xref\n0 {n_obj + 1}\n0000000000 65535 f \n".encode("ascii"))
-    for off in offsets:
-        pdf_buffer.write(f"{off:010d} 00000 n \n".encode("latin-1"))
-
-    pdf_buffer.write(f"trailer\n<< /Size {n_obj + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("latin-1"))
-    return pdf_buffer.getvalue()
-
-
-def generar_pdf_etiqueta_proveedor(
-    casillero,
-    nombre,
-    telefono,
-    ciudad,
-    al=0.0,
-    an=0.0,
-    la=0.0,
-    pe_lb=0.0,
-    pe_kg=0.0,
-    vol_m3=0.0,
-    destino_entrega="Retirar en Almacén",
-    fecha_emision=None,
-):
-    dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
-    peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
-    vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
-    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
-    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
-
-    stream = f"""BT
-/F1 16 Tf
-40 728 Td
-(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
-/F1 9 Tf
-0 -16 Td
-(EMITIDO EL: {fecha_txt}) Tj
-/F1 10 Tf
-0 -16 Td
-(MARITIME CONSOLIDATION CARGO [CHINA -> HONDURAS]) Tj
-0 -26 Td
-(================================================================) Tj
-/F1 13 Tf
-0 -22 Td
-(CLIENT CODE / CASILLERO : {casillero}) Tj
-/F1 10 Tf
-0 -18 Td
-(CLIENT NAME: {nombre}) Tj
-0 -14 Td
-(CONTACT PHONE: {telefono}) Tj
-0 -14 Td
-(FINAL DESTINATION / ENTREGA: {destino_clean}, HONDURAS) Tj
-0 -22 Td
-(================================================================) Tj
-/F1 11 Tf
-0 -18 Td
-(SHIP TO / WAREHOUSE IN CHINA [CHILAT]:) Tj
-/F1 9 Tf
-0 -14 Td
-(ATTN / RECEIVER : CHILAT / {casillero}) Tj
-0 -12 Td
-(ADDRESS : CHILAT Logistics Warehouse, District B, Port Area, Guangzhou) Tj
-0 -12 Td
-(WAREHOUSE TEL : +86 138 0000 0000) Tj
-0 -22 Td
-(================================================================) Tj
-/F1 10 Tf
-0 -16 Td
-(PACKAGE SPECIFICATIONS / DETALLES DE CARGA:) Tj
-/F1 9 Tf
-0 -14 Td
-(DIMENSIONS (L x W x H) : {dim_txt}) Tj
-0 -12 Td
-(GROSS WEIGHT           : {peso_txt}) Tj
-0 -12 Td
-(ESTIMATED VOLUME       : {vol_txt}) Tj
-0 -20 Td
-(----------------------------------------------------------------) Tj
-/F1 9 Tf
-0 -15 Td
-(INSTRUCTIONS FOR SUPPLIER / FABRICANTE [ALIBABA / MADE-IN-CHINA / 1688]:) Tj
-0 -13 Td
-(1. Paste this shipping label firmly on at least 2 sides of every box.) Tj
-0 -12 Td
-(2. Packages received without the Client Code will NOT be processed.) Tj
-0 -12 Td
-(3. Send domestic tracking number to the buyer immediately upon dispatch.) Tj
-ET"""
-    return compilar_pdf_simple(stream)
-
-
-def generar_pdf_confirmacion_cotizacion(
-    casillero,
-    nombre,
-    telefono,
-    ciudad,
-    tipo_carga,
-    al,
-    an,
-    la,
-    peso_lb,
-    peso_kg,
-    vol_m3,
-    vol_ft3,
-    total_usd,
-    detalle_tarifa,
-    id_cot,
-    destino_entrega="Retirar en Almacén",
-    fecha_emision=None,
-):
-    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
-    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
-
-    stream = f"""BT
-/F1 15 Tf
-40 728 Td
-(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
-/F1 10 Tf
-0 -16 Td
-(COMPROBANTE OFICIAL DE COTIZACION Y ACEPTACION DE TARIFA) Tj
-0 -20 Td
-(================================================================) Tj
-/F1 11 Tf
-0 -20 Td
-(NO. CONTROL / COTIZACION : CCM-COT-{id_cot:05d}) Tj
-/F1 9 Tf
-0 -14 Td
-(FECHA Y HORA DE EMISION : {fecha_txt}) Tj
-0 -18 Td
-(================================================================) Tj
-/F1 11 Tf
-0 -16 Td
-(DATOS DEL CLIENTE Y DIRECCION DE ENTREGA SELECCIONADA:) Tj
-/F1 9 Tf
-0 -14 Td
-(CASILLERO INTERNACIONAL : {casillero}) Tj
-0 -12 Td
-(TITULAR DE LA CUENTA    : {nombre}) Tj
-0 -12 Td
-(TELEFONO / WHATSAPP    : {telefono}) Tj
-0 -12 Td
-(MODALIDAD DE ENTREGA   : {destino_clean}) Tj
-0 -12 Td
-(DESTINO BASE REGISTRADO: {ciudad.upper()}, HONDURAS) Tj
-0 -18 Td
-(================================================================) Tj
-/F1 11 Tf
-0 -16 Td
-(DESGLOSE DE LA CARGA Y DIMENSIONES:) Tj
-/F1 9 Tf
-0 -14 Td
-(MODALIDAD DE CARGA      : {tipo_carga.upper()}) Tj
-0 -12 Td
-(DIMENSIONES DEL PAQUETE : {al:.1f} cm (Alto) x {an:.1f} cm (Ancho) x {la:.1f} cm (Largo)) Tj
-0 -12 Td
-(PESO TOTAL CALCULADO   : {peso_lb:.2f} LBS  ({peso_kg:.2f} KG)) Tj
-0 -12 Td
-(VOLUMEN ESTIMADO        : {vol_m3:.4f} M3  ({vol_ft3:.2f} FT3)) Tj
-0 -12 Td
-(DESGLOSE DE TARIFA      : {detalle_tarifa}) Tj
-0 -18 Td
-(----------------------------------------------------------------) Tj
-/F1 13 Tf
-0 -16 Td
-(TOTAL FLETE MARITIMO ESTIMADO: ${total_usd:.2f} USD) Tj
-/F1 9 Tf
-0 -18 Td
-(================================================================) Tj
-/F1 10 Tf
-0 -16 Td
-(DIRECCION DE BODEGA EN GUANGZHOU, CHINA:) Tj
-/F1 8 Tf
-0 -13 Td
-(ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
-0 -11 Td
-(DIRECCION EN GUANGZHOU: CHILAT Logistics Warehouse, District B, Port Area) Tj
-0 -11 Td
-(TELEFONO EN CHINA    : +86 138 0000 0000) Tj
-0 -18 Td
-(================================================================) Tj
-/F1 8 Tf
-0 -14 Td
-(DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
-0 -11 Td
-(El cliente declara estar conforme con la tarifa cotizada y autoriza el) Tj
-0 -10 Td
-(procesamiento de su carga con Centro de Ceramicas y Mas.) Tj
-ET"""
-    return compilar_pdf_simple(stream)
-
-
-# ---------------------------------------------------------
-# BLOQUE PRINCIPAL DE LA APLICACIÓN SEGÚN ROL
-# ---------------------------------------------------------
-if st.session_state["rol"] == "cliente":
+elif st.session_state.get("rol") == "cliente":
     if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
         st.session_state["hub"] = None
         st.session_state["sub_tab_inicio"] = "Inicio"
@@ -3093,7 +1855,7 @@ if st.session_state["rol"] == "cliente":
     purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
     hidratar_cotizaciones_sesion(casillero)
-    nombre_completo = st.session_state["nombre"]
+    nombre_completo = st.session_state.get("nombre", "Cliente")
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
@@ -3143,88 +1905,6 @@ if st.session_state["rol"] == "cliente":
             ),
             unsafe_allow_html=True,
         )
-
-        with st.container(key="nav_scroll"):
-            c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
-
-            with c_nav_p:
-                if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
-                    logout()
-
-            with c_nav_c:
-                if st.button("🏠 Inicio", type="primary" if st.session_state["sub_tab_inicio"] == "Inicio" else "secondary", key="btn_inicio_cliente"):
-                    st.session_state["sub_tab_inicio"] = "Inicio"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Inicio"
-                    st.rerun()
-
-            with c_nav1:
-                if st.button("📄 Mis Cotiz.", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
-                    st.session_state["sub_tab_inicio"] = "Mis Cotizaciones"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Mis Cotizaciones"
-                    st.rerun()
-
-            with c_nav2:
-                if st.button("🛍️ Catálogo", type="primary" if st.session_state["sub_tab_inicio"] == "Catálogo" else "secondary", key="nav_top_cat"):
-                    st.session_state["sub_tab_inicio"] = "Catálogo"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Catálogo"
-                    st.rerun()
-
-            with c_nav3:
-                if st.button("📐 Cotizador", type="primary" if st.session_state["sub_tab_inicio"] == "Cotizador" else "secondary", key="nav_top_cot"):
-                    st.session_state["sub_tab_inicio"] = "Cotizador"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Cotizador"
-                    st.rerun()
-
-            with c_nav4:
-                if st.button("📦 Envíos", type="primary" if st.session_state["sub_tab_inicio"] == "Mis Envíos" else "secondary", key="nav_top_env"):
-                    st.session_state["sub_tab_inicio"] = "Mis Envíos"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Mis Envíos"
-                    st.rerun()
-
-            with c_nav5:
-                if st.button("🏷️ Fichas", type="primary" if st.session_state["sub_tab_inicio"] == "Etiqueta" else "secondary", key="nav_top_eti"):
-                    st.session_state["sub_tab_inicio"] = "Etiqueta"
-                    st.query_params["casillero"] = str(casillero)
-                    st.query_params["vista"] = "Etiqueta"
-                    st.rerun()
-
-        if st.session_state["sub_tab_inicio"] in ["Etiqueta", "Mis Envíos"]:
-            st.markdown('<div class="swipe-indicator-bar"><span>◀◀◀</span><span>Desliza a la izquierda</span><span>👈</span></div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="swipe-indicator-bar"><span>👉</span><span>Desliza a la derecha</span><span>▶▶▶</span></div>', unsafe_allow_html=True)
-
-        if st.session_state["sub_tab_inicio"] == "Cotizador":
-            st.markdown("""
-            <div class="app-delivery-container">
-                <span style="font-size:1.2rem;">🏪</span>
-                <div style="flex:1;">
-            """, unsafe_allow_html=True)
-
-            st.markdown('<div class="app-delivery-select">', unsafe_allow_html=True)
-            idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
-
-            mod_elegida = st.selectbox(
-                "¿Cómo deseas recibir tu compra?",
-                opciones_modalidad,
-                index=idx_mod,
-                label_visibility="visible",
-                key="sb_modalidad_header"
-            )
-            if mod_elegida != st.session_state["modalidad_envio_seleccionada"]:
-                st.session_state["modalidad_envio_seleccionada"] = mod_elegida
-                st.session_state.pop("datos_pdf_confirmado", None)
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown("""
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
 
     sincronizar_altura_encabezado_fijo()
     detectar_avance_descarga_guia()
@@ -4014,8 +2694,8 @@ if st.session_state["rol"] == "cliente":
                         al=al_e,
                         an=an_e,
                         la=la_e,
-                        pe_lb=pe_e,
-                        pe_kg=pe_e / 2.20462,
+                        pe_lb=pe_lb_c,
+                        pe_kg=pe_lb_c / 2.20462 if 'pe_lb_c' in locals() else pe_e / 2.20462,
                         vol_m3=vol_e,
                         destino_entrega=destino_para_documentos(),
                         fecha_emision=fec_e,
@@ -4109,9 +2789,6 @@ if st.session_state["rol"] == "cliente":
 
     pintar_barra_inferior(total_cotizaciones)
 
-# ---------------------------------------------------------
-# 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
-# ---------------------------------------------------------
 elif es_rol_admin():
     root = es_superadmin()
     st.markdown(
@@ -4429,6 +3106,6 @@ elif es_rol_admin():
         logout()
 
 else:
-    st.error("Rol no reconocido. Inicie sesión de nuevo.")
+    st.error("Rol no reconocido o sesión no iniciada. Inicie sesión de nuevo.")
     if st.button("Volver al login"):
         logout()
