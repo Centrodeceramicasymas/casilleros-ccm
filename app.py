@@ -1,8 +1,4 @@
-"""Centro de Cerámicas y Más — casillero marítimo China → Honduras.
 
-Punto de entrada Streamlit. La lógica de medidas, flete, PDF y AliExpress
-vive en `ccm.py` (un archivo, no una carpeta) junto a este script.
-"""
 
 from __future__ import annotations
 
