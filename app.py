@@ -27,7 +27,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# 1. CONSTANTES, RUTAS Y ZONA HORARIA HONDURAS (UTC-6)
+# 1. CONSTANTES, RUTAS Y CONFIGURACIÓN GLOBAL
 # ---------------------------------------------------------
 DB_NAME = str(Path(__file__).resolve().parent / "ccm_maritime_enterprise.db")
 LOGO_FILENAME = "logo_ccm_print.jpg"
@@ -55,8 +55,147 @@ def estampa_tiempo_honduras(ahora=None):
         dt = dt.astimezone(ZONA_HONDURAS)
     return dt, dt.strftime("%Y-%m-%d %H:%M:%S")
 
+OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
+PREFIJO_CASILLERO = "CCM-"
+
+ROLES_ADMIN = ("admin", "superadmin")
+DNI_SUPERADMIN = "1301199800990"
+NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
+CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
+CLAVE_INICIAL_SUPERADMIN = "1301"
+PERMISOS_ABIERTOS_TEMPORAL = True
+
+VIGENCIA_COTIZACION_HORAS = 24
+VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
+FORMATOS_FECHA_COTIZACION = (
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S.%f",
+    "%d/%m/%Y %I:%M:%S %p",
+    "%d/%m/%Y %H:%M:%S",
+)
+
+CONTENEDOR_40_ALTO_M = 2.69
+CONTENEDOR_40_ANCHO_M = 2.35
+CONTENEDOR_40_LARGO_M = 12.03
+PESO_MAX_CONTENEDOR_HN_KG = 25_000.0
+LB_POR_KG = 2.20462
+PESO_MAX_PAQUETERIA_LB = 99.0
+
+CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in")
+CLAVES_WIDGET_PERFIL = ("perfil_nom", "perfil_tel", "perfil_dep", "perfil_ciu", "perfil_dir", "perfil_dni")
+
+HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
+MODULO_PERMISO_COL = {
+    "Cotizador": "mod_cotizador",
+    "Catálogo": "mod_catalogo",
+    "Mis Cotizaciones": "mod_cotizaciones",
+    "Mis Envíos": "mod_envios",
+    "Etiqueta": "mod_fichas",
+}
+
+MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
+
+HUBS = {
+    "china": {
+        "label": "China",
+        "icon": "🇨🇳",
+        "descripcion": "Consolidación marítima, catálogo y flete",
+        "activo": True,
+        "modulos": [
+            {
+                "id": "Mis Cotizaciones",
+                "label": "Mis Cotizaciones",
+                "nav": "📄 Mis Cotiz.",
+                "icon": "📄",
+                "detalle": "Historial y descarga de PDF",
+                "btn_key": "mod_cotizaciones",
+            },
+            {
+                "id": "Catálogo",
+                "label": "Catálogo",
+                "nav": "🛍️ Catálogo",
+                "icon": "🛍️",
+                "detalle": "Fábricas 1688 y costo en Honduras",
+                "btn_key": "mod_catalogo",
+            },
+            {
+                "id": "Cotizador",
+                "label": "Cotizador",
+                "nav": "📐 Cotizador",
+                "icon": "📐",
+                "detalle": "Flete marítimo por libra o CBM",
+                "btn_key": "mod_cotizador",
+            },
+            {
+                "id": "Mis Envíos",
+                "label": "Envíos",
+                "nav": "📦 Envíos",
+                "icon": "📦",
+                "detalle": "Paquetes en tránsito",
+                "btn_key": "mod_envios",
+            },
+            {
+                "id": "Etiqueta",
+                "label": "Fichas",
+                "nav": "🏷️ Fichas",
+                "icon": "🏷️",
+                "detalle": "Etiqueta bodega Guangzhou",
+                "btn_key": "mod_fichas",
+            },
+        ],
+    },
+    "eeuu": {
+        "label": "EE. UU.",
+        "icon": "🇺🇸",
+        "descripcion": "Búsqueda y cotización AliExpress con envío a Estados Unidos",
+        "activo": True,
+        "modulos": [],
+    },
+    "honduras": {
+        "label": "Honduras",
+        "icon": "🇭🇳",
+        "descripcion": "Módulo en preparación para operaciones locales",
+        "activo": False,
+        "modulos": [],
+    },
+}
+
+MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in hub["modulos"]}
+VISTAS_MODULO = set(MODULOS_POR_ID.keys())
+
+ALIAS_VISTA = {
+    "Fichas": "Etiqueta",
+    "Mis cotizaciones": "Mis Cotizaciones",
+    "Mis envíos": "Mis Envíos",
+    "Envíos": "Mis Envíos",
+}
+
+MUNICIPIOS_HONDURAS = {
+    "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
+    "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
+    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
+    "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
+    "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
+    "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
+    "El Paraíso": ["Yuscarán", "Alauca", "Danlí", "El Paraíso", "Güinope", "Jacaleapa", "Liure", "Morocelí", "Oropolí", "Potrerillos", "San Antonio de Flores", "San Lucas", "San Matías", "Soledad", "Teupasenti", "Texiguat", "Vado Ancho", "Yauyupe", "Trojes"],
+    "Francisco Morazán": ["Distrito Central (Tegucigalpa / Comayagüela)", "Alubarén", "Cedros", "Curarén", "El Porvenir", "Guaimaca", "La Libertad", "La Venta", "Lepaterique", "Maraita", "Marale", "Nueva Armenia", "Ojojona", "Orica", "Reitoca", "Sabanagrande", "San Antonio de Oriente", "San Buenaventura", "San Ignacio", "San Juan de Flores (Cantarranas)", "San Miguelito", "Santa Ana", "Santa Lucía", "Talanga", "Tatumbla", "Valle de Ángeles", "Villa de San Francisco", "Vallecillo"],
+    "Gracias a Dios": ["Puerto Lempira", "Brus Laguna", "Ahuas", "Juan Francisco Bulnes", "Ramón Villeda Morales", "Wampusirpi"],
+    "Intibucá": ["San Juan", "La Esperanza", "Intibucá", "Camasca", "Colomoncagua", "Concepción", "Dolores", "Magdalena", "Masaguara", "San Antonio", "San Isidro", "San Marcos de la Sierra", "San Miguelito", "Santa Lucía", "Yamaranguila", "San Francisco de Opalaca"],
+    "Islas de la Bahía": ["Roatán", "Guanaja", "José Santos Guardiola", "Utila"],
+    "La Paz": ["La Paz", "Aguanqueterique", "Cabañas", "Cane", "Chinacla", "Guajiquiro", "Lauterique", "Marcala", "Mercedes de Oriente", "Opatoro", "San Antonio del Norte", "San José", "San Juan", "San Pedro de Tutule", "Santa Ana", "Santa Elena", "Santa María", "Santiago de Puringla", "Yarula"],
+    "Lempira": ["Gracias", "Belén", "Candelaria", "Cololaca", "Erandique", "Gualcince", "Guarita", "La Campa", "La Iguala", "La Unión", "La Virtud", "Lepaera", "Mapulaca", "Piraera", "San Andrés", "San Francisco", "San Juan Guarita", "San Manuel Colohete", "San Rafael", "San Sebastián", "Santa Cruz", "Talgua", "Tambla", "Tomalá", "Valladolid", "Virginia", "San Marcos de Caiquín"],
+    "Ocotepeque": ["Ocotepeque", "Belén Gualcho", "Concepción", "Dolores Merendón", "Fraternidad", "La Encarnación", "La Labor", "Lucerna", "Mercedes", "San Fernando", "San Francisco del Valle", "San Jorge", "San Marcos", "Santa Fe", "Sinuapa", "Sensenti"],
+    "Olancho": ["Juticalpa", "Campamento", "Catacamas", "Concordia", "Dulce Nombre de Culmí", "El Rosario", "Esquipulas del Norte", "Gualaco", "Guarizama", "Guata", "Guayape", "Jano", "La Unión", "Mangulile", "Manto", "Salamá", "San Esteban", "San Francisco de Becerra", "San Francisco de la Paz", "Santa María del Real", "Silca", "Yocón", "Patuca"],
+    "Santa Bárbara": ["Santa Bárbara", "Arada", "Atima", "Azacualpa", "Ceguaca", "Concepción del Norte", "Concepción del Sur", "Chinda", "El Níspero", "Gualala", "Ilama", "Las Vegas", "Macuelizo", "Naranjito", "Nuevo Celilac", "Petoa", "Protección", "Quimistán", "San Francisco de Ojuera", "San José de Colinas", "San Luis", "San Marcos", "San Nicolás", "San Pedro Zacapa", "Santa Rita", "San Vicente Centenario", "Trinidad"],
+    "Valle": ["Nacaome", "Alianza", "Amapala", "Aramecina", "Caridad", "Goascorán", "Langue", "San Francisco de Coray", "San Lorenzo"],
+    "Yoro": ["Yoro", "Arenal", "El Negrito", "El Progreso", "Jocón", "Morazán", "Olanchito", "Santa Rita", "Sulaco", "Victoria", "Yorito"]
+}
+
+DIAS_SEMANA_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+MESES_ES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
+
 # ---------------------------------------------------------
-# 2. DEFINICIÓN BASE DE DATOS Y UTILIDADES PRIMARIAS
+# 2. DEFINICIÓN DE BASE DE DATOS Y UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -106,8 +245,6 @@ def leer_config_moneda(clave, valor_default):
     except Exception:
         return valor_default
 
-PREFIJO_CASILLERO = "CCM-"
-
 def nucleo_casillero_desde_id(valor):
     texto = str(valor or "").strip().upper()
     if texto.startswith(PREFIJO_CASILLERO):
@@ -150,9 +287,6 @@ def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
     return "".join(random.choice(caracteres) for _ in range(8))
 
-# ---------------------------------------------------------
-# 3. ESQUEMA DE BASE DE DATOS Y MIGRACIONES
-# ---------------------------------------------------------
 def init_db():
     with get_db() as conn:
         c = conn.cursor()
@@ -360,18 +494,6 @@ def _migrar_casillero_tablas(conn, origen, destino):
             if tabla == "permisos_usuario":
                 conn.execute("DELETE FROM permisos_usuario WHERE codigo_casillero = ?", (origen,))
 
-ROLES_ADMIN = ("admin", "superadmin")
-DNI_SUPERADMIN = "1301199800990"
-NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
-CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
-CLAVE_INICIAL_SUPERADMIN = "1301"
-
-def es_rol_admin(rol=None):
-    return (rol if rol is not None else st.session_state.get("rol")) in ROLES_ADMIN
-
-def es_superadmin(rol=None):
-    return (rol if rol is not None else st.session_state.get("rol")) == "superadmin"
-
 def permisos_default(rol="cliente"):
     return {
         "hub_china": 1, "hub_eeuu": 1, "hub_honduras": 1,
@@ -534,7 +656,6 @@ def restaurar_datos_operativos_cliente():
         return
     set_config_sistema("datos_operativos_restaurados", "1", "Módulos habilitados")
 
-# Inicialización y ejecución secuencial segura
 init_db()
 asegurar_esquema_direcciones()
 migrar_prefijo_casillero()
@@ -543,400 +664,647 @@ abrir_permisos_todos_los_usuarios()
 restaurar_datos_operativos_cliente()
 
 # ---------------------------------------------------------
-# 4. CONFIGURACIONES DE TARIFAS Y PARÁMETROS
+# 3. CONTROLADORES DE DIRECCIONES Y COTIZACIONES
 # ---------------------------------------------------------
-@st.cache_data(ttl=120, show_spinner=False)
-def get_tarifa(clave):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT valor FROM config_maritima WHERE clave = ?", (clave,))
-        res = c.fetchone()
-        return res[0] if res else 0.0
+def invalidar_cache_direcciones():
+    clear = getattr(cargar_direcciones_db, "clear", None)
+    if callable(clear):
+        clear()
 
-def set_tarifa(clave, valor):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO config_maritima (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
-            (clave, valor),
-        )
-        conn.commit()
-    get_tarifa.clear()
-
-def permisos_de(casillero=None):
-    cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
-    base = permisos_default(st.session_state.get("rol", "cliente"))
+def cargar_direcciones_db(casillero):
+    cas = formatear_casillero(casillero or "")
     if not cas:
-        return base
-    try:
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute(
-                """
-                SELECT hub_china, hub_eeuu, hub_honduras, mod_cotizador, mod_catalogo,
-                       mod_cotizaciones, mod_envios, mod_fichas
-                FROM permisos_usuario WHERE codigo_casillero = ?
-                """,
-                (cas,),
-            )
-            row = c.fetchone()
-        if not row:
-            asegurar_permisos_casillero(cas, st.session_state.get("rol", "cliente"))
-            return permisos_default(st.session_state.get("rol", "cliente"))
-        claves = (
-            "hub_china", "hub_eeuu", "hub_honduras",
-            "mod_cotizador", "mod_catalogo", "mod_cotizaciones",
-            "mod_envios", "mod_fichas",
-        )
-        return dict(zip(claves, [int(v or 0) for v in row]))
-    except Exception:
-        return base
-
-def usuario_puede_hub(hub_id, casillero=None):
-    if PERMISOS_ABIERTOS_TEMPORAL:
-        return True
-    col = HUB_PERMISO_COL.get(hub_id)
-    if not col:
-        return False
-    return bool(permisos_de(casillero).get(col, 0))
-
-def usuario_puede_modulo(mod_id, casillero=None):
-    if PERMISOS_ABIERTOS_TEMPORAL:
-        return True
-    col = MODULO_PERMISO_COL.get(mod_id)
-    if not col:
-        return False
-    return bool(permisos_de(casillero).get(col, 0))
-
-def guardar_permisos(casillero, datos):
-    cas = formatear_casillero(casillero)
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
-            """
-            INSERT INTO permisos_usuario (
-                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
-                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(codigo_casillero) DO UPDATE SET
-                hub_china = excluded.hub_china,
-                hub_eeuu = excluded.hub_eeuu,
-                hub_honduras = excluded.hub_honduras,
-                mod_cotizador = excluded.mod_cotizador,
-                mod_catalogo = excluded.mod_catalogo,
-                mod_cotizaciones = excluded.mod_cotizaciones,
-                mod_envios = excluded.mod_envios,
-                mod_fichas = excluded.mod_fichas
-            """,
-            (
-                cas,
-                int(datos.get("hub_china", 0)),
-                int(datos.get("hub_eeuu", 0)),
-                int(datos.get("hub_honduras", 0)),
-                int(datos.get("mod_cotizador", 0)),
-                int(datos.get("mod_catalogo", 0)),
-                int(datos.get("mod_cotizaciones", 0)),
-                int(datos.get("mod_envios", 0)),
-                int(datos.get("mod_fichas", 0)),
-            ),
-        )
-
-# ---------------------------------------------------------
-# 5. COTIZACIONES Y VIGENCIA
-# ---------------------------------------------------------
-VIGENCIA_COTIZACION_HORAS = 24
-VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
-FORMATOS_FECHA_COTIZACION = (
-    "%Y-%m-%d %H:%M:%S",
-    "%Y-%m-%d %H:%M:%S.%f",
-    "%d/%m/%Y %I:%M:%S %p",
-    "%d/%m/%Y %H:%M:%S",
-)
-
-def parsear_fecha_cotizacion(fecha_raw):
-    if fecha_raw is None:
-        return None
-    if isinstance(fecha_raw, datetime):
-        dt = fecha_raw
-    else:
-        texto = str(fecha_raw).strip()
-        dt = None
-        for fmt in FORMATOS_FECHA_COTIZACION:
-            try:
-                dt = datetime.strptime(texto, fmt)
-                break
-            except ValueError:
-                continue
-        if dt is None:
-            return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=ZONA_HONDURAS)
-    return dt.astimezone(ZONA_HONDURAS)
-
-def cotizacion_vigente(fecha_raw, ahora=None):
-    dt = parsear_fecha_cotizacion(fecha_raw)
-    if dt is None:
-        return False
-    ahora = ahora or obtener_tiempo_honduras()
-    edad = ahora - dt
-    return timedelta(0) <= edad <= VIGENCIA_COTIZACION
-
-def formatear_fecha_pantalla(fecha_raw):
-    dt = parsear_fecha_cotizacion(fecha_raw)
-    if dt is None:
-        return str(fecha_raw or "")
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-def clave_orden_cotizacion(fecha_raw, id_cot=0):
-    dt = parsear_fecha_cotizacion(fecha_raw)
-    ts = dt.timestamp() if dt is not None else 0.0
-    try:
-        cid = int(id_cot or 0)
-    except (TypeError, ValueError):
-        cid = 0
-    return (-ts, -cid)
-
-def ordenar_cotizaciones_desc(filas, idx_fecha=7, idx_id=0):
-    return sorted(filas, key=lambda r: clave_orden_cotizacion(r[idx_fecha], r[idx_id]))
-
-def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None):
-    if es_cotizacion_confirmada(confirmada):
-        return "Consolidada — permanente en el historial del casillero"
-    dt = parsear_fecha_cotizacion(fecha_raw)
-    if dt is None:
-        return "Sin vigencia"
-    ahora = ahora or obtener_tiempo_honduras()
-    fin = dt + VIGENCIA_COTIZACION
-    restante = fin - ahora
-    fin_txt = fin.strftime("%d/%m/%Y %I:%M %p")
-    if restante.total_seconds() <= 0:
-        return f"Vencida (era hasta {fin_txt})"
-    total_min = int(restante.total_seconds() // 60)
-    horas, minutos = divmod(total_min, 60)
-    if horas >= 1:
-        return f"Vigente {horas} h {minutos} min (hasta {fin_txt})"
-    return f"Vigente {minutos} min (hasta {fin_txt})"
-
-def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
-    ahora = ahora or obtener_tiempo_honduras()
-    with get_db() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute("SELECT id, fecha, IFNULL(confirmada, 0) FROM cotizaciones")
-        except sqlite3.OperationalError:
-            return 0
-        ids_borrar = []
-        for cid, fecha, confirmada in cur.fetchall():
-            if es_cotizacion_confirmada(confirmada):
-                continue
-            if not cotizacion_vigente(fecha, ahora):
-                ids_borrar.append(cid)
-        if not ids_borrar:
-            return 0
-        cur.executemany("DELETE FROM cotizaciones WHERE id = ?", [(cid,) for cid in ids_borrar])
-        conn.commit()
-        return len(ids_borrar)
-
-purgar_cotizaciones_no_confirmadas_vencidas()
-
-# ---------------------------------------------------------
-# 6. GESTIÓN DE SESIÓN PERSISTENTE MEDIANTE QUERY_PARAMS
-# ---------------------------------------------------------
-OPCION_PREDETERMINADA = "🏬 Retirar en Almacén Principal (San Juan, Intibucá)"
-
-MUNICIPIOS_HONDURAS = {
-    "Atlántida": ["La Ceiba", "El Porvenir", "Esparta", "Jutiapa", "La Masica", "San Francisco", "Tela", "Arizona"],
-    "Colón": ["Trujillo", "Balfate", "Iriona", "Limón", "Sabá", "Santa Fe", "Santa Rosa de Aguán", "Sonaguera", "Tocoa", "Bonito Oriental"],
-    "Comayagua": ["Comayagua", "Ajuterique", "El Rosario", "Esquías", "Humuya", "La Libertad", "Lamaní", "La Trinidad", "Lejamaní", "Meámbar", "Minas de Oro", "Ojos de Agua", "San Jerónimo", "San José de Comayagua", "San José del Potrero", "San Luis", "San Sebastián", "Siguatepeque", "Villa de San Antonio", "Las Lajas", "Taulabé"],
-    "Copán": ["Santa Rosa de Copán", "Cabañas", "Concepción", "Copán Ruinas", "Corquín", "Cucuyagua", "Dolores", "Dulce Nombre", "El Paraíso", "Florida", "La Jigua", "La Unión", "Nueva Arcadia (La Entrada)", "San Agustín", "San Antonio", "San Jerónimo", "San José", "San Juan de Opoa", "San Nicolás", "San Pedro", "Santa Rita", "Trinidad de Copán"],
-    "Cortés": ["San Pedro Sula", "Choloma", "Omoa", "Pimienta", "Potrerillos", "Puerto Cortés", "San Antonio de Cortés", "San Francisco de Yojoa", "San Manuel", "Santa Cruz de Yojoa", "Villanueva", "La Lima"],
-    "Choluteca": ["Choluteca", "Apacilagua", "Concepción de María", "Duyure", "El Corpus", "El Triunfo", "Marcovia", "Morolica", "Namasigüe", "Orocuina", "Pespire", "San Antonio de Flores", "San Isidro", "San José", "San Marcos de Colón", "Santa Ana de Yusguare"],
-    "El Paraíso": ["Yuscarán", "Alauca", "Danlí", "El Paraíso", "Güinope", "Jacaleapa", "Liure", "Morocelí", "Oropolí", "Potrerillos", "San Antonio de Flores", "San Lucas", "San Matías", "Soledad", "Teupasenti", "Texiguat", "Vado Ancho", "Yauyupe", "Trojes"],
-    "Francisco Morazán": ["Distrito Central (Tegucigalpa / Comayagüela)", "Alubarén", "Cedros", "Curarén", "El Porvenir", "Guaimaca", "La Libertad", "La Venta", "Lepaterique", "Maraita", "Marale", "Nueva Armenia", "Ojojona", "Orica", "Reitoca", "Sabanagrande", "San Antonio de Oriente", "San Buenaventura", "San Ignacio", "San Juan de Flores (Cantarranas)", "San Miguelito", "Santa Ana", "Santa Lucía", "Talanga", "Tatumbla", "Valle de Ángeles", "Villa de San Francisco", "Vallecillo"],
-    "Gracias a Dios": ["Puerto Lempira", "Brus Laguna", "Ahuas", "Juan Francisco Bulnes", "Ramón Villeda Morales", "Wampusirpi"],
-    "Intibucá": ["San Juan", "La Esperanza", "Intibucá", "Camasca", "Colomoncagua", "Concepción", "Dolores", "Magdalena", "Masaguara", "San Antonio", "San Isidro", "San Marcos de la Sierra", "San Miguelito", "Santa Lucía", "Yamaranguila", "San Francisco de Opalaca"],
-    "Islas de la Bahía": ["Roatán", "Guanaja", "José Santos Guardiola", "Utila"],
-    "La Paz": ["La Paz", "Aguanqueterique", "Cabañas", "Cane", "Chinacla", "Guajiquiro", "Lauterique", "Marcala", "Mercedes de Oriente", "Opatoro", "San Antonio del Norte", "San José", "San Juan", "San Pedro de Tutule", "Santa Ana", "Santa Elena", "Santa María", "Santiago de Puringla", "Yarula"],
-    "Lempira": ["Gracias", "Belén", "Candelaria", "Cololaca", "Erandique", "Gualcince", "Guarita", "La Campa", "La Iguala", "La Unión", "La Virtud", "Lepaera", "Mapulaca", "Piraera", "San Andrés", "San Francisco", "San Juan Guarita", "San Manuel Colohete", "San Rafael", "San Sebastián", "Santa Cruz", "Talgua", "Tambla", "Tomalá", "Valladolid", "Virginia", "San Marcos de Caiquín"],
-    "Ocotepeque": ["Ocotepeque", "Belén Gualcho", "Concepción", "Dolores Merendón", "Fraternidad", "La Encarnación", "La Labor", "Lucerna", "Mercedes", "San Fernando", "San Francisco del Valle", "San Jorge", "San Marcos", "Santa Fe", "Sinuapa", "Sensenti"],
-    "Olancho": ["Juticalpa", "Campamento", "Catacamas", "Concordia", "Dulce Nombre de Culmí", "El Rosario", "Esquipulas del Norte", "Gualaco", "Guarizama", "Guata", "Guayape", "Jano", "La Unión", "Mangulile", "Manto", "Salamá", "San Esteban", "San Francisco de Becerra", "San Francisco de la Paz", "Santa María del Real", "Silca", "Yocón", "Patuca"],
-    "Santa Bárbara": ["Santa Bárbara", "Arada", "Atima", "Azacualpa", "Ceguaca", "Concepción del Norte", "Concepción del Sur", "Chinda", "El Níspero", "Gualala", "Ilama", "Las Vegas", "Macuelizo", "Naranjito", "Nuevo Celilac", "Petoa", "Protección", "Quimistán", "San Francisco de Ojuera", "San José de Colinas", "San Luis", "San Marcos", "San Nicolás", "San Pedro Zacapa", "Santa Rita", "San Vicente Centenario", "Trinidad"],
-    "Valle": ["Nacaome", "Alianza", "Amapala", "Aramecina", "Caridad", "Goascorán", "Langue", "San Francisco de Coray", "San Lorenzo"],
-    "Yoro": ["Yoro", "Arenal", "El Negrito", "El Progreso", "Jocón", "Morazán", "Olanchito", "Santa Rita", "Sulaco", "Victoria", "Yorito"]
-}
-
-DIAS_SEMANA_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
-MESES_ES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
-
-if "autenticado" not in st.session_state:
-    st.session_state.update(
-        {
-            "autenticado": False,
-            "usuario": None,
-            "rol": None,
-            "casillero": None,
-            "nombre": None,
-            "dni": None,
-            "telefono": None,
-            "departamento": None,
-            "ciudad": None,
-            "direccion_exacta": None,
-            "reg_paso": 1,
-            "reg_datos": {},
-            "reg_exito": None,
-            "sub_tab_inicio": "Inicio",
-            "vista_activa": "Inicio",
-            "hub": None,
-            "mostrar_guia": False,
-            "modalidad_envio_seleccionada": OPCION_PREDETERMINADA,
-            "vista_actual": "login",
-        }
-    )
-
-def cargar_perfil_usuario(casillero):
-    cas = formatear_casillero(casillero)
-    if not cas:
-        return None
-    claves = coincidencias_casillero(cas)
+        return []
+    claves = coincidencias_casillero(casillero)
+    if not claves:
+        return []
     placeholders = ",".join("?" * len(claves))
     with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
+        cur = conn.cursor()
+        cur.execute(
             f"""
-            SELECT codigo_casillero, nombre_completo, dni, correo_principal,
-                   telefono_principal, departamento, ciudad, direccion_exacta
-            FROM usuarios
-            WHERE codigo_casillero IN ({placeholders}) AND activo = 1
+            SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta
+            FROM direcciones_entrega
+            WHERE codigo_casillero IN ({placeholders})
+            ORDER BY id ASC
             """,
             claves,
         )
-        row = c.fetchone()
-    if not row:
-        return None
-    return {
-        "casillero": formatear_casillero(row[0]),
-        "nombre": row[1] or "",
-        "dni": row[2] or "",
-        "correo": row[3] or "",
-        "telefono": row[4] or "",
-        "departamento": row[5] or "",
-        "ciudad": row[6] or "",
-        "direccion": row[7] or "",
-    }
+        filas = cur.fetchall()
+        cur.execute(
+            f"""
+            UPDATE direcciones_entrega
+            SET codigo_casillero = ?
+            WHERE codigo_casillero IN ({placeholders}) AND codigo_casillero != ?
+            """,
+            (cas, *claves, cas),
+        )
+        conn.commit()
+        return filas
 
-def aplicar_perfil_en_sesion(perfil):
-    if not perfil:
+@st.cache_data(ttl=20, show_spinner=False)
+def cargar_cotizaciones_db(casillero):
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return []
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
+                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
+            FROM cotizaciones
+            WHERE codigo_casillero = ?
+            ORDER BY fecha_creacion DESC, id DESC
+            """,
+            (cas,),
+        )
+        return cur.fetchall()
+
+def hidratar_cotizaciones_sesion(casillero):
+    cas, lista = bolsa_cotizaciones_sesion(casillero)
+    if not cas:
         return
-    st.session_state["casillero"] = perfil["casillero"]
-    st.session_state["nombre"] = perfil["nombre"]
-    st.session_state["dni"] = perfil["dni"]
-    st.session_state["usuario"] = perfil["correo"]
-    st.session_state["telefono"] = perfil["telefono"]
-    st.session_state["departamento"] = perfil["departamento"]
-    st.session_state["ciudad"] = perfil["ciudad"]
-    st.session_state["direccion_exacta"] = perfil["direccion"]
-
-def restaurar_sesion_persistente():
-    if st.session_state.get("autenticado", False):
-        return True
-
+    conocidos = {int(r.get("id") or 0) for r in lista}
     try:
-        params = st.query_params
-        cas_param = params.get("casillero", "")
-        if isinstance(cas_param, list):
-            cas_param = cas_param[0] if cas_param else ""
-        cas_param = str(cas_param).strip()
-
-        if not cas_param:
-            return False
-
-        claves = coincidencias_casillero(cas_param)
-        placeholders = ",".join("?" * len(claves))
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute(
-                f"""
-                SELECT id, codigo_casillero, nombre_completo, correo_principal,
-                       rol, activo, telefono_principal, ciudad
-                FROM usuarios
-                WHERE codigo_casillero IN ({placeholders}) AND activo = 1
-                """,
-                claves,
+        for fila in cargar_cotizaciones_db(cas):
+            cid = int(fila[0])
+            if cid in conocidos:
+                continue
+            lista.append(
+                {
+                    "id": cid,
+                    "codigo_casillero": cas,
+                    "alto_cm": fila[1],
+                    "ancho_cm": fila[2],
+                    "largo_cm": fila[3],
+                    "peso_lb": fila[4],
+                    "volumen_m3": fila[5],
+                    "total_usd": fila[6],
+                    "fecha": fila[7],
+                    "fecha_creacion": fila[7],
+                    "confirmada": int(fila[8] or 0),
+                }
             )
-            user_rec = c.fetchone()
-
-        if not user_rec:
-            return False
-
-        st.session_state["autenticado"] = True
-        st.session_state["rol"] = user_rec[4]
-        perfil_rest = cargar_perfil_usuario(user_rec[1])
-        if perfil_rest:
-            aplicar_perfil_en_sesion(perfil_rest)
-        else:
-            st.session_state["casillero"] = formatear_casillero(user_rec[1])
-            st.session_state["nombre"] = user_rec[2]
-            st.session_state["usuario"] = user_rec[3]
-            st.session_state["telefono"] = user_rec[6]
-            st.session_state["ciudad"] = user_rec[7]
-
-        vista_url = params.get("vista", "")
-        if isinstance(vista_url, list):
-            vista_url = vista_url[0] if vista_url else ""
-        hub_url = params.get("hub", "")
-        if isinstance(hub_url, list):
-            hub_url = hub_url[0] if hub_url else ""
-
-        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración", "Más", "Fichas"} | VISTAS_MODULO
-        if vista_url in ALIAS_VISTA:
-            vista_url = ALIAS_VISTA[vista_url]
-        if vista_url in vistas_validas:
-            st.session_state["sub_tab_inicio"] = vista_url
-            st.session_state["vista_activa"] = vista_url
-        if hub_url in HUBS:
-            st.session_state["hub"] = hub_url
-        elif vista_url in MODULOS_POR_ID:
-            st.session_state["hub"] = MODULOS_POR_ID[vista_url]
-
-        return True
+            conocidos.add(cid)
     except Exception:
-        return False
+        pass
 
-restaurar_sesion_persistente()
-
-if st.session_state.get("autenticado", False):
-    cas_actual = formatear_casillero(st.session_state.get("casillero", ""))
-    if cas_actual:
-        st.session_state["casillero"] = cas_actual
+def filas_cotizaciones_casillero(casillero, ahora=None):
+    cas = formatear_casillero(casillero or "")
+    ahora = ahora or obtener_tiempo_honduras()
+    hidratar_cotizaciones_sesion(cas)
+    by_id = {}
+    try:
+        for fila in cargar_cotizaciones_db(cas):
+            by_id[int(fila[0])] = fila
+    except Exception:
+        pass
+    _, lista = bolsa_cotizaciones_sesion(cas)
+    for reg in lista:
         try:
-            if st.query_params.get("casillero") != cas_actual:
-                st.query_params["casillero"] = cas_actual
+            by_id[int(reg.get("id") or 0)] = registro_sesion_a_fila(reg)
+        except (TypeError, ValueError):
+            continue
+    todas = ordenar_cotizaciones_desc([f for f in by_id.values() if f and f[0]])
+    visibles = [f for f in todas if cotizacion_visible_historial(f[7], f[8], ahora)]
+    return todas, visibles
+
+def marcar_cotizacion_sesion_confirmada(id_cot, casillero):
+    cas, lista = bolsa_cotizaciones_sesion(casillero)
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return
+    for reg in lista:
+        if int(reg.get("id") or 0) == cid:
+            reg["confirmada"] = 1
+            break
+
+def confirmar_cotizacion_casillero(id_cot, casillero):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return False
+    _, ahora = estampa_tiempo_honduras()
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE cotizaciones
+                SET confirmada = 1, fecha_confirmacion = ?
+                WHERE id = ? AND codigo_casillero = ? AND IFNULL(confirmada, 0) = 0
+                """,
+                (ahora, cid, cas),
+            )
+            conn.commit()
+        cargar_cotizaciones_db.clear()
+    except Exception:
+        pass
+    marcar_cotizacion_sesion_confirmada(cid, cas)
+    return True
+
+def direcciones_sesion(casillero):
+    cas = formatear_casillero(casillero or "")
+    bolsa = st.session_state.setdefault("direcciones_usuario", {})
+    previa = []
+    vistos_prev = set()
+    for clave in (*coincidencias_casillero(casillero), casillero, cas):
+        if not clave or clave in vistos_prev:
+            continue
+        vistos_prev.add(clave)
+        previa.extend(bolsa.get(clave) or [])
+    try:
+        filas = cargar_direcciones_db(casillero)
+    except Exception as exc:
+        filas = None
+    if filas is None:
+        bolsa[cas] = previa
+        return bolsa[cas]
+    dirs_db = [
+        {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
+        for d in filas
+    ]
+    claves_db = {(e["etiqueta"], e["ciudad"]) for e in dirs_db}
+    extras_sesion = [
+        e
+        for e in previa
+        if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
+    ]
+    combinadas = dirs_db + extras_sesion
+    bolsa[cas] = combinadas
+    for clave in coincidencias_casillero(casillero):
+        if clave != cas:
+            bolsa.pop(clave, None)
+    return combinadas
+
+def opciones_entrega_desde_sesion(casillero):
+    opciones = [OPCION_PREDETERMINADA]
+    for e in direcciones_sesion(casillero):
+        opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
+    opciones.append("➕ Crear Nueva Dirección de Envío")
+    return opciones
+
+def guardar_nueva_direccion(casillero):
+    etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
+    receptor = (st.session_state.get("dir_receptor_in") or "").strip()
+    tel = (st.session_state.get("dir_tel_in") or "").strip()
+    dep = (st.session_state.get("sb_dep_nueva_dir") or "").strip()
+    ciu = (st.session_state.get("sb_ciu_nueva_dir") or "").strip()
+    dir_exacta = (st.session_state.get("dir_exacta_in") or "").strip()
+    if not (etiqueta and receptor and tel and dep and ciu and dir_exacta):
+        st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
+        return
+    cas_norm = formatear_casillero(casillero)
+    f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    id_dir_nuevo = None
+    error_db = None
+    asegurar_esquema_direcciones()
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (cas_norm, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
+            )
+            id_dir_nuevo = cur.lastrowid
+            conn.commit()
+    except Exception as exc:
+        id_dir_nuevo = None
+        error_db = str(exc)
+    invalidar_cache_direcciones()
+    opcion_nueva = f"📍 {etiqueta} - {ciu}"
+    if error_db:
+        direcciones_sesion(cas_norm).append(
+            {
+                "id": None,
+                "etiqueta": etiqueta,
+                "receptor": receptor,
+                "telefono": tel,
+                "departamento": dep,
+                "ciudad": ciu,
+                "direccion": dir_exacta,
+            }
+        )
+    else:
+        direcciones_sesion(cas_norm)
+    seleccionar_modalidad_entrega(opcion_nueva)
+    st.session_state["destino_entrega_activo"] = opcion_nueva
+    st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
+    st.session_state["_dir_form_reset"] = True
+    st.session_state.pop("_dir_form_error", None)
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.toast(f"✅ Dirección '{etiqueta}' guardada y seleccionada.")
+
+def destino_para_documentos():
+    mod = st.session_state.get("modalidad_envio_seleccionada")
+    if mod and mod != "➕ Crear Nueva Dirección de Envío":
+        return mod
+    return st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA
+
+def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
+    if id_dir:
+        claves = coincidencias_casillero(casillero)
+        placeholders = ",".join("?" * len(claves)) if claves else "?"
+        params = (id_dir, *(claves or (formatear_casillero(casillero),)))
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    f"DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero IN ({placeholders})",
+                    params,
+                )
+                conn.commit()
         except Exception:
             pass
+        invalidar_cache_direcciones()
+    lista = direcciones_sesion(casillero)
+    lista[:] = [
+        e for e in lista if not (e.get("etiqueta") == etiqueta and e.get("ciudad") == ciudad)
+    ]
+    opcion_borrada = f"📍 {etiqueta} - {ciudad}"
+    if st.session_state.get("destino_entrega_activo") == opcion_borrada:
+        st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
+    if st.session_state.get("modalidad_envio_seleccionada") == opcion_borrada:
+        seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
 
-def logout():
-    for k in [
-        "autenticado", "usuario", "rol", "casillero", "nombre", "dni", "telefono",
-        "departamento", "ciudad", "direccion_exacta", "flash_perfil",
-        "datos_pdf_confirmado", "ultima_cot_id", "cotizaciones", "_cot_emit_snapshot",
-        "_seq_cot", "_ccm_rerun_app", "_ccm_scroll_emit", "_ccm_emit_error",
-        "_mod_entrega_lista", "_mod_entrega_pendiente", "modalidad_envio_seleccionada",
-        "sb_modalidad_entrega", "direcciones_usuario", "destino_entrega_activo",
-        "_dir_db_error", "_dir_form_error", "_dir_form_exito", "_dir_form_reset",
-        "dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in",
-        "sub_tab_inicio", "vista_activa", "hub", "china_modulos_desbloqueados",
-        "cotizacion_envio_foco", "cotizacion_historial_foco", "abrir_guia_rapida",
-        "guia_china_auto_vista", "guia_activa", "guia_paso", "guia_omitida",
-        "guia_completada", "mostrar_guia",
-    ]:
-        st.session_state.pop(k, None)
-    st.session_state["autenticado"] = False
-    st.session_state["vista_actual"] = "login"
-    st.query_params.clear()
-    st.rerun()
+def cancelar_nueva_direccion():
+    seleccionar_modalidad_entrega(st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA)
+    st.session_state["_dir_form_reset"] = True
+    st.session_state.pop("_dir_form_error", None)
+    st.session_state.pop("datos_pdf_confirmado", None)
+
+def selector_modalidad_entrega(opciones_modalidad):
+    pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
+    if pendiente in opciones_modalidad:
+        st.session_state["sb_modalidad_entrega"] = pendiente
+        st.session_state["modalidad_envio_seleccionada"] = pendiente
+    elif pendiente:
+        st.session_state["_mod_entrega_pendiente"] = pendiente
+        if st.session_state.get("sb_modalidad_entrega") == "➕ Crear Nueva Dirección de Envío":
+            st.session_state["sb_modalidad_entrega"] = OPCION_PREDETERMINADA
+    idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
+    sel_kwargs = {"key": "sb_modalidad_entrega"}
+    if "sb_modalidad_entrega" not in st.session_state:
+        sel_kwargs["index"] = idx_mod
+    elif st.session_state.get("sb_modalidad_entrega") not in opciones_modalidad:
+        st.session_state["sb_modalidad_entrega"] = opciones_modalidad[idx_mod]
+    mod_elegida = st.selectbox(
+        "🏪 ¿Cómo deseas recibir tu compra?",
+        opciones_modalidad,
+        on_change=al_cambiar_modalidad_entrega,
+        **sel_kwargs,
+    )
+    st.session_state["modalidad_envio_seleccionada"] = mod_elegida
+    if mod_elegida != "➕ Crear Nueva Dirección de Envío":
+        st.session_state["destino_entrega_activo"] = mod_elegida
+    st.session_state["_mod_entrega_lista"] = True
+
+def al_cambiar_modalidad_entrega():
+    invalidar_emision_visible_cotizador()
+    nueva = st.session_state.get("sb_modalidad_entrega")
+    if nueva:
+        st.session_state["modalidad_envio_seleccionada"] = nueva
+
+def seleccionar_modalidad_entrega(opcion):
+    st.session_state["modalidad_envio_seleccionada"] = opcion
+    st.session_state["_mod_entrega_pendiente"] = opcion
+
+def ir_a(vista, hub="_omit"):
+    if vista == "Cerrar":
+        logout()
+        return
+    vista = ALIAS_VISTA.get(vista, vista)
+    if vista in VISTAS_MODULO and not usuario_puede_modulo(vista):
+        vista = "Inicio"
+        hub = None
+    if hub != "_omit":
+        st.session_state["hub"] = hub
+    elif vista in MODULOS_POR_ID:
+        st.session_state["hub"] = MODULOS_POR_ID[vista]
+    st.session_state["sub_tab_inicio"] = vista
+    st.session_state["vista_activa"] = vista
+    cas = formatear_casillero(st.session_state.get("casillero", ""))
+    if cas:
+        st.query_params["casillero"] = cas
+    st.query_params["vista"] = vista
+    hub_actual = st.session_state.get("hub")
+    if hub_actual:
+        st.query_params["hub"] = hub_actual
+    elif "hub" in st.query_params:
+        del st.query_params["hub"]
+
+def ir_a_inicio():
+    ir_a("Inicio", hub=None)
+
+def ir_a_catalogo():
+    ir_a("Catálogo", hub="china")
+
+def ir_a_mis_cotizaciones():
+    ir_a("Mis Cotizaciones", hub="china")
+
+def ir_a_cotizador():
+    ir_a("Cotizador", hub="china")
+
+def ir_a_mas():
+    ir_a("Más")
+
+def ir_a_envios():
+    ir_a("Mis Envíos", hub="china")
+
+def ir_a_fichas():
+    ir_a("Fichas", hub="china")
+
+def ir_a_envios_de_cotizacion(id_cot):
+    try:
+        st.session_state["cotizacion_envio_foco"] = int(id_cot)
+    except (TypeError, ValueError):
+        st.session_state.pop("cotizacion_envio_foco", None)
+    ir_a("Mis Envíos", hub="china")
+
+def ir_a_historial_guia(id_cot):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        cid = 0
+    if cid:
+        st.session_state["cotizacion_historial_foco"] = cid
+        st.session_state["ultima_cot_id"] = cid
+    ir_a("Mis Cotizaciones", hub="china")
+
+def on_confirmar_cot_historial(id_cot, casillero):
+    if confirmar_cotizacion_casillero(id_cot, casillero):
+        try:
+            st.session_state["cotizacion_envio_foco"] = int(id_cot)
+        except (TypeError, ValueError):
+            pass
 
 # ---------------------------------------------------------
-# 7. ESTILOS CSS REFINADOS
+# 4. ENTORNO VISUAL Y PDFS
+# ---------------------------------------------------------
+@lru_cache(maxsize=1)
+def cargar_logo_jpeg():
+    for ruta in RUTAS_LOGO:
+        if not ruta.is_file():
+            continue
+        try:
+            from PIL import Image
+            with Image.open(ruta) as im:
+                rgb = im.convert("RGB")
+                if ruta.suffix.lower() == ".png":
+                    mascara = rgb.convert("L").point(lambda p: 0 if p > 248 else 255)
+                    recorte = mascara.getbbox()
+                    if recorte:
+                        rgb = rgb.crop(recorte)
+                    rgb.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    rgb.save(buf, format="JPEG", quality=88, optimize=True)
+                    return buf.getvalue(), rgb.size[0], rgb.size[1]
+                return ruta.read_bytes(), rgb.size[0], rgb.size[1]
+        except Exception:
+            continue
+    return None, 0, 0
+
+def _prefijo_logo_pdf(ancho_pt=118.0):
+    datos, pix_w, pix_h = cargar_logo_jpeg()
+    if not datos or not pix_w:
+        return b"", None, 0, 0
+    alto_pt = ancho_pt * (pix_h / float(pix_w))
+    x = (595.0 - ancho_pt) / 2.0
+    y = 842.0 - 18.0 - alto_pt
+    ops = f"q\n{ancho_pt:.2f} 0 0 {alto_pt:.2f} {x:.2f} {y:.2f} cm\n/Im1 Do\nQ\n".encode("ascii")
+    return ops, datos, pix_w, pix_h
+
+def compilar_pdf_simple(stream_content):
+    texto = stream_content.encode("latin-1", "replace")
+    logo_ops, jpeg, pix_w, pix_h = _prefijo_logo_pdf()
+    stream_bytes = (logo_ops + texto) if jpeg else texto
+    stream_len = len(stream_bytes)
+    con_logo = bool(jpeg)
+
+    pdf_buffer = io.BytesIO()
+    pdf_buffer.write(b"%PDF-1.4\n")
+    offsets = []
+
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+    recursos = (
+        b"/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >>"
+        if con_logo
+        else b"/Resources << /Font << /F1 5 0 R >> >>"
+    )
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
+        + recursos
+        + b" >>\nendobj\n"
+    )
+
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n".encode("latin-1"))
+    pdf_buffer.write(stream_bytes)
+    pdf_buffer.write(b"\nendstream\nendobj\n")
+
+    offsets.append(pdf_buffer.tell())
+    pdf_buffer.write(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
+
+    if con_logo:
+        offsets.append(pdf_buffer.tell())
+        pdf_buffer.write(
+            (
+                f"6 0 obj\n<< /Type /XObject /Subtype /Image /Width {pix_w} /Height {pix_h} "
+                f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(jpeg)} >>\nstream\n"
+            ).encode("ascii")
+        )
+        pdf_buffer.write(jpeg)
+        pdf_buffer.write(b"\nendstream\nendobj\n")
+
+    xref_offset = pdf_buffer.tell()
+    n_obj = 6 if con_logo else 5
+    pdf_buffer.write(f"xref\n0 {n_obj + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for off in offsets:
+        pdf_buffer.write(f"{off:010d} 00000 n \n".encode("latin-1"))
+
+    pdf_buffer.write(f"trailer\n<< /Size {n_obj + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("latin-1"))
+    return pdf_buffer.getvalue()
+
+def generar_pdf_etiqueta_proveedor(casillero, nombre, telefono, ciudad, al=0.0, an=0.0, la=0.0, pe_lb=0.0, pe_kg=0.0, vol_m3=0.0, destino_entrega="Retirar en Almacén", fecha_emision=None):
+    dim_txt = f"{al:.1f} x {an:.1f} x {la:.1f} CM" if (al > 0 or an > 0 or la > 0) else "POR DEFINIR EN ORIGEN"
+    peso_txt = f"{pe_kg:.2f} KG ({pe_lb:.1f} LBS)" if pe_lb > 0 else "_______ KG"
+    vol_txt = f"{vol_m3:.4f} CBM" if vol_m3 > 0 else "_______ CBM"
+    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
+    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
+
+    stream = f"""BT
+/F1 16 Tf
+40 728 Td
+(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 9 Tf
+0 -16 Td
+(EMITIDO EL: {fecha_txt}) Tj
+/F1 10 Tf
+0 -16 Td
+(MARITIME CONSOLIDATION CARGO [CHINA -> HONDURAS]) Tj
+0 -26 Td
+(================================================================) Tj
+/F1 13 Tf
+0 -22 Td
+(CLIENT CODE / CASILLERO : {casillero}) Tj
+/F1 10 Tf
+0 -18 Td
+(CLIENT NAME: {nombre}) Tj
+0 -14 Td
+(CONTACT PHONE: {telefono}) Tj
+0 -14 Td
+(FINAL DESTINATION / ENTREGA: {destino_clean}, HONDURAS) Tj
+0 -22 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -18 Td
+(SHIP TO / WAREHOUSE IN CHINA [CHILAT]:) Tj
+/F1 9 Tf
+0 -14 Td
+(ATTN / RECEIVER : CHILAT / {casillero}) Tj
+0 -12 Td
+(ADDRESS : CHILAT Logistics Warehouse, District B, Port Area, Guangzhou) Tj
+0 -12 Td
+(WAREHOUSE TEL : +86 138 0000 0000) Tj
+0 -22 Td
+(================================================================) Tj
+/F1 10 Tf
+0 -16 Td
+(PACKAGE SPECIFICATIONS / DETALLES DE CARGA:) Tj
+/F1 9 Tf
+0 -14 Td
+(DIMENSIONS (L x W x H) : {dim_txt}) Tj
+0 -12 Td
+(GROSS WEIGHT           : {peso_txt}) Tj
+0 -12 Td
+(ESTIMATED VOLUME       : {vol_txt}) Tj
+0 -20 Td
+(----------------------------------------------------------------) Tj
+/F1 9 Tf
+0 -15 Td
+(INSTRUCTIONS FOR SUPPLIER / FABRICANTE [ALIBABA / MADE-IN-CHINA / 1688]:) Tj
+0 -13 Td
+(1. Paste this shipping label firmly on at least 2 sides of every box.) Tj
+0 -12 Td
+(2. Packages received without the Client Code will NOT be processed.) Tj
+0 -12 Td
+(3. Send domestic tracking number to the buyer immediately upon dispatch.) Tj
+ET"""
+    return compilar_pdf_simple(stream)
+
+def generar_pdf_confirmacion_cotizacion(casillero, nombre, telefono, ciudad, tipo_carga, al, an, la, peso_lb, peso_kg, vol_m3, vol_ft3, total_usd, detalle_tarifa, id_cot, destino_entrega="Retirar en Almacén", fecha_emision=None):
+    fecha_txt = fecha_emision if fecha_emision else obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p")
+    destino_clean = str(destino_entrega).replace("📍", "").replace("📦", "").replace("🏬", "").strip().upper()
+
+    stream = f"""BT
+/F1 15 Tf
+40 728 Td
+(CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 10 Tf
+0 -16 Td
+(COMPROBANTE OFICIAL DE COTIZACION Y ACEPTACION DE TARIFA) Tj
+0 -20 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -20 Td
+(NO. CONTROL / COTIZACION : CCM-COT-{id_cot:05d}) Tj
+/F1 9 Tf
+0 -14 Td
+(FECHA Y HORA DE EMISION : {fecha_txt}) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -16 Td
+(DATOS DEL CLIENTE Y DIRECCION DE ENTREGA SELECCIONADA:) Tj
+/F1 9 Tf
+0 -14 Td
+(CASILLERO INTERNACIONAL : {casillero}) Tj
+0 -12 Td
+(TITULAR DE LA CUENTA    : {nombre}) Tj
+0 -12 Td
+(TELEFONO / WHATSAPP    : {telefono}) Tj
+0 -12 Td
+(MODALIDAD DE ENTREGA   : {destino_clean}) Tj
+0 -12 Td
+(DESTINO BASE REGISTRADO: {ciudad.upper()}, HONDURAS) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 11 Tf
+0 -16 Td
+(DESGLOSE DE LA CARGA Y DIMENSIONES:) Tj
+/F1 9 Tf
+0 -14 Td
+(MODALIDAD DE CARGA      : {tipo_carga.upper()}) Tj
+0 -12 Td
+(DIMENSIONES DEL PAQUETE : {al:.1f} cm (Alto) x {an:.1f} cm (Ancho) x {la:.1f} cm (Largo)) Tj
+0 -12 Td
+(PESO TOTAL CALCULADO   : {peso_lb:.2f} LBS  ({peso_kg:.2f} KG)) Tj
+0 -12 Td
+(VOLUMEN ESTIMADO        : {vol_m3:.4f} M3  ({vol_ft3:.2f} FT3)) Tj
+0 -12 Td
+(DESGLOSE DE TARIFA      : {detalle_tarifa}) Tj
+0 -18 Td
+(----------------------------------------------------------------) Tj
+/F1 13 Tf
+0 -16 Td
+(TOTAL FLETE MARITIMO ESTIMADO: ${total_usd:.2f} USD) Tj
+/F1 9 Tf
+0 -18 Td
+(================================================================) Tj
+/F1 10 Tf
+0 -16 Td
+(DIRECCION DE BODEGA EN GUANGZHOU, CHINA:) Tj
+/F1 8 Tf
+0 -13 Td
+(ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
+0 -11 Td
+(DIRECCION EN GUANGZHOU: CHILAT Logistics Warehouse, District B, Port Area) Tj
+0 -11 Td
+(TELEFONO EN CHINA    : +86 138 0000 0000) Tj
+0 -18 Td
+(================================================================) Tj
+/F1 8 Tf
+0 -14 Td
+(DECLARACION DE CONFORMIDAD DEL CLIENTE:) Tj
+0 -11 Td
+(El cliente declara estar conforme con la tarifa cotizada y autoriza el) Tj
+0 -10 Td
+(procesamiento de su carga con Centro de Ceramicas y Mas.) Tj
+ET"""
+    return compilar_pdf_simple(stream)
+
+def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""):
+    clases = "app-header-blue"
+    if extra_class:
+        clases = f"{clases} {extra_class}"
+    estilo = f' style="{extra_style}"' if extra_style else ""
+    cuerpo = textwrap.dedent(cuerpo_html or "").strip()
+    cuerpo_html_out = f'<div class="app-header-copy">{cuerpo}</div>' if cuerpo else ""
+    return (
+        f'<div class="{clases}"{estilo}>'
+        f'<div class="app-header-top">'
+        f'<div class="app-header-brand">CENTRO DE CERÁMICAS Y MÁS</div>'
+        f"</div>"
+        f"{cuerpo_html_out}"
+        f"</div>"
+    )
+
+# ---------------------------------------------------------
+# 5. ESTILOS CSS COMPLETOS
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -955,7 +1323,6 @@ st.markdown(
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --sticky-h: 208px;
-        --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
         --header-box: 196px;
         --header-gap: 20px;
@@ -963,120 +1330,40 @@ st.markdown(
     }
 
     html, body {
-        overflow: hidden !important;
         height: 100% !important;
-        max-height: 100% !important;
         background-color: #f8fafc !important;
-        background: #f8fafc !important;
-        color: #0f172a !important;
-        color-scheme: light !important;
-    }
-    [data-st-overlay-root="true"] {
-        color-scheme: light !important;
-        color: #0f172a !important;
-    }
-
-    .stApp,
-    [data-testid="stAppViewContainer"],
-    [data-testid="stAppViewBlockContainer"],
-    [data-testid="stMain"],
-    [data-testid="stMainBlockContainer"],
-    [data-testid="stBottomBlockContainer"],
-    [data-testid="stBottom"],
-    section.main,
-    .stMain,
-    .stMainBlockContainer,
-    .main,
-    .block-container {
-        background-color: #f8fafc !important;
-        background: #f8fafc !important;
         color: #0f172a !important;
     }
 
     .stApp {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        height: 100% !important;
-        max-height: 100% !important;
-        min-height: 100% !important;
-        color-scheme: light !important;
-        max-width: 100% !important;
+        background-color: #f8fafc !important;
     }
 
-    #MainMenu, footer,
-    [data-testid="stHeader"],
-    [data-testid="stToolbar"],
-    [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"],
-    .stStatusWidget,
-    .stDeployButton,
-    [data-testid="stAppDeployButton"],
-    [class*="stAppDeployButton"],
-    [class*="viewerBadge"],
-    [class*="ViewerBadge"],
-    iframe[title*="streamlit status" i],
-    [data-testid="stBaseButton-header"],
-    [data-testid="stBaseButton-headerNoPadding"],
-    [data-testid="stAppHeader"],
-    .stAppHeader,
-    div[class*="stDeployButton"],
-    [data-testid="stToolbarActions"],
-    [data-testid="stHostToolbar"],
-    [data-testid="stHostHeader"],
-    [data-testid="stHeader"] button[kind="header"],
-    [data-testid="stHeader"] [data-testid="stBaseButton-header"],
-    [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],
-    [data-testid="stAppToolbar"],
-    .stAppToolbar,
-    [data-testid="stMainMenu"],
-    #recordMenuPopoverButton,
-    iframe[title*="streamlit cloud" i],
-    a[href*="streamlit.io"],
-    a[href*="share.streamlit.io"] {
+    #MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"] {
         display: none !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        width: 0 !important;
-        opacity: 0 !important;
     }
 
-    .block-container,
-    [data-testid="stMainBlockContainer"],
-    .stMainBlockContainer,
-    [data-testid="stAppViewBlockContainer"] {
+    .block-container {
         max-width: var(--app-max-width) !important;
-        width: 100% !important;
         padding-top: 0.15rem !important;
         padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: var(--app-pad) !important;
         padding-right: var(--app-pad) !important;
         margin: 0 auto !important;
-        overflow: visible !important;
-        transform: none !important;
     }
 
-    .st-key-sticky_top_header,
-    div[class~="st-key-sticky_top_header"] {
+    .st-key-sticky_top_header {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         right: 0 !important;
-        transform: none !important;
         width: min(100%, var(--app-max-width)) !important;
         max-width: var(--app-max-width) !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        z-index: 10 !important;
-        background-color: #f8fafc !important;
+        margin: 0 auto !important;
+        z-index: 999 !important;
         background: #f8fafc !important;
-        padding-top: max(0.35rem, env(safe-area-inset-top, 0px)) !important;
-        padding-bottom: 0.45rem !important;
-        padding-left: var(--app-pad) !important;
-        padding-right: var(--app-pad) !important;
-        box-sizing: border-box !important;
+        padding: max(0.35rem, env(safe-area-inset-top, 0px)) var(--app-pad) 0.45rem var(--app-pad) !important;
         border-bottom: 1px solid #e2e8f0 !important;
         box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12) !important;
     }
@@ -1086,7 +1373,6 @@ st.markdown(
         height: max(var(--header-offset), 208px) !important;
         min-height: max(var(--header-offset), 208px) !important;
         width: 100% !important;
-        pointer-events: none !important;
         visibility: hidden !important;
     }
 
@@ -1096,23 +1382,7 @@ st.markdown(
         border-radius: 12px !important;
         color: #ffffff !important;
         box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
-        max-width: 100% !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
         margin-bottom: 4px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 1px !important;
-        overflow: hidden !important;
-    }
-
-    .app-header-top {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        width: 100% !important;
-        padding: 2px 0 8px 0 !important;
-        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
     }
 
     .app-header-brand {
@@ -1120,7 +1390,7 @@ st.markdown(
         font-weight: 800 !important;
         text-transform: uppercase !important;
         white-space: nowrap !important;
-        letter-spacing: 0.04em !important;
+        text-align: center !important;
         font-size: var(--brand-size) !important;
     }
 
@@ -1128,14 +1398,11 @@ st.markdown(
         font-size: var(--greeting-title) !important;
         font-weight: 800 !important;
         color: #ffffff !important;
-        line-height: 1.25 !important;
     }
 
     .app-greeting-sub {
         font-size: var(--greeting-sub) !important;
         color: #dbeafe !important;
-        font-weight: 500 !important;
-        line-height: 1.35 !important;
     }
 
     .app-header-time {
@@ -1152,13 +1419,48 @@ st.markdown(
         margin-bottom: 1rem;
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
+
+    div.stButton > button, div.stDownloadButton > button {
+        width: 100% !important;
+        height: 44px !important;
+        border-radius: 10px !important;
+        font-size: 0.76rem !important;
+        font-weight: 700 !important;
+    }
+
+    div.stButton > button[kind="primary"], div.stDownloadButton > button {
+        background: linear-gradient(135deg, #004ac1, #00368c) !important;
+        color: #ffffff !important;
+        border: 1px solid #004ac1 !important;
+    }
+
+    div.stButton > button[kind="secondary"] {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1.5px solid #cbd5e1 !important;
+    }
+
+    .st-key-bottom_nav {
+        position: fixed !important;
+        bottom: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 9999 !important;
+        width: min(96vw, 520px) !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(12px) !important;
+        border-radius: 35px !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
+        padding: 6px 8px !important;
+        border: 1px solid rgba(226, 232, 240, 0.95) !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------
-# 8. ENTRADA PRINCIPAL SEGÚN ROL
+# 6. ROUTING PRINCIPAL (LOGIN / CLIENTE / ADMIN)
 # ---------------------------------------------------------
 if not st.session_state.get("autenticado", False):
     if st.session_state.get("vista_actual") == "login":
@@ -1173,11 +1475,7 @@ if not st.session_state.get("autenticado", False):
             )
 
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
-        u_ident = st.text_input(
-            "Casillero, DNI o correo",
-            placeholder="Ej: CCM-13011998 o correo@gmail.com",
-            key="log_cas",
-        )
+        u_ident = st.text_input("Casillero, DNI o correo", placeholder="Ej: CCM-13011998 o correo@gmail.com", key="log_cas")
         u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -1240,12 +1538,8 @@ if not st.session_state.get("autenticado", False):
         st.progress(paso / 4.0, text=f"Paso {paso} de 4")
 
         if paso == 1:
-            nom = st.text_input("Nombre Completo *", value=st.session_state["reg_datos"].get("nom", ""))
-            dni = st.text_input(
-                "Número de Identidad (DNI - 13 dígitos) *",
-                value=st.session_state["reg_datos"].get("dni", ""),
-                placeholder="Ej: 1301199800990",
-            )
+            nom = st.text_input("Nombre Completo *", value=st.session_state.get("reg_datos", {}).get("nom", ""))
+            dni = st.text_input("Número de Identidad (DNI - 13 dígitos) *", value=st.session_state.get("reg_datos", {}).get("dni", ""), placeholder="Ej: 1301199800990")
             if dni:
                 st.caption(f"ℹ️ Su casillero asignado será: **{generar_codigo_casillero_dni(dni)}**")
             if st.button("Siguiente ➔", type="primary"):
@@ -1256,8 +1550,8 @@ if not st.session_state.get("autenticado", False):
                 else:
                     st.error("Ingrese un DNI válido.")
         elif paso == 2:
-            cor = st.text_input("Correo Electrónico *", value=st.session_state["reg_datos"].get("cor", ""))
-            tel = st.text_input("Teléfono / WhatsApp *", value=st.session_state["reg_datos"].get("tel", ""))
+            cor = st.text_input("Correo Electrónico *", value=st.session_state.get("reg_datos", {}).get("cor", ""))
+            tel = st.text_input("Teléfono / WhatsApp *", value=st.session_state.get("reg_datos", {}).get("tel", ""))
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⬅️ Atrás", type="secondary"):
@@ -1274,7 +1568,7 @@ if not st.session_state.get("autenticado", False):
         elif paso == 3:
             dep_reg = st.selectbox("Departamento *", list(MUNICIPIOS_HONDURAS.keys()), index=9, key="sb_dep_reg")
             ciu_reg = st.selectbox("Municipio / Ciudad *", MUNICIPIOS_HONDURAS[dep_reg], key="sb_ciu_reg")
-            dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state["reg_datos"].get("dir", ""))
+            dir_e = st.text_area("Dirección Exacta de Entrega *", value=st.session_state.get("reg_datos", {}).get("dir", ""))
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⬅️ Atrás", type="secondary"):
@@ -1340,7 +1634,7 @@ if not st.session_state.get("autenticado", False):
             st.rerun()
 
 elif st.session_state.get("rol") == "cliente":
-    casillero = formatear_casillero(st.session_state["casillero"])
+    casillero = formatear_casillero(st.session_state.get("casillero", ""))
     nombre_completo = st.session_state.get("nombre", "Cliente")
     ahora_hn = obtener_tiempo_honduras()
     dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
@@ -1361,7 +1655,7 @@ elif st.session_state.get("rol") == "cliente":
             unsafe_allow_html=True,
         )
 
-    sincronizar_altura_encabezado_fijo()
+    st.markdown('<div class="ccm-header-spacer"></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.markdown(f"### Bienvenido al panel de {casillero}")
