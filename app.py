@@ -818,7 +818,7 @@ except Exception:
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
-DB_NAME = "ccm_maritime_enterprise.db"
+DB_NAME = str(Path(__file__).resolve().parent / "ccm_maritime_enterprise.db")
 LOGO_FILENAME = "logo_ccm_print.jpg"
 RUTAS_LOGO = (
     Path(__file__).resolve().parent / "assets" / "logo_ccm_print.jpg",
@@ -1221,18 +1221,58 @@ def registro_sesion_a_fila(reg):
     )
 
 
+def registrar_error_direcciones(exc, contexto):
+    """Registra fallos de SQLite en sesión y en logs; nunca silencia un INSERT/DELETE."""
+    msg = f"{contexto}: {exc}"
+    print(f"[CCM direcciones] {msg}", flush=True)
+    try:
+        st.session_state["_dir_db_error"] = msg
+    except Exception:
+        pass
+
+
+def invalidar_cache_direcciones():
+    """Si la carga llega a cachearse, fuerza relectura inmediata tras escribir."""
+    clear = getattr(cargar_direcciones_db, "clear", None)
+    if callable(clear):
+        clear()
+
+
 def cargar_direcciones_db(casillero):
-    """Lee SIEMPRE del archivo SQLite (sin caché): cada login/recarga ve las filas reales."""
+    """Lee SIEMPRE del archivo SQLite (sin @st.cache_data): F5, cambio de vista y re-login ven las filas reales.
+
+    Busca con coincidencias_casillero: una fila guardada como 15011985 también aparece
+    al consultar CCM-15011985 (y viceversa).
+    """
     cas = formatear_casillero(casillero or "")
     if not cas:
         return []
+    claves = coincidencias_casillero(casillero)
+    if not claves:
+        return []
+    placeholders = ",".join("?" * len(claves))
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta FROM direcciones_entrega WHERE codigo_casillero = ?",
-            (cas,),
+            f"""
+            SELECT id, etiqueta, receptor_nombre, ciudad, direccion_exacta
+            FROM direcciones_entrega
+            WHERE codigo_casillero IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            claves,
         )
-        return cur.fetchall()
+        filas = cur.fetchall()
+        cur.execute(
+            f"""
+            UPDATE direcciones_entrega
+            SET codigo_casillero = ?
+            WHERE codigo_casillero IN ({placeholders}) AND codigo_casillero != ?
+            """,
+            (cas, *claves, cas),
+        )
+        conn.commit()
+        return filas
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -1606,20 +1646,28 @@ def asegurar_esquema_direcciones():
 
 
 def direcciones_sesion(casillero):
-    """Direcciones del usuario: SQLite es la fuente en cada run (sobrevive a F5).
+    """Direcciones del casillero: SQLite es la fuente en CADA render (F5 / cambio de vista / re-login).
 
-    La colección en session_state solo conserva, además, las entradas que la BD
-    rechazó (id None) para que no desaparezcan del desplegable durante la sesión.
+    session_state solo conserva, además, entradas que la BD rechazó (id None) para que
+    no desaparezcan del desplegable durante la sesión actual.
     """
+    cas = formatear_casillero(casillero or "")
     bolsa = st.session_state.setdefault("direcciones_usuario", {})
-    previa = bolsa.get(casillero, [])
+    previa = []
+    vistos_prev = set()
+    for clave in (*coincidencias_casillero(casillero), casillero, cas):
+        if not clave or clave in vistos_prev:
+            continue
+        vistos_prev.add(clave)
+        previa.extend(bolsa.get(clave) or [])
     try:
         filas = cargar_direcciones_db(casillero)
-    except Exception:
+    except Exception as exc:
+        registrar_error_direcciones(exc, "Consulta direcciones_entrega")
         filas = None
     if filas is None:
-        bolsa[casillero] = previa
-        return bolsa[casillero]
+        bolsa[cas] = previa
+        return bolsa[cas]
     dirs_db = [
         {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
         for d in filas
@@ -1630,12 +1678,16 @@ def direcciones_sesion(casillero):
         for e in previa
         if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
     ]
-    bolsa[casillero] = dirs_db + extras_sesion
-    return bolsa[casillero]
+    combinadas = dirs_db + extras_sesion
+    bolsa[cas] = combinadas
+    for clave in coincidencias_casillero(casillero):
+        if clave != cas:
+            bolsa.pop(clave, None)
+    return combinadas
 
 
 def opciones_entrega_desde_sesion(casillero):
-    """Predeterminada + direcciones de la sesión + Crear Nueva, reconstruido en cada run."""
+    """Reconstruye el desplegable desde SQLite en cada run: almacén → direcciones activas → Crear Nueva."""
     opciones = [OPCION_PREDETERMINADA]
     for e in direcciones_sesion(casillero):
         opciones.append(f"📍 {e['etiqueta']} - {e['ciudad']}")
@@ -1644,7 +1696,7 @@ def opciones_entrega_desde_sesion(casillero):
 
 
 def guardar_nueva_direccion(casillero):
-    """on_click de Guardar Dirección: los valores del widget ya están confirmados al ejecutarse."""
+    """on_click de Guardar Dirección: lee los widgets en el clic, INSERT + COMMIT inmediato."""
     etiqueta = (st.session_state.get("dir_etiqueta_in") or "").strip()
     receptor = (st.session_state.get("dir_receptor_in") or "").strip()
     tel = (st.session_state.get("dir_tel_in") or "").strip()
@@ -1654,6 +1706,7 @@ def guardar_nueva_direccion(casillero):
     if not (etiqueta and receptor and tel and dep and ciu and dir_exacta):
         st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
         return
+    cas_norm = formatear_casillero(casillero)
     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     id_dir_nuevo = None
     error_db = None
@@ -1666,17 +1719,20 @@ def guardar_nueva_direccion(casillero):
                 INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (casillero, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
+                (cas_norm, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
             )
             id_dir_nuevo = cur.lastrowid
             conn.commit()
+            if not id_dir_nuevo:
+                raise sqlite3.Error("INSERT direcciones_entrega no devolvió lastrowid.")
     except Exception as exc:
         id_dir_nuevo = None
         error_db = str(exc)
+        registrar_error_direcciones(exc, "INSERT direcciones_entrega")
+    invalidar_cache_direcciones()
+    opcion_nueva = f"📍 {etiqueta} - {ciu}"
     if error_db:
-        # La dirección sigue disponible en la sesión, pero avisa que el disco falló.
-        st.session_state["_dir_db_error"] = error_db
-        direcciones_sesion(casillero).append(
+        direcciones_sesion(cas_norm).append(
             {
                 "id": None,
                 "etiqueta": etiqueta,
@@ -1688,10 +1744,9 @@ def guardar_nueva_direccion(casillero):
             }
         )
     else:
-        # Resincroniza desde SQLite: la fila recién insertada entra con su id real.
-        direcciones_sesion(casillero)
-    seleccionar_modalidad_entrega(f"📍 {etiqueta} - {ciu}")
-    st.session_state["destino_entrega_activo"] = f"📍 {etiqueta} - {ciu}"
+        direcciones_sesion(cas_norm)
+    seleccionar_modalidad_entrega(opcion_nueva)
+    st.session_state["destino_entrega_activo"] = opcion_nueva
     st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
@@ -1710,16 +1765,20 @@ def destino_para_documentos():
 def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
     """Quita la dirección de la colección en memoria y de SQLite (si existe la fila)."""
     if id_dir:
+        claves = coincidencias_casillero(casillero)
+        placeholders = ",".join("?" * len(claves)) if claves else "?"
+        params = (id_dir, *(claves or (formatear_casillero(casillero),)))
         try:
             with get_db() as conn:
                 cur = conn.cursor()
                 cur.execute(
-                    "DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero = ?",
-                    (id_dir, casillero),
+                    f"DELETE FROM direcciones_entrega WHERE id = ? AND codigo_casillero IN ({placeholders})",
+                    params,
                 )
                 conn.commit()
         except Exception as exc:
-            st.session_state["_dir_db_error"] = str(exc)
+            registrar_error_direcciones(exc, "DELETE direcciones_entrega")
+        invalidar_cache_direcciones()
     lista = direcciones_sesion(casillero)
     lista[:] = [
         e for e in lista if not (e.get("etiqueta") == etiqueta and e.get("ciudad") == ciudad)
@@ -3470,6 +3529,7 @@ def codigo_casillero_desde_usuario(codigo, dni):
 
 
 def coincidencias_casillero(valor):
+    """Variantes de un casillero (15011985, CCM-15011985, etc.) para consultas IN (...)."""
     vistos = []
     for candidato in (str(valor or "").strip(), formatear_casillero(valor), nucleo_casillero_desde_id(valor)):
         if candidato and candidato not in vistos:
@@ -7174,9 +7234,17 @@ elif st.session_state["rol"] == "cliente":
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = direcciones_sesion(casillero)
     opciones_modalidad = opciones_entrega_desde_sesion(casillero)
-
-    if st.session_state["modalidad_envio_seleccionada"] not in opciones_modalidad:
-        st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+    crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
+    mod_actual = st.session_state.get("modalidad_envio_seleccionada")
+    previa_destino = st.session_state.get("destino_entrega_activo")
+    if mod_actual != crear_nueva_dir:
+        if mod_actual in opciones_modalidad:
+            st.session_state["destino_entrega_activo"] = mod_actual
+        elif previa_destino in opciones_modalidad:
+            st.session_state["modalidad_envio_seleccionada"] = previa_destino
+        else:
+            st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+            st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
 
     with st.container(key="sticky_top_header"):
         st.markdown(
@@ -7569,11 +7637,12 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_cotizador"):
             st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
             selector_modalidad_entrega(opciones_modalidad)
+            destino_estampado = html.escape(destino_para_documentos())
             st.markdown(
                 f"""
                 <div class="destino-seleccionado-card">
                     <div class="destino-seleccionado-kicker">📍 Destino de Entrega Seleccionado</div>
-                    <div class="destino-seleccionado-dir">{st.session_state['modalidad_envio_seleccionada']}</div>
+                    <div class="destino-seleccionado-dir">{destino_estampado}</div>
                     <div class="destino-seleccionado-nota">(Se imprimirá en todos los formatos y fichas de bodega)</div>
                 </div>
                 """,
@@ -7766,7 +7835,7 @@ elif st.session_state["rol"] == "cliente":
                 "total_usd": tot,
                 "tipo_carga": modalidad_pdf,
                 "detalle_tarifa": detalle_pdf,
-                "destino": st.session_state["modalidad_envio_seleccionada"],
+                "destino": destino_para_documentos(),
                 "firma_params": list(firma_actual),
             }
             with st.container(key="guia_foco_tarifa"):
