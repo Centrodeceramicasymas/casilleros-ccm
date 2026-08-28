@@ -2648,13 +2648,12 @@ def anclar_barra_inferior():
                         sesionHost.style.setProperty("margin-bottom", "0px", "important");
                       }
                     } else {
-                      // Sin módulos, conserva una presentación compacta y alineada al borde inferior.
-                      caja.style.setProperty("display", "flex", "important");
-                      caja.style.setProperty("flex-direction", "column", "important");
-                      caja.style.setProperty("min-height", Math.max(0, Math.round(objetivo - cajaTop)) + "px", "important");
-                      caja.style.setProperty("padding-bottom", "0px", "important");
+                      // Sin módulos, la cuenta y la sesión se presentan como un bloque compacto.
+                      caja.style.setProperty("display", "block", "important");
+                      caja.style.setProperty("min-height", "0px", "important");
+                      caja.style.setProperty("padding-bottom", reservaScroll + "px", "important");
                       if (sesionHost) {
-                        sesionHost.style.setProperty("margin-top", "auto", "important");
+                        sesionHost.style.setProperty("margin-top", "48px", "important");
                         sesionHost.style.setProperty("margin-bottom", "0px", "important");
                         sesionHost.style.setProperty("padding-bottom", "0px", "important");
                       }
