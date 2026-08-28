@@ -1230,11 +1230,16 @@ def cotizacion_existe_en_casillero(id_cot, casillero=None):
     except (TypeError, ValueError):
         return False
     cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    variantes = coincidencias_casillero(cas)
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            if cas:
-                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ? AND codigo_casillero = ?", (cid, cas))
+            if variantes:
+                marcadores = ",".join("?" * len(variantes))
+                cur.execute(
+                    f"SELECT 1 FROM cotizaciones WHERE id = ? AND codigo_casillero IN ({marcadores})",
+                    (cid, *variantes),
+                )
             else:
                 cur.execute("SELECT 1 FROM cotizaciones WHERE id = ?", (cid,))
             return cur.fetchone() is not None
@@ -1248,13 +1253,15 @@ def cotizacion_esta_confirmada(id_cot, casillero=None):
     except (TypeError, ValueError):
         return False
     cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    variantes = coincidencias_casillero(cas)
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            if cas:
+            if variantes:
+                marcadores = ",".join("?" * len(variantes))
                 cur.execute(
-                    "SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
-                    (cid, cas),
+                    f"SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ? AND codigo_casillero IN ({marcadores})",
+                    (cid, *variantes),
                 )
             else:
                 cur.execute("SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ?", (cid,))
@@ -1270,13 +1277,15 @@ def fecha_confirmacion_cotizacion(id_cot, casillero=None):
     except (TypeError, ValueError):
         return None
     cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    variantes = coincidencias_casillero(cas)
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            if cas:
+            if variantes:
+                marcadores = ",".join("?" * len(variantes))
                 cur.execute(
-                    "SELECT fecha_confirmacion FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
-                    (cid, cas),
+                    f"SELECT fecha_confirmacion FROM cotizaciones WHERE id = ? AND codigo_casillero IN ({marcadores})",
+                    (cid, *variantes),
                 )
             else:
                 cur.execute("SELECT fecha_confirmacion FROM cotizaciones WHERE id = ?", (cid,))
@@ -1363,17 +1372,21 @@ def cargar_cotizaciones_db(casillero):
     cas = formatear_casillero(casillero or "")
     if not cas:
         return []
+    variantes = coincidencias_casillero(cas)
+    if not variantes:
+        return []
+    marcadores = ",".join("?" * len(variantes))
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
                    COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
             FROM cotizaciones
-            WHERE codigo_casillero = ?
+            WHERE codigo_casillero IN ({marcadores})
             ORDER BY fecha_creacion DESC, id DESC
             """,
-            (cas,),
+            variantes,
         )
         return cur.fetchall()
 
@@ -1461,7 +1474,22 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         return False
     cas = formatear_casillero(casillero or "")
     if not cas:
+        st.session_state["ultimo_error_confirmacion"] = "Casillero inválido."
         return False
+    # Garantiza que una base desplegada con el esquema anterior reciba las
+    # columnas de confirmación antes de ejecutar el UPDATE.
+    try:
+        init_db()
+    except sqlite3.Error as exc:
+        detalle = f"No se pudo preparar el esquema de cotizaciones: {exc}"
+        print(detalle)
+        st.session_state["ultimo_error_confirmacion"] = detalle
+        return False
+    variantes = coincidencias_casillero(cas)
+    if not variantes:
+        st.session_state["ultimo_error_confirmacion"] = "No se encontró un casillero válido para la cotización."
+        return False
+    marcadores = ",".join("?" * len(variantes))
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
     fecha_confirmacion = None
@@ -1469,12 +1497,12 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
-                """
+                f"""
                 UPDATE cotizaciones
                 SET confirmada = 1, fecha_confirmacion = ?
-                WHERE id = ? AND codigo_casillero = ? AND IFNULL(confirmada, 0) = 0
+                WHERE id = ? AND codigo_casillero IN ({marcadores}) AND IFNULL(confirmada, 0) = 0
                 """,
-                (ahora, cid, cas),
+                (ahora, cid, *variantes),
             )
             conn.commit()
             actualizado = cur.rowcount > 0
@@ -1485,19 +1513,28 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
                 # idempotente: reflejamos el estado consolidado sin exigir otro clic.
                 cur.execute(
                     "SELECT IFNULL(confirmada, 0), fecha_confirmacion FROM cotizaciones "
-                    "WHERE id = ? AND codigo_casillero = ?",
-                    (cid, cas),
+                    "WHERE id = ? AND codigo_casillero IN (" + marcadores + ")",
+                    (cid, *variantes),
                 )
                 fila = cur.fetchone()
                 actualizado = bool(fila and es_cotizacion_confirmada(fila[0]))
                 fecha_confirmacion = fila[1] if fila else None
-    except Exception:
+    except sqlite3.Error as exc:
+        detalle = f"Error SQLite al confirmar CCM-COT-{cid:05d}: {exc}"
+        print(detalle)
+        st.session_state["ultimo_error_confirmacion"] = detalle
+        actualizado = False
+    except Exception as exc:
+        detalle = f"Error al confirmar CCM-COT-{cid:05d}: {exc}"
+        print(detalle)
+        st.session_state["ultimo_error_confirmacion"] = detalle
         actualizado = False
     finally:
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
     if actualizado:
+        st.session_state.pop("ultimo_error_confirmacion", None)
         marcar_cotizacion_sesion_confirmada(cid, cas, fecha_confirmacion or ahora)
     return actualizado
 
@@ -2111,10 +2148,10 @@ def on_confirmar_cot_historial(id_cot, casillero):
         # ser pendiente y Envíos queda disponible en el mismo clic.
         st.rerun()
     else:
+        detalle = st.session_state.pop("ultimo_error_confirmacion", "")
         st.session_state["flash_error_confirmacion"] = (
-            "No se pudo confirmar la cotización. Intente nuevamente."
+            "No se pudo confirmar la cotización. " + (f"Detalle: {detalle}" if detalle else "Intente nuevamente.")
         )
-        st.rerun()
 
 
 def ir_a_cotizacion_emitida(id_cot):
