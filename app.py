@@ -1967,10 +1967,16 @@ def iniciar_guia_desde_mas():
 
 
 def ir_a_envios():
+    if not modulo_china_disponible_en_hub_actual("Mis Envíos"):
+        ir_a_inicio()
+        return
     ir_a("Mis Envíos", hub="china")
 
 
 def ir_a_fichas():
+    if not modulo_china_disponible_en_hub_actual("Etiqueta"):
+        ir_a_inicio()
+        return
     ir_a("Fichas", hub="china")
 
 
@@ -2430,14 +2436,22 @@ def pintar_vista_mas():
             )
             if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
                 abrir_dialogo_editar_perfil()
-        st.markdown('<div class="mas-seccion mas-seccion-modulos">Módulos y operaciones</div>', unsafe_allow_html=True)
-        with st.container(key="mas_modulos"):
-            st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
-            st.button("📋  Fichas", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
-            st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True, on_click=ir_a_mis_cotizaciones)
-            if catalogo_disponible_en_hub_actual():
-                st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
-            st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True, on_click=ir_a_cotizador)
+        if hub_activo == "china":
+            st.markdown('<div class="mas-seccion mas-seccion-modulos">Módulos y operaciones</div>', unsafe_allow_html=True)
+            with st.container(key="mas_modulos"):
+                if modulo_china_disponible_en_hub_actual("Mis Envíos"):
+                    st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
+                if modulo_china_disponible_en_hub_actual("Etiqueta"):
+                    st.button("📋  Fichas", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
+                if (
+                    modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
+                    and casillero_tiene_cotizacion_emitida(st.session_state.get("casillero", ""))
+                ):
+                    st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True, on_click=ir_a_mis_cotizaciones)
+                if catalogo_disponible_en_hub_actual():
+                    st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
+                if modulo_china_disponible_en_hub_actual("Cotizador"):
+                    st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True, on_click=ir_a_cotizador)
         with st.container(key="mas_sesion"):
             st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
             if mostrar_btn_guia:
