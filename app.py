@@ -1571,22 +1571,62 @@ def seleccionar_modalidad_entrega(opcion):
 CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "dir_exacta_in")
 
 
-def direcciones_sesion(casillero):
-    """Colección canónica de direcciones del usuario durante la sesión.
+def asegurar_esquema_direcciones():
+    """Garantiza tabla y columnas de direcciones_entrega (migra bases desplegadas viejas)."""
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS direcciones_entrega (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_casillero TEXT NOT NULL,
+                    etiqueta TEXT NOT NULL,
+                    receptor_nombre TEXT NOT NULL,
+                    telefono TEXT NOT NULL,
+                    departamento TEXT NOT NULL,
+                    ciudad TEXT NOT NULL,
+                    direccion_exacta TEXT NOT NULL,
+                    fecha_creacion TEXT NOT NULL
+                )
+                """
+            )
+            c.execute("PRAGMA table_info(direcciones_entrega)")
+            columnas_dir = {fila[1] for fila in c.fetchall()}
+            for col in ("receptor_nombre", "telefono", "departamento", "ciudad", "direccion_exacta", "fecha_creacion"):
+                if col not in columnas_dir:
+                    c.execute(f"ALTER TABLE direcciones_entrega ADD COLUMN {col} TEXT")
+            conn.commit()
+    except Exception:
+        pass
 
-    Se siembra UNA sola vez desde SQLite y luego vive en session_state: los renders
-    posteriores no la sobreescriben, así el desplegable nunca pierde lo guardado.
+
+def direcciones_sesion(casillero):
+    """Direcciones del usuario: SQLite es la fuente en cada run (sobrevive a F5).
+
+    La colección en session_state solo conserva, además, las entradas que la BD
+    rechazó (id None) para que no desaparezcan del desplegable durante la sesión.
     """
     bolsa = st.session_state.setdefault("direcciones_usuario", {})
-    if casillero not in bolsa:
-        try:
-            filas = cargar_direcciones_db(casillero)
-        except Exception:
-            filas = []
-        bolsa[casillero] = [
-            {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
-            for d in filas
-        ]
+    previa = bolsa.get(casillero, [])
+    try:
+        filas = cargar_direcciones_db(casillero)
+    except Exception:
+        filas = None
+    if filas is None:
+        bolsa[casillero] = previa
+        return bolsa[casillero]
+    dirs_db = [
+        {"id": d[0], "etiqueta": d[1], "receptor": d[2], "ciudad": d[3], "direccion": d[4]}
+        for d in filas
+    ]
+    claves_db = {(e["etiqueta"], e["ciudad"]) for e in dirs_db}
+    extras_sesion = [
+        e
+        for e in previa
+        if not e.get("id") and (e.get("etiqueta"), e.get("ciudad")) not in claves_db
+    ]
+    bolsa[casillero] = dirs_db + extras_sesion
     return bolsa[casillero]
 
 
@@ -1612,6 +1652,8 @@ def guardar_nueva_direccion(casillero):
         return
     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     id_dir_nuevo = None
+    error_db = None
+    asegurar_esquema_direcciones()
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -1624,21 +1666,27 @@ def guardar_nueva_direccion(casillero):
             )
             id_dir_nuevo = cur.lastrowid
             conn.commit()
-        cargar_direcciones_db.clear()
-    except Exception:
+    except Exception as exc:
         id_dir_nuevo = None
-    # La colección en memoria es la fuente del desplegable: se alimenta aunque la BD falle.
-    direcciones_sesion(casillero).append(
-        {
-            "id": id_dir_nuevo,
-            "etiqueta": etiqueta,
-            "receptor": receptor,
-            "telefono": tel,
-            "departamento": dep,
-            "ciudad": ciu,
-            "direccion": dir_exacta,
-        }
-    )
+        error_db = str(exc)
+    cargar_direcciones_db.clear()
+    if error_db:
+        # La dirección sigue disponible en la sesión, pero avisa que el disco falló.
+        st.session_state["_dir_db_error"] = error_db
+        direcciones_sesion(casillero).append(
+            {
+                "id": None,
+                "etiqueta": etiqueta,
+                "receptor": receptor,
+                "telefono": tel,
+                "departamento": dep,
+                "ciudad": ciu,
+                "direccion": dir_exacta,
+            }
+        )
+    else:
+        # Resincroniza desde SQLite: la fila recién insertada entra con su id real.
+        direcciones_sesion(casillero)
     seleccionar_modalidad_entrega(f"📍 {etiqueta} - {ciu}")
     st.session_state["destino_entrega_activo"] = f"📍 {etiqueta} - {ciu}"
     st.session_state["_dir_form_exito"] = f"Dirección '{etiqueta}' guardada y seleccionada como destino."
@@ -3339,6 +3387,7 @@ def init_db():
 
 
 init_db()
+asegurar_esquema_direcciones()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -4365,6 +4414,7 @@ def logout():
         "sb_modalidad_entrega",
         "direcciones_usuario",
         "destino_entrega_activo",
+        "_dir_db_error",
         "_dir_form_error",
         "_dir_form_exito",
         "_dir_form_reset",
@@ -7530,6 +7580,12 @@ elif st.session_state["rol"] == "cliente":
             exito_dir = st.session_state.pop("_dir_form_exito", None)
             if exito_dir:
                 st.success(f"✅ {exito_dir}")
+            error_db_dir = st.session_state.pop("_dir_db_error", None)
+            if error_db_dir:
+                st.warning(
+                    "⚠️ La dirección quedó activa en esta sesión, pero no pudo grabarse en la base de datos "
+                    f"y se perderá al recargar. Detalle técnico: {error_db_dir}"
+                )
 
             t_lb = get_tarifa("tarifa_libra")
             t_m3 = get_tarifa("tarifa_m3")
