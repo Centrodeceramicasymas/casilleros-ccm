@@ -1464,6 +1464,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         return False
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
+    fecha_confirmacion = None
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -1477,11 +1478,27 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
             )
             conn.commit()
             actualizado = cur.rowcount > 0
-        cargar_cotizaciones_db.clear()
+            if actualizado:
+                fecha_confirmacion = ahora
+            else:
+                # Si un rerun previo ya aplicó la confirmación, la acción es
+                # idempotente: reflejamos el estado consolidado sin exigir otro clic.
+                cur.execute(
+                    "SELECT IFNULL(confirmada, 0), fecha_confirmacion FROM cotizaciones "
+                    "WHERE id = ? AND codigo_casillero = ?",
+                    (cid, cas),
+                )
+                fila = cur.fetchone()
+                actualizado = bool(fila and es_cotizacion_confirmada(fila[0]))
+                fecha_confirmacion = fila[1] if fila else None
     except Exception:
         actualizado = False
+    finally:
+        # La siguiente ejecución debe leer la confirmación recién persistida,
+        # nunca el resultado anterior guardado por la caché.
+        cargar_cotizaciones_db.clear()
     if actualizado:
-        marcar_cotizacion_sesion_confirmada(cid, cas, ahora)
+        marcar_cotizacion_sesion_confirmada(cid, cas, fecha_confirmacion or ahora)
     return actualizado
 
 
@@ -2089,6 +2106,15 @@ def on_confirmar_cot_historial(id_cot, casillero):
         if int(st.session_state.get("cotizacion_historial_foco") or 0) == int(id_cot or 0):
             st.session_state.pop("cotizacion_historial_foco", None)
         avanzar_guia_si(5, 6)
+        st.session_state["flash_cotizacion_confirmada"] = int(id_cot)
+        # El callback termina con una recarga controlada: la tarjeta deja de
+        # ser pendiente y Envíos queda disponible en el mismo clic.
+        st.rerun()
+    else:
+        st.session_state["flash_error_confirmacion"] = (
+            "No se pudo confirmar la cotización. Intente nuevamente."
+        )
+        st.rerun()
 
 
 def ir_a_cotizacion_emitida(id_cot):
@@ -7669,6 +7695,15 @@ elif st.session_state["rol"] == "cliente":
                 "Al confirmar, la cotización queda disponible por 48 horas desde ese momento. "
                 "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
             )
+            confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
+            error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
+            if confirmada_flash:
+                st.success(
+                    f"✅ Cotización CCM-COT-{int(confirmada_flash):05d} confirmada. "
+                    "Envíos y sus documentos ya están disponibles."
+                )
+            elif error_confirmacion:
+                st.error(error_confirmacion)
 
             if lista_mis_cotizaciones:
                 try:
