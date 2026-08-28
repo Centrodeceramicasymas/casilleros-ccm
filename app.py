@@ -1485,40 +1485,51 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         print(detalle)
         st.session_state["ultimo_error_confirmacion"] = detalle
         return False
-    variantes = coincidencias_casillero(cas)
-    if not variantes:
-        st.session_state["ultimo_error_confirmacion"] = "No se encontró un casillero válido para la cotización."
-        return False
-    marcadores = ",".join("?" * len(variantes))
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
     fecha_confirmacion = None
     try:
         with get_db() as conn:
             cur = conn.cursor()
+            columnas = {fila[1] for fila in cur.execute("PRAGMA table_info(cotizaciones)").fetchall()}
+            requeridas = {"id", "codigo_casillero", "confirmada", "fecha_confirmacion"}
+            faltantes = sorted(requeridas - columnas)
+            if faltantes:
+                raise sqlite3.OperationalError(
+                    "Faltan columnas en cotizaciones: " + ", ".join(faltantes)
+                )
+            # El ID es la llave primaria global de la cotización. Verificar la
+            # fila antes de actualizar evita que variaciones CCM-/sin prefijo
+            # impidan confirmar una tarifa que ya fue mostrada al cliente.
             cur.execute(
-                f"""
+                "SELECT codigo_casillero, IFNULL(confirmada, 0), fecha_confirmacion "
+                "FROM cotizaciones WHERE id = ?",
+                (cid,),
+            )
+            fila = cur.fetchone()
+            if fila is None:
+                raise sqlite3.OperationalError(f"No existe la cotización con id={cid}")
+            codigo_guardado, ya_confirmada, fecha_guardada = fila
+            cur.execute(
+                """
                 UPDATE cotizaciones
                 SET confirmada = 1, fecha_confirmacion = ?
-                WHERE id = ? AND codigo_casillero IN ({marcadores}) AND IFNULL(confirmada, 0) = 0
+                WHERE id = ? AND IFNULL(confirmada, 0) = 0
                 """,
-                (ahora, cid, *variantes),
+                (ahora, cid),
             )
             conn.commit()
             actualizado = cur.rowcount > 0
             if actualizado:
                 fecha_confirmacion = ahora
+            elif es_cotizacion_confirmada(ya_confirmada):
+                # Operación idempotente frente a dobles clics o reruns.
+                actualizado = True
+                fecha_confirmacion = fecha_guardada
             else:
-                # Si un rerun previo ya aplicó la confirmación, la acción es
-                # idempotente: reflejamos el estado consolidado sin exigir otro clic.
-                cur.execute(
-                    "SELECT IFNULL(confirmada, 0), fecha_confirmacion FROM cotizaciones "
-                    "WHERE id = ? AND codigo_casillero IN (" + marcadores + ")",
-                    (cid, *variantes),
+                raise sqlite3.OperationalError(
+                    f"No se actualizó CCM-COT-{cid:05d}; casillero almacenado={codigo_guardado!r}"
                 )
-                fila = cur.fetchone()
-                actualizado = bool(fila and es_cotizacion_confirmada(fila[0]))
-                fecha_confirmacion = fila[1] if fila else None
     except sqlite3.Error as exc:
         detalle = f"Error SQLite al confirmar CCM-COT-{cid:05d}: {exc}"
         print(detalle)
