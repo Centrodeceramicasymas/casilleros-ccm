@@ -2624,18 +2624,31 @@ def anclar_barra_inferior():
                   const app = doc.querySelector(".stApp") || doc.documentElement;
                   const isMas = esVistaMas(caja);
                   if (isMas) {
-                    caja.style.setProperty("min-height", "0px", "important");
+                    const sesion = caja.querySelector('[class~="st-key-mas_sesion"]') || caja.querySelector(".st-key-mas_sesion");
+                    const safeMas = caja.querySelector('[class~="st-key-safe_mas"]') || caja.querySelector(".st-key-safe_mas");
                     caja.style.setProperty("box-sizing", "border-box", "important");
-                    if (!ancla) return;
-                    const scrollTop = app.scrollTop || 0;
-                    const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
-                    const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
-                    const anclaNow = ancla.getBoundingClientRect().bottom;
-                    const anclaAtMax = anclaNow + scrollTop - maxScroll;
                     const objetivo = navCaja.top - GAP_OBJETIVO;
-                    let huecoNav = Math.round(currentPad + (anclaAtMax - objetivo));
-                    huecoNav = Math.max(8, Math.min(240, huecoNav));
-                    caja.style.setProperty("padding-bottom", huecoNav + "px", "important");
+                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
+                    caja.style.setProperty("display", "flex", "important");
+                    caja.style.setProperty("flex-direction", "column", "important");
+                    caja.style.setProperty("min-height", Math.max(0, Math.round(objetivo - cajaTop)) + "px", "important");
+                    caja.style.setProperty("padding-bottom", "0px", "important");
+                    if (sesion) {
+                      let sesionHost = sesion;
+                      while (sesionHost.parentElement && sesionHost.parentElement !== caja) {
+                        sesionHost = sesionHost.parentElement;
+                      }
+                      sesionHost.style.setProperty("margin-top", "auto", "important");
+                      sesionHost.style.setProperty("margin-bottom", "0px", "important");
+                      sesionHost.style.setProperty("padding-bottom", "0px", "important");
+                    }
+                    if (safeMas) {
+                      safeMas.style.setProperty("height", "0px", "important");
+                      safeMas.style.setProperty("min-height", "0px", "important");
+                      safeMas.style.setProperty("margin", "0px", "important");
+                      safeMas.style.setProperty("padding", "0px", "important");
+                      safeMas.style.setProperty("overflow", "hidden", "important");
+                    }
                     return;
                   }
                   const formDir = caja.querySelector('[class~="st-key-formulario_direcciones"]') || caja.querySelector(".st-key-formulario_direcciones");
