@@ -666,6 +666,102 @@ restaurar_datos_operativos_cliente()
 # ---------------------------------------------------------
 # 3. CONTROLADORES DE DIRECCIONES Y COTIZACIONES
 # ---------------------------------------------------------
+@st.cache_data(ttl=120, show_spinner=False)
+def get_tarifa(clave):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT valor FROM config_maritima WHERE clave = ?", (clave,))
+        res = c.fetchone()
+        return res[0] if res else 0.0
+
+def set_tarifa(clave, valor):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO config_maritima (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (clave, valor),
+        )
+        conn.commit()
+    get_tarifa.clear()
+
+def permisos_de(casillero=None):
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
+    base = permisos_default(st.session_state.get("rol", "cliente"))
+    if not cas:
+        return base
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT hub_china, hub_eeuu, hub_honduras, mod_cotizador, mod_catalogo,
+                       mod_cotizaciones, mod_envios, mod_fichas
+                FROM permisos_usuario WHERE codigo_casillero = ?
+                """,
+                (cas,),
+            )
+            row = c.fetchone()
+        if not row:
+            asegurar_permisos_casillero(cas, st.session_state.get("rol", "cliente"))
+            return permisos_default(st.session_state.get("rol", "cliente"))
+        claves = (
+            "hub_china", "hub_eeuu", "hub_honduras",
+            "mod_cotizador", "mod_catalogo", "mod_cotizaciones",
+            "mod_envios", "mod_fichas",
+        )
+        return dict(zip(claves, [int(v or 0) for v in row]))
+    except Exception:
+        return base
+
+def usuario_puede_hub(hub_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
+    col = HUB_PERMISO_COL.get(hub_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
+
+def usuario_puede_modulo(mod_id, casillero=None):
+    if PERMISOS_ABIERTOS_TEMPORAL:
+        return True
+    col = MODULO_PERMISO_COL.get(mod_id)
+    if not col:
+        return False
+    return bool(permisos_de(casillero).get(col, 0))
+
+def guardar_permisos(casillero, datos):
+    cas = formatear_casillero(casillero)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO permisos_usuario (
+                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(codigo_casillero) DO UPDATE SET
+                hub_china = excluded.hub_china,
+                hub_eeuu = excluded.hub_eeuu,
+                hub_honduras = excluded.hub_honduras,
+                mod_cotizador = excluded.mod_cotizador,
+                mod_catalogo = excluded.mod_catalogo,
+                mod_cotizaciones = excluded.mod_cotizaciones,
+                mod_envios = excluded.mod_envios,
+                mod_fichas = excluded.mod_fichas
+            """,
+            (
+                cas,
+                int(datos.get("hub_china", 0)),
+                int(datos.get("hub_eeuu", 0)),
+                int(datos.get("hub_honduras", 0)),
+                int(datos.get("mod_cotizador", 0)),
+                int(datos.get("mod_catalogo", 0)),
+                int(datos.get("mod_cotizaciones", 0)),
+                int(datos.get("mod_envios", 0)),
+                int(datos.get("mod_fichas", 0)),
+            ),
+        )
+
 def invalidar_cache_direcciones():
     clear = getattr(cargar_direcciones_db, "clear", None)
     if callable(clear):
@@ -720,6 +816,27 @@ def cargar_cotizaciones_db(casillero):
             (cas,),
         )
         return cur.fetchall()
+
+def bolsa_cotizaciones_sesion(casillero):
+    cas = formatear_casillero(casillero or "")
+    if "cotizaciones" not in st.session_state or not isinstance(st.session_state["cotizaciones"], dict):
+        st.session_state["cotizaciones"] = {}
+    if not cas:
+        return cas, []
+    return cas, st.session_state["cotizaciones"].setdefault(cas, [])
+
+def registro_sesion_a_fila(reg):
+    return (
+        int(reg.get("id") or 0),
+        float(reg.get("alto_cm") or 0),
+        float(reg.get("ancho_cm") or 0),
+        float(reg.get("largo_cm") or 0),
+        float(reg.get("peso_lb") or 0),
+        float(reg.get("volumen_m3") or 0),
+        float(reg.get("total_usd") or 0),
+        reg.get("fecha_creacion") or reg.get("fecha"),
+        int(reg.get("confirmada") or 0),
+    )
 
 def hidratar_cotizaciones_sesion(casillero):
     cas, lista = bolsa_cotizaciones_sesion(casillero)
@@ -820,7 +937,7 @@ def direcciones_sesion(casillero):
         previa.extend(bolsa.get(clave) or [])
     try:
         filas = cargar_direcciones_db(casillero)
-    except Exception as exc:
+    except Exception:
         filas = None
     if filas is None:
         bolsa[cas] = previa
@@ -884,13 +1001,8 @@ def guardar_nueva_direccion(casillero):
     if error_db:
         direcciones_sesion(cas_norm).append(
             {
-                "id": None,
-                "etiqueta": etiqueta,
-                "receptor": receptor,
-                "telefono": tel,
-                "departamento": dep,
-                "ciudad": ciu,
-                "direccion": dir_exacta,
+                "id": None, "etiqueta": etiqueta, "receptor": receptor,
+                "telefono": tel, "departamento": dep, "ciudad": ciu, "direccion": dir_exacta,
             }
         )
     else:
@@ -1045,6 +1157,182 @@ def on_confirmar_cot_historial(id_cot, casillero):
             st.session_state["cotizacion_envio_foco"] = int(id_cot)
         except (TypeError, ValueError):
             pass
+
+def _limpiar_cotizacion_vencida_en_sesion(ahora):
+    d_pdf = st.session_state.get("datos_pdf_confirmado")
+    if not isinstance(d_pdf, dict):
+        return None
+    id_cot = d_pdf.get("id_cot")
+    try:
+        cid = int(id_cot or 0)
+    except (TypeError, ValueError):
+        cid = 0
+    en_sesion = False
+    if cid:
+        _, lista = bolsa_cotizaciones_sesion(st.session_state.get("casillero"))
+        en_sesion = any(int(r.get("id") or 0) == cid for r in lista)
+    if not cotizacion_existe_en_casillero(id_cot) and not en_sesion:
+        st.session_state.pop("datos_pdf_confirmado", None)
+        st.session_state.pop("ultima_cot_id", None)
+        return None
+    if cotizacion_esta_confirmada(id_cot):
+        return d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+    fecha_pdf = d_pdf.get("fecha_sql") or d_pdf.get("fecha_hora_doc")
+    if cotizacion_vigente(fecha_pdf, ahora) or en_sesion:
+        return fecha_pdf
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.session_state.pop("ultima_cot_id", None)
+    return None
+
+def cotizacion_existe_en_casillero(id_cot, casillero=None):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            if cas:
+                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ? AND codigo_casillero = ?", (cid, cas))
+            else:
+                cur.execute("SELECT 1 FROM cotizaciones WHERE id = ?", (cid,))
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+def cotizacion_esta_confirmada(id_cot, casillero=None):
+    try:
+        cid = int(id_cot)
+    except (TypeError, ValueError):
+        return False
+    cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            if cas:
+                cur.execute(
+                    "SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ? AND codigo_casillero = ?",
+                    (cid, cas),
+                )
+            else:
+                cur.execute("SELECT IFNULL(confirmada, 0) FROM cotizaciones WHERE id = ?", (cid,))
+            row = cur.fetchone()
+        return bool(row and int(row[0]) == 1)
+    except Exception:
+        return False
+
+def firma_parametros_cotizador(al, an, la, peso_lb, destino, tipo_carga):
+    return (
+        round(float(al or 0), 4),
+        round(float(an or 0), 4),
+        round(float(la or 0), 4),
+        round(float(peso_lb or 0), 4),
+        str(destino or "").strip(),
+        str(tipo_carga or "").strip(),
+    )
+
+def firma_desde_emision(d_pdf):
+    if not isinstance(d_pdf, dict):
+        return None
+    guardada = d_pdf.get("firma_params")
+    if isinstance(guardada, (list, tuple)) and len(guardada) == 6:
+        return tuple(guardada)
+    return firma_parametros_cotizador(
+        d_pdf.get("al"),
+        d_pdf.get("an"),
+        d_pdf.get("la"),
+        d_pdf.get("peso_lb"),
+        d_pdf.get("destino_entrega"),
+        d_pdf.get("tipo_carga"),
+    )
+
+def invalidar_emision_visible_cotizador():
+    st.session_state.pop("datos_pdf_confirmado", None)
+    st.session_state.pop("_ccm_scroll_emit", None)
+    st.session_state.pop("_ccm_emit_error", None)
+    for clave in list(st.session_state.keys()):
+        ks = str(clave)
+        if ks.startswith("dl_pdf_fab_") or ks.startswith("btn_ver_mis_cotizaciones_"):
+            st.session_state.pop(clave, None)
+
+def sincronizar_emision_con_formulario(firma_actual):
+    d_pdf = st.session_state.get("datos_pdf_confirmado")
+    if not isinstance(d_pdf, dict):
+        return False
+    if firma_desde_emision(d_pdf) != tuple(firma_actual):
+        invalidar_emision_visible_cotizador()
+        return True
+    return False
+
+def emitir_tarifa_desde_snapshot():
+    snap = st.session_state.get("_cot_emit_snapshot")
+    casillero = formatear_casillero(st.session_state.get("casillero") or "")
+    if not isinstance(snap, dict) or not casillero:
+        return
+    firma_snap = snap.get("firma_params") or firma_parametros_cotizador(
+        snap.get("al"), snap.get("an"), snap.get("la"),
+        snap.get("peso_lb"), snap.get("destino"), snap.get("tipo_carga"),
+    )
+    firma_snap = tuple(firma_snap)
+    d_emitida = st.session_state.get("datos_pdf_confirmado")
+    if isinstance(d_emitida, dict) and firma_desde_emision(d_emitida) == firma_snap:
+        return
+    ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
+    f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
+    id_generado = None
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO cotizaciones (
+                    codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
+                    total_usd, fecha, confirmada, fecha_creacion
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    casillero, snap.get("al"), snap.get("an"), snap.get("la"),
+                    snap.get("peso_lb"), snap.get("vol_m3"), snap.get("vol_ft3"),
+                    snap.get("total_usd"), f_hoy_sql, f_hoy_sql,
+                ),
+            )
+            id_generado = cur.lastrowid
+            conn.commit()
+        cargar_cotizaciones_db.clear()
+    except Exception as exc:
+        id_generado = None
+        st.session_state["_ccm_emit_error"] = str(exc)
+    if not id_generado:
+        id_generado = int(st.session_state.get("_seq_cot") or 900000) + 1
+        st.session_state["_seq_cot"] = id_generado
+    registro = {
+        "id": int(id_generado), "codigo_casillero": casillero,
+        "alto_cm": snap.get("al"), "ancho_cm": snap.get("an"), "largo_cm": snap.get("la"),
+        "peso_lb": snap.get("peso_lb"), "peso_kg": snap.get("peso_kg"),
+        "volumen_m3": snap.get("vol_m3"), "volumen_ft3": snap.get("vol_ft3"),
+        "total_usd": snap.get("total_usd"), "fecha": f_hoy_sql, "fecha_creacion": f_hoy_sql,
+        "confirmada": 0, "tipo_carga": snap.get("tipo_carga"),
+        "detalle_tarifa": snap.get("detalle_tarifa"), "destino_entrega": snap.get("destino"),
+        "fecha_hora_doc": f_hoy_doc,
+    }
+    _, lista = bolsa_cotizaciones_sesion(casillero)
+    lista.insert(0, registro)
+    st.session_state["ultima_cot_id"] = int(id_generado)
+    st.session_state["cotizacion_historial_foco"] = int(id_generado)
+    st.session_state["datos_pdf_confirmado"] = {
+        "tipo_carga": snap.get("tipo_carga"), "al": snap.get("al"), "an": snap.get("an"),
+        "la": snap.get("la"), "peso_lb": snap.get("peso_lb"), "peso_kg": snap.get("peso_kg"),
+        "vol_m3": snap.get("vol_m3"), "vol_ft3": snap.get("vol_ft3"),
+        "total_usd": snap.get("total_usd"), "detalle_tarifa": snap.get("detalle_tarifa"),
+        "id_cot": int(id_generado), "destino_entrega": snap.get("destino"),
+        "fecha_hora_doc": f_hoy_doc, "fecha_sql": f_hoy_sql, "firma_params": list(firma_snap),
+    }
+    st.session_state["china_modulos_desbloqueados"] = True
+    st.session_state.pop("_ccm_emit_error", None)
+    st.session_state["_ccm_rerun_app"] = True
+    st.session_state["_ccm_scroll_emit"] = True
 
 # ---------------------------------------------------------
 # 4. ENTORNO VISUAL Y PDFS
@@ -1304,7 +1592,7 @@ def html_encabezado_institucional(cuerpo_html="", extra_class="", extra_style=""
     )
 
 # ---------------------------------------------------------
-# 5. ESTILOS CSS COMPLETOS
+# 5. ESTILOS CSS
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -1330,7 +1618,6 @@ st.markdown(
     }
 
     html, body {
-        height: 100% !important;
         background-color: #f8fafc !important;
         color: #0f172a !important;
     }
@@ -1354,35 +1641,24 @@ st.markdown(
     }
 
     .st-key-sticky_top_header {
-        position: fixed !important;
+        position: sticky !important;
         top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: min(100%, var(--app-max-width)) !important;
-        max-width: var(--app-max-width) !important;
-        margin: 0 auto !important;
+        width: 100% !important;
         z-index: 999 !important;
         background: #f8fafc !important;
-        padding: max(0.35rem, env(safe-area-inset-top, 0px)) var(--app-pad) 0.45rem var(--app-pad) !important;
+        padding-top: 0.35rem !important;
+        padding-bottom: 0.45rem !important;
         border-bottom: 1px solid #e2e8f0 !important;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12) !important;
-    }
-
-    .ccm-header-spacer {
-        display: block !important;
-        height: max(var(--header-offset), 208px) !important;
-        min-height: max(var(--header-offset), 208px) !important;
-        width: 100% !important;
-        visibility: hidden !important;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08) !important;
     }
 
     .app-header-blue {
         background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
-        padding: var(--header-blue-pad-y) var(--header-blue-pad-x) !important;
-        border-radius: 12px !important;
+        padding: 12px 14px !important;
+        border-radius: 14px !important;
         color: #ffffff !important;
         box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
-        margin-bottom: 4px !important;
+        margin-bottom: 6px !important;
     }
 
     .app-header-brand {
@@ -1475,7 +1751,11 @@ if not st.session_state.get("autenticado", False):
             )
 
         st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
-        u_ident = st.text_input("Casillero, DNI o correo", placeholder="Ej: CCM-13011998 o correo@gmail.com", key="log_cas")
+        u_ident = st.text_input(
+            "Casillero, DNI o correo",
+            placeholder="Ej: CCM-13011998 o correo@gmail.com",
+            key="log_cas",
+        )
         u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
 
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -1636,6 +1916,8 @@ if not st.session_state.get("autenticado", False):
 elif st.session_state.get("rol") == "cliente":
     casillero = formatear_casillero(st.session_state.get("casillero", ""))
     nombre_completo = st.session_state.get("nombre", "Cliente")
+    tel_cli = st.session_state.get("telefono", "+504 9577-1099")
+    ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
     ahora_hn = obtener_tiempo_honduras()
     dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
     mes_nombre = MESES_ES.get(ahora_hn.month, "")
@@ -1644,6 +1926,8 @@ elif st.session_state.get("rol") == "cliente":
 
     lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
+    direcciones_guardadas = direcciones_sesion(casillero)
+    opciones_modalidad = opciones_entrega_desde_sesion(casillero)
 
     with st.container(key="sticky_top_header"):
         st.markdown(
@@ -1655,14 +1939,136 @@ elif st.session_state.get("rol") == "cliente":
             unsafe_allow_html=True,
         )
 
-    st.markdown('<div class="ccm-header-spacer"></div>', unsafe_allow_html=True)
+        with st.container(key="nav_scroll"):
+            c_nav_p, c_nav_c, c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(7, gap="small")
+            with c_nav_p:
+                if st.button("⏻ Cerrar", type="secondary", key="btn_logout_cliente", help="Cerrar sesión"):
+                    logout()
+            with c_nav_c:
+                if st.button("🏠 Inicio", type="primary" if st.session_state.get("sub_tab_inicio") == "Inicio" else "secondary", key="btn_inicio_cliente"):
+                    ir_a_inicio()
+                    st.rerun()
+            with c_nav1:
+                if st.button("📄 Mis Cotiz.", type="primary" if st.session_state.get("sub_tab_inicio") == "Mis Cotizaciones" else "secondary", key="btn_toggle_cotizaciones"):
+                    ir_a_mis_cotizaciones()
+                    st.rerun()
+            with c_nav2:
+                if st.button("🛍️ Catálogo", type="primary" if st.session_state.get("sub_tab_inicio") == "Catálogo" else "secondary", key="nav_top_cat"):
+                    ir_a_catalogo()
+                    st.rerun()
+            with c_nav3:
+                if st.button("📐 Cotizador", type="primary" if st.session_state.get("sub_tab_inicio") == "Cotizador" else "secondary", key="nav_top_cot"):
+                    ir_a_cotizador()
+                    st.rerun()
+            with c_nav4:
+                if st.button("📦 Envíos", type="primary" if st.session_state.get("sub_tab_inicio") == "Mis Envíos" else "secondary", key="nav_top_env"):
+                    ir_a_envios()
+                    st.rerun()
+            with c_nav5:
+                if st.button("🏷️ Fichas", type="primary" if st.session_state.get("sub_tab_inicio") == "Etiqueta" else "secondary", key="nav_top_eti"):
+                    ir_a_fichas()
+                    st.rerun()
 
-    st.markdown('<div class="card-box">', unsafe_allow_html=True)
-    st.markdown(f"### Bienvenido al panel de {casillero}")
-    st.info("Sistema de Casilleros y Consolidación Marítima activo.")
-    if st.button("🚪 Cerrar Sesión", type="secondary", key="btn_logout_cliente"):
-        logout()
-    st.markdown('</div>', unsafe_allow_html=True)
+    vista_actual = st.session_state.get("sub_tab_inicio", "Inicio")
+
+    if vista_actual == "Inicio":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown(f"### Bienvenido al panel de {casillero}")
+        st.info("Seleccione un módulo arriba o en la barra inferior para comenzar a cotizar e importar carga.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Cotizador":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+        selector_modalidad_entrega(opciones_modalidad)
+        
+        t_lb = get_tarifa("tarifa_libra")
+        t_m3 = get_tarifa("tarifa_m3")
+        min_usd = get_tarifa("minimo_cobro_usd")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            al_val = st.number_input("Alto (cm)", min_value=1.0, value=30.0, step=1.0)
+        with c2:
+            an_val = st.number_input("Ancho (cm)", min_value=1.0, value=30.0, step=1.0)
+        with c3:
+            la_val = st.number_input("Largo (cm)", min_value=1.0, value=40.0, step=1.0)
+        with c4:
+            pe_lb = st.number_input("Peso (lb)", min_value=0.5, value=4.0, step=0.5)
+
+        vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
+        tot = max(min_usd, pe_lb * t_lb) if pe_lb <= 99 else vol_m3_val * t_m3
+
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("Volumen (m³)", f"{vol_m3_val:.4f} m³")
+        with m2:
+            st.metric("Pies Cúbicos", f"{(vol_m3_val * 35.3147):.2f} ft³")
+        with m3:
+            st.metric("Total Estimado", f"${tot:.2f} USD")
+
+        if st.button("🤝 Confirmar Tarifa & Emitir Documentos", type="primary"):
+            st.session_state["_cot_emit_snapshot"] = {
+                "al": al_val, "an": an_val, "la": la_val, "peso_lb": pe_lb,
+                "peso_kg": pe_lb / 2.20462, "vol_m3": vol_m3_val, "vol_ft3": vol_m3_val * 35.3147,
+                "total_usd": tot, "tipo_carga": "Paquetería Menor", "detalle_tarifa": f"${tot:.2f} USD",
+                "destino": destino_para_documentos(),
+            }
+            emitir_tarifa_desde_snapshot()
+            st.success("¡Tarifa emitida con éxito! Vaya a Mis Cotizaciones para confirmarla.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Mis Cotizaciones":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 📄 Historial de Cotizaciones")
+        if lista_mis_cotizaciones:
+            for cot in lista_mis_cotizaciones:
+                id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
+                pdf_historial = generar_pdf_confirmacion_cotizacion(
+                    casillero=casillero, nombre=nombre_completo, telefono=tel_cli,
+                    ciudad=ciu_cli, tipo_carga="Cotización Histórica", al=al_c,
+                    an=an_c, la=la_c, peso_lb=pe_lb_c, peso_kg=pe_lb_c / 2.20462,
+                    vol_m3=vol_m3_c, vol_ft3=vol_m3_c * 35.3147, total_usd=tot_c,
+                    detalle_tarifa="Tarifa CCM", id_cot=id_cot_item,
+                    destino_entrega=destino_para_documentos(), fecha_emision=fec_c,
+                )
+                st.write(f"🔖 **CCM-COT-{id_cot_item:05d}** | Fecha: {fec_c} | Total: **${tot_c:.2f} USD**")
+                st.download_button(
+                    f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
+                    pdf_historial,
+                    f"Comprobante_CCM_COT_{id_cot_item:05d}.pdf",
+                    key=f"dl_cot_{id_cot_item}",
+                )
+                st.markdown("---")
+        else:
+            st.info("No tiene cotizaciones registradas.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Catálogo":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 🛍️ Catálogo y Fábricas de China")
+        kw = st.text_input("Buscar producto en China (1688 / AliExpress)")
+        if st.button("Buscar Productos", type="primary") and kw:
+            st.info(f"Mostrando opciones disponibles para '{kw}'.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Mis Envíos":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 📦 Mis Paquetes en Tránsito")
+        st.info("Consulte con soporte el estado de sus contenedores.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Etiqueta":
+        st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        st.markdown("#### 🏷️ Ficha de Bodega Guangzhou")
+        pdf_etiqueta = generar_pdf_etiqueta_proveedor(casillero, nombre_completo, tel_cli, ciu_cli)
+        st.download_button("📥 Descargar Ficha de Proveedor", pdf_etiqueta, f"Ficha_{casillero}.pdf")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    elif vista_actual == "Más":
+        pintar_vista_mas()
+
+    pintar_barra_inferior(total_cotizaciones)
 
 elif es_rol_admin():
     st.markdown(
