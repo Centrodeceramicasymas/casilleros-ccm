@@ -8308,15 +8308,28 @@ elif st.session_state["rol"] == "cliente":
                             titulo_emitida = (
                                 f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está listo."
                             )
-                            detalle_emitida = f"✅ {estado_doc}"
+                            contenido_emitida = f"""
+                                <div style="color:#166534; font-size:0.9rem; font-weight:700; margin-top:8px;">
+                                    ✅ {estado_doc}
+                                </div>
+                            """
                         else:
                             titulo_emitida = (
                                 f"Tarifa CCM-COT-{id_c:05d} · Pendiente de Confirmar"
                             )
-                            detalle_emitida = (
-                                f"⏳ {estado_doc}. Código de seguimiento CCM-COT-{id_c:05d}. "
-                                "Descargue el formato para el fabricante o vaya a Mis Cotizaciones para confirmarla antes de 1 hora."
-                            )
+                            contenido_emitida = f"""
+                                <div style="margin-top:10px; color:#166534; font-size:0.9rem; line-height:1.5;">
+                                    <div style="margin-bottom:8px; font-weight:800;">⏳ {estado_doc}</div>
+                                    <div style="background:rgba(255,255,255,.72); border-radius:9px; padding:10px 12px; margin:7px 0;">
+                                        <b>1. Envíe el PDF únicamente al fabricante o proveedor.</b><br>
+                                        El botón <b>“Descargar Formato / Documento para el Fabricante”</b> genera el documento para coordinar su mercancía con él.
+                                    </div>
+                                    <div style="background:rgba(255,255,255,.72); border-radius:9px; padding:10px 12px; margin-top:7px;">
+                                        <b>2. Confirme esta tarifa dentro de 1 hora.</b><br>
+                                        Use <b>“Ir a Mis Cotizaciones”</b> y pulse <b>“Confirmar Cotización”</b> antes de que venza el código <b>CCM-COT-{id_c:05d}</b>.
+                                    </div>
+                                </div>
+                            """
 
                         st.markdown(
                             f"""
@@ -8325,7 +8338,7 @@ elif st.session_state["rol"] == "cliente":
                                 <span style="font-size: 1.4rem;">🎉</span>
                                 <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
                             </div>
-                            <div style="color:#166534; font-size:0.88rem; font-weight:700; margin-top:4px;">{detalle_emitida}</div>
+                            {contenido_emitida}
                         </div>
                         """,
                             unsafe_allow_html=True,
