@@ -8408,6 +8408,17 @@ elif st.session_state["rol"] == "cliente":
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
             pintar_banner_promocional_china(casillero)
+            st.markdown(
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
+                '<b>🛡️ Vigencia confirmada</b><br><span style="font-size:.86rem;">Cada cotización confirmada se conserva por <b>48 horas</b>.</span></div>'
+                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
+                '<b>📦 Seguimiento activo</b><br><span style="font-size:.86rem;">Consulte aquí el estado de sus paquetes en tránsito.</span></div>'
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
+                '<b>📄 Documentos oficiales</b><br><span style="font-size:.86rem;">La Ficha y el PDF Tarifa están debajo de cada envío.</span></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
             st.markdown("#### 📦 Mis Paquetes en Tránsito")
             with get_db() as conn:
                 c = conn.cursor()
@@ -8430,10 +8441,9 @@ elif st.session_state["rol"] == "cliente":
                         unsafe_allow_html=True,
                     )
             else:
-                st.info("No tienes paquetes registrados en travesía.")
+                st.info("Aún no tienes paquetes registrados en travesía. Tus documentos confirmados aparecen abajo.")
 
             st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
-            st.caption("Las cotizaciones confirmadas permanecen disponibles durante 48 horas desde su confirmación.")
             cotizaciones_despacho = ordenar_cotizaciones_desc(
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
