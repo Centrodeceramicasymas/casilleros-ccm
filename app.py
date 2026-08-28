@@ -8308,41 +8308,35 @@ elif st.session_state["rol"] == "cliente":
                             titulo_emitida = (
                                 f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está listo."
                             )
-                            contenido_emitida = f"""
-                                <div style="color:#166534; font-size:0.9rem; font-weight:700; margin-top:8px;">
-                                    ✅ {estado_doc}
-                                </div>
-                            """
+                            contenido_emitida = (
+                                f'<div style="color:#166534;font-size:.9rem;font-weight:700;margin-top:8px;">'
+                                f'✅ {estado_doc}</div>'
+                            )
                         else:
                             titulo_emitida = (
                                 f"Tarifa CCM-COT-{id_c:05d} · Pendiente de Confirmar"
                             )
-                            contenido_emitida = f"""
-                                <div style="margin-top:10px; color:#166534; font-size:0.9rem; line-height:1.5;">
-                                    <div style="margin-bottom:8px; font-weight:800;">⏳ {estado_doc}</div>
-                                    <div style="background:rgba(255,255,255,.72); border-radius:9px; padding:10px 12px; margin:7px 0;">
-                                        <b>1. Envíe el PDF únicamente al fabricante o proveedor.</b><br>
-                                        El botón <b>“Descargar Formato / Documento para el Fabricante”</b> genera el documento para coordinar su mercancía con él.
-                                    </div>
-                                    <div style="background:rgba(255,255,255,.72); border-radius:9px; padding:10px 12px; margin-top:7px;">
-                                        <b>2. Confirme esta tarifa dentro de 1 hora.</b><br>
-                                        Use <b>“Ir a Mis Cotizaciones”</b> y pulse <b>“Confirmar Cotización”</b> antes de que venza el código <b>CCM-COT-{id_c:05d}</b>.
-                                    </div>
-                                </div>
-                            """
+                            contenido_emitida = (
+                                f'<div style="margin-top:10px;color:#166534;font-size:.9rem;line-height:1.5;">'
+                                f'<div style="margin-bottom:8px;font-weight:800;">⏳ {estado_doc}</div>'
+                                '<div style="background:rgba(255,255,255,.72);border-radius:9px;padding:10px 12px;margin:7px 0;">'
+                                '<b>1. Envíe el PDF únicamente al fabricante o proveedor.</b><br>'
+                                'El botón <b>“Descargar Formato / Documento para el Fabricante”</b> genera el documento para coordinar su mercancía con él.'
+                                '</div>'
+                                '<div style="background:rgba(255,255,255,.72);border-radius:9px;padding:10px 12px;margin-top:7px;">'
+                                '<b>2. Confirme esta tarifa dentro de 1 hora.</b><br>'
+                                f'Use <b>“Ir a Mis Cotizaciones”</b> y pulse <b>“Confirmar Cotización”</b> antes de que venza el código <b>CCM-COT-{id_c:05d}</b>.'
+                                '</div></div>'
+                            )
 
-                        st.markdown(
-                            f"""
-                        <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-left: 5px solid #22c55e; border-radius: 12px; padding: 16px; margin: 15px 0; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
-                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                                <span style="font-size: 1.4rem;">🎉</span>
-                                <h4 style="color: #166534; margin: 0; font-size: 1.05rem; font-weight: 800;">{titulo_emitida}</h4>
-                            </div>
-                            {contenido_emitida}
-                        </div>
-                        """,
-                            unsafe_allow_html=True,
+                        html_alerta_emitida = (
+                            '<div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-left:5px solid #22c55e;'
+                            'border-radius:12px;padding:16px;margin:15px 0;box-shadow:0 4px 12px rgba(34,197,94,.15);">'
+                            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+                            f'<span style="font-size:1.4rem;">🎉</span><h4 style="color:#166534;margin:0;font-size:1.05rem;font-weight:800;">{titulo_emitida}</h4>'
+                            f'</div>{contenido_emitida}</div>'
                         )
+                        st.markdown(html_alerta_emitida, unsafe_allow_html=True)
 
                         pdf_fab = b""
                         try:
