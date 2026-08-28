@@ -1158,6 +1158,24 @@ def casillero_tiene_cotizacion_confirmada(casillero):
         return False
 
 
+def casillero_tiene_cotizacion_emitida(casillero):
+    """Indica si el casillero ya emitió al menos una tarifa, confirmada o pendiente."""
+    cas = formatear_casillero(casillero or "")
+    claves = coincidencias_casillero(cas)
+    if not claves:
+        return False
+    placeholders = ",".join("?" * len(claves))
+    try:
+        with get_db() as conn:
+            fila = conn.execute(
+                f"SELECT 1 FROM cotizaciones WHERE codigo_casillero IN ({placeholders}) LIMIT 1",
+                claves,
+            ).fetchone()
+        return fila is not None
+    except sqlite3.Error:
+        return False
+
+
 def cotizacion_existe_en_casillero(id_cot, casillero=None):
     try:
         cid = int(id_cot)
@@ -1909,7 +1927,11 @@ def ir_a_catalogo():
 
 
 def ir_a_mis_cotizaciones():
-    if not modulo_china_disponible_en_hub_actual("Mis Cotizaciones"):
+    casillero = st.session_state.get("casillero", "")
+    if not (
+        modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
+        and casillero_tiene_cotizacion_emitida(casillero)
+    ):
         ir_a_inicio()
         return
     ir_a("Mis Cotizaciones", hub="china")
@@ -2427,7 +2449,7 @@ def espaciador_barra_inferior(clave):
         st.markdown("&nbsp;")
 
 
-def pintar_barra_inferior(total_cotizaciones=0):
+def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
     """Píldora flotante iOS: Inicio, Catálogo, Mis cotizaciones, Cotizador y Más."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
@@ -2445,7 +2467,10 @@ def pintar_barra_inferior(total_cotizaciones=0):
     items = [("inicio", "🏠", "Inicio", inicio_activo)]
     if catalogo_disponible_en_hub_actual():
         items.append(("catalogo", "🔍", "Catálogo", catalogo_activo))
-    if modulo_china_disponible_en_hub_actual("Mis Cotizaciones"):
+    tiene_cotizacion = casillero_tiene_cotizacion_emitida(
+        casillero or st.session_state.get("casillero", "")
+    )
+    if modulo_china_disponible_en_hub_actual("Mis Cotizaciones") and tiene_cotizacion:
         items.append(("cotizaciones", "📄", "Cotiz.", cot_activo))
     if modulo_china_disponible_en_hub_actual("Cotizador"):
         items.append(("cotizador", "🧮", "Cotizador", cotizador_activo))
@@ -8176,7 +8201,7 @@ elif st.session_state["rol"] == "cliente":
                 st.info("Confirme una cotización para descargar su ficha de bodega.")
             espaciador_barra_inferior("safe_fichas")
 
-    pintar_barra_inferior(total_cotizaciones)
+    pintar_barra_inferior(total_cotizaciones, casillero=casillero)
 
 # ---------------------------------------------------------
 # 9. PANEL ADMINISTRATIVO / SUPERADMINISTRADOR
