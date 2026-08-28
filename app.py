@@ -7738,17 +7738,27 @@ elif st.session_state["rol"] == "cliente":
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-            st.caption(
-                "Las tarifas no confirmadas caducan al cumplirse 1 hora (hora de Honduras) y se eliminan. "
-                "Al confirmar, la cotización queda disponible por 48 horas desde ese momento. "
-                "Use Ir a Envíos para abrir el seguimiento y el PDF Tarifa de esa cotización."
+            st.markdown(
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px;">'
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
+                '<b>⏳ Tarifa pendiente</b><br><span style="font-size:.86rem;">Confírmela en <b>1 hora</b> antes de que venza.</span></div>'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
+                '<b>🛡️ Tarifa confirmada</b><br><span style="font-size:.86rem;">Permanece disponible durante <b>48 horas</b>.</span></div>'
+                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
+                '<b>📦 Seguimiento y documentos</b><br><span style="font-size:.86rem;">Abra <b>Ir a Envíos</b> para ver y descargar sus PDFs.</span></div>'
+                '</div>',
+                unsafe_allow_html=True,
             )
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
             error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
             if confirmada_flash:
-                st.success(
-                    f"✅ Cotización CCM-COT-{int(confirmada_flash):05d} confirmada. "
-                    "Envíos y sus documentos ya están disponibles."
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border-left:5px solid #22c55e;'
+                    f'border-radius:12px;padding:14px 16px;margin:10px 0 14px;color:#166534;">'
+                    f'<div style="font-weight:800;font-size:1rem;">✅ CCM-COT-{int(confirmada_flash):05d} confirmada correctamente</div>'
+                    f'<div style="margin-top:4px;font-size:.9rem;">Sus documentos oficiales ya están disponibles. '
+                    f'<b>Pulse “📦 Ir a Envíos”</b> en la tarjeta para abrir el seguimiento.</div></div>',
+                    unsafe_allow_html=True,
                 )
             elif error_confirmacion:
                 st.error(error_confirmacion)
@@ -7782,7 +7792,7 @@ elif st.session_state["rol"] == "cliente":
                     insignia = (
                         '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
                         if not consolidada
-                        else ""
+                        else '<span style="display:inline-flex;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">✅ Confirmada · 48 h</span>'
                     )
                     with st.container(key=f"tarjeta_cot_{id_cot_item}"):
                         with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
