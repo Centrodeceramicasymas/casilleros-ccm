@@ -8459,7 +8459,8 @@ elif st.session_state["rol"] == "cliente":
                     aviso_seguimiento = (
                         '<div style="margin:10px 0 8px;padding:8px 10px;border-radius:8px;'
                         'background:rgba(0,74,193,.08);color:#003b99;font-weight:700;">'
-                        '📦 Esta cotización está lista para seguimiento. Descargue su Ficha y PDF Tarifa a continuación.'</n+                        '</div>'
+                        '📦 Esta cotización está lista para seguimiento. Descargue su Ficha y PDF Tarifa a continuación.'
+                        '</div>'
                         if es_foco else ""
                     )
                     st.markdown(
