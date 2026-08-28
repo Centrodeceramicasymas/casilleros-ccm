@@ -8419,7 +8419,6 @@ elif st.session_state["rol"] == "cliente":
                 '</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown("#### 📦 Mis Paquetes en Tránsito")
             with get_db() as conn:
                 c = conn.cursor()
                 c.execute(
@@ -8429,6 +8428,7 @@ elif st.session_state["rol"] == "cliente":
                 paquetes = c.fetchall()
 
             if paquetes:
+                st.markdown("#### 📦 Mis Paquetes en Tránsito")
                 for p in paquetes:
                     st.markdown(
                         f"""
@@ -8440,9 +8440,6 @@ elif st.session_state["rol"] == "cliente":
                     """,
                         unsafe_allow_html=True,
                     )
-            else:
-                st.info("Aún no tienes paquetes registrados en travesía. Tus documentos confirmados aparecen abajo.")
-
             st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
             cotizaciones_despacho = ordenar_cotizaciones_desc(
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
