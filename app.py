@@ -1890,7 +1890,16 @@ def ir_a_inicio():
     ir_a("Inicio", hub=None)
 
 
+def catalogo_disponible_en_hub_actual():
+    """El catálogo de fábricas pertenece al hub China; Inicio y otros hubs no lo exponen."""
+    return st.session_state.get("hub") == "china" and usuario_puede_modulo("Catálogo")
+
+
 def ir_a_catalogo():
+    # Impide abrir el catálogo por un callback o URL residual si el origen fue deseleccionado.
+    if not catalogo_disponible_en_hub_actual():
+        ir_a_inicio()
+        return
     ir_a("Catálogo", hub="china")
 
 
@@ -2383,7 +2392,8 @@ def pintar_vista_mas():
             st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
             st.button("📋  Fichas", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
             st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True, on_click=ir_a_mis_cotizaciones)
-            st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
+            if catalogo_disponible_en_hub_actual():
+                st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
             st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True, on_click=ir_a_cotizador)
         with st.container(key="mas_sesion"):
             st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
@@ -2421,15 +2431,18 @@ def pintar_barra_inferior(total_cotizaciones=0):
         unsafe_allow_html=True,
     )
 
-    items = (
-        ("inicio", "🏠", "Inicio", inicio_activo),
-        ("catalogo", "🔍", "Catálogo", catalogo_activo),
-        ("cotizaciones", "📄", "Cotiz.", cot_activo),
-        ("cotizador", "🧮", "Cotizador", cotizador_activo),
-        ("mas", "☰", "Más", mas_activo),
+    items = [("inicio", "🏠", "Inicio", inicio_activo)]
+    if catalogo_disponible_en_hub_actual():
+        items.append(("catalogo", "🔍", "Catálogo", catalogo_activo))
+    items.extend(
+        [
+            ("cotizaciones", "📄", "Cotiz.", cot_activo),
+            ("cotizador", "🧮", "Cotizador", cotizador_activo),
+            ("mas", "☰", "Más", mas_activo),
+        ]
     )
     with st.container(key="bottom_nav"):
-        cols = st.columns(5, gap="small")
+        cols = st.columns(len(items), gap="small")
         for col, (dest, icono, etiqueta, activo) in zip(cols, items):
             with col:
                 if dest == "inicio":
@@ -4437,6 +4450,9 @@ def restaurar_sesion_persistente():
             st.session_state["hub"] = hub_url
         elif vista_url in MODULOS_POR_ID:
             st.session_state["hub"] = MODULOS_POR_ID[vista_url]
+        elif vista_url == "Inicio":
+            # Inicio sin parámetro hub significa que se deseleccionó el país de origen.
+            st.session_state["hub"] = None
         elif vista_url == "China":
             st.session_state["hub"] = "china"
         elif vista_url == "EE. UU.":
