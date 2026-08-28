@@ -2633,16 +2633,12 @@ def anclar_barra_inferior():
                       }
                     }
                     caja.style.setProperty("box-sizing", "border-box", "important");
-                    const objetivo = navCaja.top - GAP_OBJETIVO;
-                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                    const contenidoBottom = sesionHost ? sesionHost.getBoundingClientRect().bottom : caja.getBoundingClientRect().bottom;
-                    const menuLargo = contenidoBottom > objetivo - 8;
-                    const reservaScroll = Math.max(112, Math.round(navCaja.height + 32));
-                    if (menuLargo) {
-                      // Con módulos activos, el último control debe poder subir por encima de la píldora.
+                    const tieneModulos = !!(caja.querySelector('[class~="st-key-mas_modulos"]') || caja.querySelector(".st-key-mas_modulos"));
+                    if (tieneModulos) {
+                      // Valor fijo: no depende del scroll, evitando ciclos de medición y vibración.
                       caja.style.setProperty("display", "block", "important");
                       caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", reservaScroll + "px", "important");
+                      caja.style.setProperty("padding-bottom", "calc(140px + env(safe-area-inset-bottom, 0px))", "important");
                       if (sesionHost) {
                         sesionHost.style.setProperty("margin-top", "0px", "important");
                         sesionHost.style.setProperty("margin-bottom", "0px", "important");
@@ -2651,7 +2647,7 @@ def anclar_barra_inferior():
                       // Sin módulos, la cuenta y la sesión se presentan como un bloque compacto.
                       caja.style.setProperty("display", "block", "important");
                       caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", reservaScroll + "px", "important");
+                      caja.style.setProperty("padding-bottom", "112px", "important");
                       if (sesionHost) {
                         sesionHost.style.setProperty("margin-top", "48px", "important");
                         sesionHost.style.setProperty("margin-bottom", "0px", "important");
@@ -5379,6 +5375,9 @@ st.markdown(
         margin-top: 0 !important;
         margin-bottom: 0 !important;
         min-height: 0 !important;
+    }
+    .st-key-vista_mas:has(.st-key-mas_modulos) {
+        padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
     }
     .st-key-vista_mas > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_mas > [data-testid="stVerticalBlock"],
