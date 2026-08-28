@@ -9,78 +9,107 @@ from __future__ import annotations
 import html
 import random
 import string
+import sys
 import textwrap
 import urllib.parse
 from pathlib import Path
 
+# Streamlit Cloud ejecuta app.py con un cwd que a veces no está en sys.path.
+# Sin esto, `import ccm` falla aunque la carpeta exista junto al script.
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import streamlit as st
 import streamlit.components.v1 as components
 
-from ccm.aliexpress import credenciales_configuradas, ejecutar_busqueda
-from ccm.catalog import buscar_productos_1688_imagen, buscar_productos_1688_texto
-from ccm.config import (
-    ALIAS_VISTA,
-    CAMPOS_FORM_DIRECCION,
-    CLAVES_WIDGET_PERFIL,
-    HUBS,
-    MODULOS_POR_ID,
-    MUNICIPIOS_HONDURAS,
-    OPCION_PREDETERMINADA,
-    PASOS_GUIA_INTERACTIVA,
-    VISTAS_MODULO,
-)
-from ccm.db import (
-    asegurar_permisos_casillero,
-    bootstrap,
-    coincidencias_casillero,
-    es_rol_admin,
-    es_superadmin,
-    formatear_casillero,
-    generar_codigo_casillero_dni,
-    get_db,
-    get_tarifa,
-    guardar_permisos,
-    hash_pwd,
-    leer_config_moneda,
-    mapa_tarifas,
-    permisos_de,
-    purgar_cotizaciones_no_confirmadas_vencidas,
-    set_config_sistema,
-    set_tarifa,
-    usuario_puede_hub,
-    usuario_puede_modulo,
-)
-from ccm.documents import generar_pdf_confirmacion_cotizacion, generar_pdf_etiqueta_proveedor
-from ccm.quoting import (
-    CONTENEDOR_40_ALTO_M,
-    CONTENEDOR_40_ANCHO_M,
-    CONTENEDOR_40_LARGO_M,
-    PESO_MAX_CONTENEDOR_HN_KG,
-    a_cm,
-    a_lb_kg,
-    calcular_costo_puesto_honduras,
-    calcular_flete_maritimo,
-    lb_a_kg,
-    limites_dimensiones,
-    limites_peso,
-    peso_max_contenedor_hn_lb,
-    volumen_ft3,
-    volumen_m3,
-)
-from ccm.timeutil import (
-    DIAS_SEMANA_ES,
-    MESES_ES,
-    cotizacion_vigente,
-    cotizacion_visible_historial,
-    es_cotizacion_confirmada,
-    estampa_tiempo_honduras,
-    formatear_fecha_pantalla,
-    clave_orden_cotizacion,
-    obtener_tiempo_honduras,
-    ordenar_cotizaciones_desc,
-    proximo_cierre_contenedor,
-    texto_estado_cotizacion,
-)
+try:
+    from ccm.aliexpress import credenciales_configuradas, ejecutar_busqueda
+    from ccm.catalog import buscar_productos_1688_imagen, buscar_productos_1688_texto
+    from ccm.config import (
+        ALIAS_VISTA,
+        CAMPOS_FORM_DIRECCION,
+        CLAVES_WIDGET_PERFIL,
+        HUBS,
+        MODULOS_POR_ID,
+        MUNICIPIOS_HONDURAS,
+        OPCION_PREDETERMINADA,
+        PASOS_GUIA_INTERACTIVA,
+        VISTAS_MODULO,
+    )
+    from ccm.db import (
+        asegurar_permisos_casillero,
+        bootstrap,
+        coincidencias_casillero,
+        es_rol_admin,
+        es_superadmin,
+        formatear_casillero,
+        generar_codigo_casillero_dni,
+        get_db,
+        get_tarifa,
+        guardar_permisos,
+        hash_pwd,
+        leer_config_moneda,
+        mapa_tarifas,
+        permisos_de,
+        purgar_cotizaciones_no_confirmadas_vencidas,
+        set_config_sistema,
+        set_tarifa,
+        usuario_puede_hub,
+        usuario_puede_modulo,
+    )
+    from ccm.documents import generar_pdf_confirmacion_cotizacion, generar_pdf_etiqueta_proveedor
+    from ccm.quoting import (
+        CONTENEDOR_40_ALTO_M,
+        CONTENEDOR_40_ANCHO_M,
+        CONTENEDOR_40_LARGO_M,
+        PESO_MAX_CONTENEDOR_HN_KG,
+        a_cm,
+        a_lb_kg,
+        calcular_costo_puesto_honduras,
+        calcular_flete_maritimo,
+        lb_a_kg,
+        limites_dimensiones,
+        limites_peso,
+        peso_max_contenedor_hn_lb,
+        volumen_ft3,
+        volumen_m3,
+    )
+    from ccm.timeutil import (
+        DIAS_SEMANA_ES,
+        MESES_ES,
+        cotizacion_vigente,
+        cotizacion_visible_historial,
+        es_cotizacion_confirmada,
+        estampa_tiempo_honduras,
+        formatear_fecha_pantalla,
+        clave_orden_cotizacion,
+        obtener_tiempo_honduras,
+        ordenar_cotizaciones_desc,
+        proximo_cierre_contenedor,
+        texto_estado_cotizacion,
+    )
+except ModuleNotFoundError as _exc:
+    st.set_page_config(page_title="CCM — error de despliegue", page_icon="🏠", layout="wide")
+    modulo = getattr(_exc, "name", "") or ""
+    falta_paquete_ccm = modulo.startswith("ccm") or "ccm" in str(_exc)
+    if falta_paquete_ccm:
+        st.error(
+            "Streamlit Cloud no encontró el paquete local `ccm/` (hace falta `ccm/aliexpress.py` "
+            "junto a `app.py`). Suba **toda** la carpeta al repositorio de GitHub que Cloud "
+            "despliega (`casilleros-ccm`): `app.py`, `ccm/`, `assets/` y `requirements.txt`. "
+            "Luego pulse **Manage app → Reboot**."
+        )
+    else:
+        st.error(
+            f"Falta el módulo `{modulo or _exc}`. Agréguelo a `requirements.txt` y "
+            "reinicie la app (**Manage app → Reboot**)."
+        )
+    st.code(str(_exc))
+    st.caption(f"Directorio de la app: `{_ROOT}`")
+    presentes = sorted(p.name for p in (_ROOT / "ccm").glob("*")) if (_ROOT / "ccm").is_dir() else []
+    st.caption("Archivos ccm presentes: " + (", ".join(presentes) if presentes else "(carpeta ausente)"))
+    st.stop()
 
 st.set_page_config(
     page_title="Centro de Cerámicas y Más — Casillero & Catálogo China",
