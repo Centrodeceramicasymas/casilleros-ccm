@@ -2626,21 +2626,38 @@ def anclar_barra_inferior():
                   if (isMas) {
                     const sesion = caja.querySelector('[class~="st-key-mas_sesion"]') || caja.querySelector(".st-key-mas_sesion");
                     const safeMas = caja.querySelector('[class~="st-key-safe_mas"]') || caja.querySelector(".st-key-safe_mas");
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    const objetivo = navCaja.top - GAP_OBJETIVO;
-                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                    caja.style.setProperty("display", "flex", "important");
-                    caja.style.setProperty("flex-direction", "column", "important");
-                    caja.style.setProperty("min-height", Math.max(0, Math.round(objetivo - cajaTop)) + "px", "important");
-                    caja.style.setProperty("padding-bottom", "0px", "important");
-                    if (sesion) {
-                      let sesionHost = sesion;
+                    let sesionHost = sesion;
+                    if (sesionHost) {
                       while (sesionHost.parentElement && sesionHost.parentElement !== caja) {
                         sesionHost = sesionHost.parentElement;
                       }
-                      sesionHost.style.setProperty("margin-top", "auto", "important");
-                      sesionHost.style.setProperty("margin-bottom", "0px", "important");
-                      sesionHost.style.setProperty("padding-bottom", "0px", "important");
+                    }
+                    caja.style.setProperty("box-sizing", "border-box", "important");
+                    const objetivo = navCaja.top - GAP_OBJETIVO;
+                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
+                    const contenidoBottom = sesionHost ? sesionHost.getBoundingClientRect().bottom : caja.getBoundingClientRect().bottom;
+                    const menuLargo = contenidoBottom > objetivo - 8;
+                    const reservaScroll = Math.max(112, Math.round(navCaja.height + 32));
+                    if (menuLargo) {
+                      // Con módulos activos, el último control debe poder subir por encima de la píldora.
+                      caja.style.setProperty("display", "block", "important");
+                      caja.style.setProperty("min-height", "0px", "important");
+                      caja.style.setProperty("padding-bottom", reservaScroll + "px", "important");
+                      if (sesionHost) {
+                        sesionHost.style.setProperty("margin-top", "0px", "important");
+                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
+                      }
+                    } else {
+                      // Sin módulos, conserva una presentación compacta y alineada al borde inferior.
+                      caja.style.setProperty("display", "flex", "important");
+                      caja.style.setProperty("flex-direction", "column", "important");
+                      caja.style.setProperty("min-height", Math.max(0, Math.round(objetivo - cajaTop)) + "px", "important");
+                      caja.style.setProperty("padding-bottom", "0px", "important");
+                      if (sesionHost) {
+                        sesionHost.style.setProperty("margin-top", "auto", "important");
+                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
+                        sesionHost.style.setProperty("padding-bottom", "0px", "important");
+                      }
                     }
                     if (safeMas) {
                       safeMas.style.setProperty("height", "0px", "important");
