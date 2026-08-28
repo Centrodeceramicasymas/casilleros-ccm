@@ -1159,11 +1159,21 @@ def casillero_tiene_cotizacion_confirmada(casillero):
 
 
 def casillero_tiene_cotizacion_emitida(casillero):
-    """Indica si el casillero ya emitió al menos una tarifa, confirmada o pendiente."""
+    """Indica si el casillero ya emitió una tarifa en SQLite o en el snapshot del run actual."""
     cas = formatear_casillero(casillero or "")
     claves = coincidencias_casillero(cas)
     if not claves:
         return False
+    # El callback de emisión se ejecuta antes del rerun. Reconocer su snapshot y la
+    # colección de sesión hace que la píldora muestre Cotiz. de inmediato, aun si la
+    # lectura de SQLite todavía no se ha refrescado en ese mismo ciclo.
+    emitida = st.session_state.get("datos_pdf_confirmado")
+    if isinstance(emitida, dict) and emitida.get("id_cot"):
+        return True
+    bolsa = st.session_state.get("cotizaciones", {})
+    for clave in claves:
+        if isinstance(bolsa, dict) and bolsa.get(clave):
+            return True
     placeholders = ",".join("?" * len(claves))
     try:
         with get_db() as conn:
