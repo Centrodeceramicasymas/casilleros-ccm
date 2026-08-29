@@ -4305,16 +4305,28 @@ def migrar_prefijo_casillero():
         conn.commit()
 
 
-migrar_prefijo_casillero()
-asegurar_superadmin()
-abrir_permisos_todos_los_usuarios()
-restaurar_datos_operativos_cliente()
-purgar_cotizaciones_no_confirmadas_vencidas()
+# Estas tareas de mantenimiento no deben repetirse en cada botón/rerun. Se
+# ejecutan una vez por sesión y la purga se limita a una vez por minuto.
+if not st.session_state.get("_ccm_arranque_db_realizado"):
+    migrar_prefijo_casillero()
+    asegurar_superadmin()
+    abrir_permisos_todos_los_usuarios()
+    restaurar_datos_operativos_cliente()
+    st.session_state["_ccm_arranque_db_realizado"] = True
+marca_purga = float(st.session_state.get("_ccm_ultima_purga") or 0)
+ahora_purga = datetime.now().timestamp()
+if ahora_purga - marca_purga >= 60:
+    purgar_cotizaciones_no_confirmadas_vencidas()
+    st.session_state["_ccm_ultima_purga"] = ahora_purga
 
 
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
     return "".join(random.choice(caracteres) for _ in range(8))
+
+
+def normalizar_correo(correo):
+    return str(correo or "").strip().lower()
 
 
 # Medidas internas de un contenedor 40' High Cube y peso máximo IHTT (Honduras).
@@ -7533,6 +7545,7 @@ if not st.session_state["autenticado"]:
             u_pass = st.session_state.get("log_pwd") or u_pass or ""
             if u_ident and u_pass:
                 p_hash = hash_pwd(u_pass)
+                u_correo = normalizar_correo(u_ident)
                 claves = coincidencias_casillero(u_ident)
                 placeholders = ",".join("?" * len(claves))
                 with get_db() as conn:
@@ -7541,9 +7554,9 @@ if not st.session_state["autenticado"]:
                         f"""
                         SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad
                         FROM usuarios
-                        WHERE (correo_principal = ? OR dni = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
+                        WHERE (LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
                         """,
-                        (u_ident, u_ident, *claves, p_hash),
+                        (u_correo, u_ident, *claves, p_hash),
                     )
                     user = c.fetchone()
 
@@ -7704,20 +7717,30 @@ if not st.session_state["autenticado"]:
                     n_pwd = generar_clave_provisional()
                     f_crea = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
 
+                    correo_registrado = normalizar_correo(d.get("cor"))
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute(
-                            "SELECT codigo_casillero FROM usuarios WHERE correo_principal = ? OR dni = ? OR codigo_casillero IN ({})".format(
+                            "SELECT codigo_casillero, correo_principal, dni FROM usuarios "
+                            "WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({})".format(
                                 ",".join("?" * len(coincidencias_casillero(n_cod)))
                             ),
-                            (d["cor"], d["dni"], *coincidencias_casillero(n_cod)),
+                            (correo_registrado, d["dni"], *coincidencias_casillero(n_cod)),
                         )
-                        if cur.fetchone():
+                        existente = cur.fetchone()
+                        if existente:
+                            _, correo_existente, dni_existente = existente
+                            if normalizar_correo(correo_existente) == correo_registrado:
+                                detalle_existente = "Este correo ya tiene un casillero registrado. Use Recuperar Clave para entrar."
+                            elif str(dni_existente or "").strip() == str(d["dni"] or "").strip():
+                                detalle_existente = "Este DNI ya está asociado a otro correo. Verifique el correo registrado o contacte a soporte."
+                            else:
+                                detalle_existente = "El código de casillero ya existe. Contacte a soporte."
                             url_wa = "https://wa.me/50495771099?text=" + urllib.parse.quote(
                                 "Hola, necesito asistencia con mi casillero ya registrado."
                             )
                             st.markdown(
-                                '<div class="reg-warn-card">⚠️ Ya existe un casillero registrado con este DNI o correo. Use otro correo o consulte a soporte.</div>',
+                                f'<div class="reg-warn-card">⚠️ {html.escape(detalle_existente)}</div>',
                                 unsafe_allow_html=True,
                             )
                             st.markdown(
@@ -7731,7 +7754,7 @@ if not st.session_state["autenticado"]:
                                     n_cod,
                                     d["nom"],
                                     d["dni"],
-                                    d["cor"],
+                                    correo_registrado,
                                     d["tel"],
                                     d["dep"],
                                     d["ciu"],
@@ -7742,11 +7765,31 @@ if not st.session_state["autenticado"]:
                                     f_crea,
                                 ),
                             )
+                            permisos_cliente = permisos_default("cliente")
+                            cur.execute(
+                                """
+                                INSERT INTO permisos_usuario (
+                                    codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                                    mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(codigo_casillero) DO NOTHING
+                                """,
+                                (
+                                    n_cod,
+                                    bool(permisos_cliente["hub_china"]),
+                                    bool(permisos_cliente["hub_eeuu"]),
+                                    bool(permisos_cliente["hub_honduras"]),
+                                    bool(permisos_cliente["mod_cotizador"]),
+                                    bool(permisos_cliente["mod_catalogo"]),
+                                    bool(permisos_cliente["mod_cotizaciones"]),
+                                    bool(permisos_cliente["mod_envios"]),
+                                    bool(permisos_cliente["mod_fichas"]),
+                                ),
+                            )
                             conn.commit()
-                            asegurar_permisos_casillero(n_cod, "cliente")
                             st.session_state["reg_exito"] = {
                                 "nombre": d["nom"],
-                                "correo": d["cor"],
+                                "correo": correo_registrado,
                                 "casillero": n_cod,
                                 "password": n_pwd,
                             }
@@ -7761,10 +7804,14 @@ if not st.session_state["autenticado"]:
     elif st.session_state["vista_actual"] == "recuperar":
         st.markdown("### 🔄 Restablecer Contraseña")
         r_mail = st.text_input("Correo Registrado")
+        r_dni = st.text_input("o Número de Identidad (DNI)")
         if st.button("Generar Nueva Contraseña", type="primary"):
             with get_db() as conn:
                 c = conn.cursor()
-                c.execute("SELECT id FROM usuarios WHERE correo_principal = ?", (r_mail,))
+                c.execute(
+                    "SELECT id FROM usuarios WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ?",
+                    (normalizar_correo(r_mail), str(r_dni or "").strip()),
+                )
                 u = c.fetchone()
             if u:
                 nueva_p = generar_clave_provisional()
@@ -7773,7 +7820,7 @@ if not st.session_state["autenticado"]:
                     cur.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(nueva_p), u[0]))
                 st.success(f"✅ Nueva clave: **{nueva_p}**")
             else:
-                st.error("Correo no registrado.")
+                st.error("No se encontró una cuenta con ese correo o DNI.")
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
@@ -7804,7 +7851,12 @@ elif st.session_state["rol"] == "cliente":
     if casillero != st.session_state["casillero"]:
         st.session_state["casillero"] = casillero
     ahora_hn = obtener_tiempo_honduras()
-    purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
+    # La purga ya se ejecutó al arrancar y se limita a intervalos para que
+    # navegar o pulsar botones no dispare una operación completa en la BD.
+    marca_purga_cliente = float(st.session_state.get("_ccm_ultima_purga") or 0)
+    if datetime.now().timestamp() - marca_purga_cliente >= 60:
+        purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
+        st.session_state["_ccm_ultima_purga"] = datetime.now().timestamp()
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
     hidratar_cotizaciones_sesion(casillero)
     nombre_completo = st.session_state["nombre"]
