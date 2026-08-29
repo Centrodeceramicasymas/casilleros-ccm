@@ -4998,9 +4998,14 @@ def calcular_paquete_eeuu(peso_lb, ancho, alto, largo, unidad, tarifa_lb, tarifa
 
 def pintar_cotizador_eeuu(casillero):
     """Cotizador de paquetes EE. UU. → Honduras, sin catálogo de terceros."""
-    st.markdown("#### 🇺🇸 Cotizador EE. UU. ➜ Honduras")
-    st.caption("Agregue sus paquetes y obtenga el total estimado al instante.")
-    st.markdown(f'<div class="ae-casillero-chip">Casillero activo: {casillero}</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<section class='usq-hero'>"
+        "<div class='usq-eyebrow'>🇺🇸 ENVÍOS DESDE ESTADOS UNIDOS</div>"
+        "<h2>Cotizador EE. UU. <span>➜ Honduras</span></h2>"
+        "<p>Agrega tu producto, valida sus medidas y recibe un estimado de compra y flete.</p>"
+        f"<div class='usq-chip'>📍 Casillero activo: <strong>{html.escape(str(casillero))}</strong></div>"
+        "</section>", unsafe_allow_html=True,
+    )
 
     paquetes = st.session_state.setdefault("paquetes_eeuu", [])
     if st.session_state.pop("_us_limpiar_formulario", False):
@@ -5008,31 +5013,31 @@ def pintar_cotizador_eeuu(casillero):
             st.session_state.pop(clave, None)
     tarifa_default = float(get_tarifa("tarifa_eeuu_libra") or get_tarifa("tarifa_libra") or 0.0)
     tarifa_cbm_default = float(get_tarifa("tarifa_eeuu_m3") or get_tarifa("tarifa_m3") or 0.0)
-    tarifa_col_1, tarifa_col_2 = st.columns(2)
-    with tarifa_col_1:
-        tarifa_lb = st.number_input(
-            "Tarifa EE. UU. por libra (USD)", min_value=0.0, max_value=500.0,
-            value=float(st.session_state.get("us_tarifa_lb", tarifa_default)), step=0.01,
-            format="%.2f", key="us_tarifa_lb",
-        )
-    with tarifa_col_2:
-        tarifa_m3 = st.number_input(
-            "Tarifa EE. UU. por CBM (USD)", min_value=0.0, max_value=10000.0,
-            value=float(st.session_state.get("us_tarifa_m3", tarifa_cbm_default)), step=1.0,
-            format="%.2f", key="us_tarifa_m3",
-        )
-    st.caption("Paquetería: hasta 99 lb por paquete. Al superar ese peso, el cálculo cambia automáticamente a CBM. Límite 40′ HC: 2.69 × 2.35 × 12.03 m y 25,000 kg.")
+    st.markdown("<div class='usq-section-title'><span>1</span> Tarifas y modalidad de envío</div>", unsafe_allow_html=True)
+    with st.container(border=True):
+        tarifa_col_1, tarifa_col_2 = st.columns(2)
+        with tarifa_col_1:
+            tarifa_lb = st.number_input(
+                "📦 Tarifa por libra (USD)", min_value=0.0, max_value=500.0,
+                value=float(st.session_state.get("us_tarifa_lb", tarifa_default)), step=0.01,
+                format="%.2f", key="us_tarifa_lb",
+            )
+        with tarifa_col_2:
+            tarifa_m3 = st.number_input(
+                "🚢 Tarifa por CBM (USD)", min_value=0.0, max_value=10000.0,
+                value=float(st.session_state.get("us_tarifa_m3", tarifa_cbm_default)), step=1.0,
+                format="%.2f", key="us_tarifa_m3",
+            )
+        st.caption("Hasta 99 lb se cotiza por libra. Desde 99 lb el sistema cambia a CBM. Límite 40′ HC: 2.69 × 2.35 × 12.03 m y 25,000 kg.")
 
-    st.markdown(
-        "<div style='margin:14px 0 8px;padding:16px 18px;border-radius:16px;"
-        "background:linear-gradient(135deg,#eff6ff,#ffffff);border:1px solid #bfdbfe;'>"
-        "<div style='font-weight:800;font-size:1.05rem;color:#0f3d8f;'>✨ Cotizador inteligente</div>"
-        "<div style='margin-top:4px;color:#475569;'>Pega el enlace de cualquier tienda en línea. "
-        "Buscamos datos públicos del producto y tú confirmas el envío.</div></div>",
-        unsafe_allow_html=True,
-    )
-    with st.expander("Consultar producto desde enlace", expanded=True):
-        st.caption("Compatible con tiendas que publiquen datos estructurados: Amazon, Walmart, Best Buy, eBay, Target, Home Depot, tiendas Shopify y más.")
+    st.markdown("<div class='usq-section-title'><span>2</span> Cotizador inteligente por enlace</div>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(
+            "<div class='usq-smart-head'><div class='usq-smart-icon'>✨</div><div><b>Pega el enlace de tu producto</b>"
+            "<small>Buscaremos título, precio, imagen y especificaciones públicas para completar la ficha.</small></div></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("Funciona con Amazon, Walmart, Best Buy, eBay, Target, Home Depot, Shopify y otras tiendas que publiquen información accesible.")
         st.text_input("Enlace del producto (opcional)", key="us_enlace", placeholder="https://www.amazon.com/...")
         if st.button("✨ Consultar enlace y autocompletar", key="btn_us_consultar_link", use_container_width=True):
             st.session_state.pop("us_imagen_producto", None)
@@ -5074,7 +5079,7 @@ def pintar_cotizador_eeuu(casillero):
             st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
     imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
 
-    st.markdown("##### 📦 Detalles del paquete")
+    st.markdown("<div class='usq-section-title'><span>3</span> Detalles del paquete</div>", unsafe_allow_html=True)
     imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
     if imagen_producto:
         with st.container(border=True):
@@ -5087,9 +5092,7 @@ def pintar_cotizador_eeuu(casillero):
                 st.success("Información lista para revisar")
     else:
         st.markdown(
-            "<div style='height:120px;display:flex;align-items:center;justify-content:center;"
-            "border:1px dashed #94a3b8;border-radius:18px;background:#f8fafc;color:#64748b;"
-            "font-weight:700;margin:8px 0 18px;'>🖼️ La vista previa aparecerá al consultar un enlace o subir una foto</div>",
+            "<div class='usq-preview-empty'>🖼️ <span><b>Vista previa del producto</b><br>Consulta un enlace o sube una foto para verla aquí.</span></div>",
             unsafe_allow_html=True,
         )
     st.text_input("📦 Nombre del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
@@ -5142,9 +5145,9 @@ def pintar_cotizador_eeuu(casillero):
                 st.session_state["_us_limpiar_formulario"] = True
                 st.rerun()
 
-    st.markdown("##### Lista de paquetes agregados")
+    st.markdown("<div class='usq-section-title'><span>4</span> Paquetes de la cotización</div>", unsafe_allow_html=True)
     if not paquetes:
-        st.caption("Aún no hay paquetes. Agregue el primero para obtener su cotización.")
+        st.markdown("<div class='usq-empty-list'>📦 <b>Aún no hay paquetes</b><br><small>Agrega el primer producto para ver el total estimado.</small></div>", unsafe_allow_html=True)
         return
 
     total_lb = 0.0
@@ -5169,20 +5172,23 @@ def pintar_cotizador_eeuu(casillero):
         # monedas se conservan como referencia para no inventar conversiones.
         if str(paquete.get("moneda_producto") or "USD").upper() == "USD":
             total_producto_usd += float(paquete.get("precio_unitario") or 0) * int(paquete.get("cantidad") or 1)
-        info, eliminar = st.columns([5, 0.55])
-        with info:
-            st.markdown(
-                f"**{html.escape(paquete['descripcion'])}**  \n"
-                f"Producto: **{int(paquete.get('cantidad') or 1)} × {str(paquete.get('moneda_producto') or 'USD').upper()} ${float(paquete.get('precio_unitario') or 0):,.2f}**  \n"
-                f"Medidas ({paquete['unidad']}): {paquete['ancho']:g} × {paquete['alto']:g} × {paquete['largo']:g} · "
-                f"{paquete.get('modalidad', 'Paquetería menor')} · "
-                f"Peso a cobrar: **{paquete['peso_cobrable']:.2f} lb** · "
-                f"**${float(paquete.get('total_usd') or 0):,.2f} USD**"
-            )
-        with eliminar:
-            if st.button("🗑️", key=f"us_del_{indice}", help="Eliminar paquete"):
-                paquetes.pop(indice)
-                st.rerun()
+        with st.container(border=True):
+            info, eliminar = st.columns([5, 0.55])
+            with info:
+                st.markdown(
+                    f"**{html.escape(paquete['descripcion'])}**  \n"
+                    f"<span class='usq-mode'>{html.escape(str(paquete.get('modalidad', 'Paquetería menor')))}</span> "
+                    f"<span class='usq-freight'>Flete ${float(paquete.get('total_usd') or 0):,.2f} USD</span>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(
+                    f"{int(paquete.get('cantidad') or 1)} unidad(es) · {str(paquete.get('moneda_producto') or 'USD').upper()} ${float(paquete.get('precio_unitario') or 0):,.2f} c/u · "
+                    f"{paquete['ancho']:g} × {paquete['alto']:g} × {paquete['largo']:g} {paquete['unidad'].lower()} · Peso cobrable: {paquete['peso_cobrable']:.2f} lb"
+                )
+            with eliminar:
+                if st.button("🗑️", key=f"us_del_{indice}", help="Eliminar paquete"):
+                    paquetes.pop(indice)
+                    st.rerun()
 
     st.markdown("---")
     total_usd = total_flete_usd + total_producto_usd
@@ -7949,6 +7955,39 @@ st.markdown(
         text-align: center;
         margin: 4px 0 12px 0;
         line-height: 1.3;
+    }
+    /* Cotizador EE.UU.: tarjetas legibles y jerarquía visual propia. */
+    .usq-hero {
+        margin: 14px 0 18px; padding: 22px; border-radius: 22px;
+        color: #fff; background: linear-gradient(135deg, #063b98 0%, #0758cf 58%, #0c77dd 100%);
+        box-shadow: 0 14px 30px rgba(7, 74, 172, .22); position: relative; overflow: hidden;
+    }
+    .usq-hero::after { content: "✈"; position: absolute; right: 20px; top: 13px; font-size: 4.5rem; opacity: .12; transform: rotate(-12deg); }
+    .usq-eyebrow { color: #bfdbfe; font-size: .68rem; font-weight: 800; letter-spacing: .1em; }
+    .usq-hero h2 { color: #fff !important; margin: 5px 0 5px !important; font-size: clamp(1.35rem, 3.4vw, 1.85rem) !important; }
+    .usq-hero h2 span { color: #dbeafe; }
+    .usq-hero p { margin: 0 0 13px; color: #e0edff; font-size: .88rem; max-width: 590px; }
+    .usq-chip { display: inline-block; border: 1px solid rgba(255,255,255,.32); border-radius: 999px; padding: 6px 10px; background: rgba(1, 24, 75, .22); font-size: .76rem; }
+    .usq-section-title { display: flex; gap: 8px; align-items: center; margin: 22px 0 9px; color: #122a55; font-size: 1rem; font-weight: 800; }
+    .usq-section-title span { display: inline-flex; width: 23px; height: 23px; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: #0d5bd7; font-size: .72rem; }
+    .usq-smart-head { display: flex; align-items: center; gap: 11px; padding: 2px 0 8px; color: #103a7d; }
+    .usq-smart-head b { display: block; font-size: 1rem; }
+    .usq-smart-head small { display: block; margin-top: 3px; color: #60708b; line-height: 1.35; }
+    .usq-smart-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 13px; background: #e3efff; font-size: 1.2rem; }
+    .usq-preview-empty { min-height: 72px; display: flex; align-items: center; justify-content: center; gap: 11px; margin: 2px 0 14px; border: 1px dashed #9fb8df; border-radius: 16px; background: #f6f9ff; color: #657694; text-align: left; font-size: .8rem; }
+    .usq-preview-empty b { color: #27466f; }
+    .usq-empty-list { padding: 20px; border: 1px dashed #a6b8d6; border-radius: 16px; background: #f8fbff; color: #4d6488; text-align: center; }
+    .usq-mode, .usq-freight { display: inline-block; margin: 5px 5px 0 0; padding: 3px 8px; border-radius: 999px; font-size: .69rem; font-weight: 800; }
+    .usq-mode { background: #e8f3ff; color: #0a4ca7; }
+    .usq-freight { background: #e7f8ee; color: #08723b; }
+    @media (min-width: 768px) {
+        :root { --app-max-width: 860px; }
+        .usq-hero { padding: 26px 28px; }
+    }
+    @media (max-width: 480px) {
+        .usq-hero { margin-left: -2px; margin-right: -2px; padding: 18px; border-radius: 18px; }
+        .usq-hero::after { font-size: 3.4rem; }
+        .usq-section-title { margin-top: 18px; }
     }
 </style>
 """,
