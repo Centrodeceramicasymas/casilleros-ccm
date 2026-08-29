@@ -1206,8 +1206,8 @@ HUBS = {
     "eeuu": {
         "label": "EE. UU.",
         "icon": "🇺🇸",
-        "descripcion": "Cotizador de paquetes desde Estados Unidos hacia Honduras",
-        "activo": True,
+        "descripcion": "Módulo en preparación para envíos desde Estados Unidos",
+        "activo": False,
         "modulos": [],
     },
     "honduras": {
@@ -3925,8 +3925,6 @@ def init_db():
             """
         )
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
-        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_eeuu_libra', 3.50)")
-        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_eeuu_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('divisor_peso_volumetrico', 390.00)")
@@ -8433,7 +8431,19 @@ elif st.session_state["rol"] == "cliente":
                 st.caption("Consolidación marítima China ➔ Honduras")
                 pintar_banner_promocional_china(casillero)
             elif hub_sel == "eeuu":
-                pintar_cotizador_eeuu(casillero)
+                # El área de EE. UU. queda intencionalmente limpia hasta que
+                # se defina su próximo flujo operativo.
+                hub_eeuu = HUBS["eeuu"]
+                st.markdown(f"#### {hub_eeuu['icon']} {hub_eeuu['label']}")
+                st.markdown(
+                    f'<div class="hub-empty-box">'
+                    f'<div style="font-size:2rem;margin-bottom:8px;">{hub_eeuu["icon"]}</div>'
+                    f'<div style="font-weight:800;color:#0f172a;margin-bottom:6px;">EE. UU.</div>'
+                    f'<div style="font-size:0.86rem;font-weight:600;">Módulo en preparación para envíos desde Estados Unidos</div>'
+                    f'<div style="font-size:0.78rem;margin-top:10px;color:#94a3b8;">Esta área está reservada para integrar nuevas funciones en una fase posterior.</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
             elif hub_sel in HUBS:
                 hub_vacio = HUBS[hub_sel]
                 st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
@@ -9726,8 +9736,6 @@ elif es_rol_admin():
     with tab_t:
         st.markdown("#### Tarifas y constantes del cotizador")
         n_lb = st.number_input("Tarifa por libra China (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
-        n_us_lb = st.number_input("Tarifa por libra EE. UU. (USD)", min_value=0.01, value=float(get_tarifa("tarifa_eeuu_libra") or n_lb), step=0.05)
-        n_us_m3 = st.number_input("Tarifa por CBM EE. UU. (USD)", min_value=0.01, value=float(get_tarifa("tarifa_eeuu_m3") or get_tarifa("tarifa_m3") or 680), step=1.0)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
         n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd") or 10), step=0.50)
         n_umin = st.number_input("Umbral tarifa mínima (lb)", min_value=0.1, value=float(get_tarifa("umbral_minimo_lb") or 3), step=0.5)
@@ -9737,8 +9745,6 @@ elif es_rol_admin():
         n_com = st.number_input("Comisión CCM (0-1)", min_value=0.0, max_value=1.0, value=float(leer_config_moneda("COMISION_CCM_PORCENTAJE", 0.10)), step=0.01)
         if st.button("Guardar tarifas y fórmulas", type="primary"):
             set_tarifa("tarifa_libra", n_lb)
-            set_tarifa("tarifa_eeuu_libra", n_us_lb)
-            set_tarifa("tarifa_eeuu_m3", n_us_m3)
             set_tarifa("tarifa_m3", n_m3)
             set_tarifa("minimo_cobro_usd", n_min)
             set_tarifa("umbral_minimo_lb", n_umin)
