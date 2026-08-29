@@ -1206,7 +1206,7 @@ HUBS = {
     "eeuu": {
         "label": "EE. UU.",
         "icon": "🇺🇸",
-        "descripcion": "Búsqueda y cotización AliExpress con envío a Estados Unidos",
+        "descripcion": "Cotizador de paquetes desde Estados Unidos hacia Honduras",
         "activo": True,
         "modulos": [],
     },
@@ -3925,6 +3925,7 @@ def init_db():
             """
         )
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
+        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_eeuu_libra', 3.50)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('divisor_peso_volumetrico', 390.00)")
@@ -4777,185 +4778,87 @@ def _ejecutar_busqueda_aliexpress(modo, keyword, imagen_bytes, min_usd, max_usd,
     return buscar_aliexpress_texto(keyword, min_usd=min_usd, max_usd=max_usd, orden=orden)
 
 
-def pintar_modulo_aliexpress_eeuu(casillero):
-    st.markdown("#### 🇺🇸 EE. UU.")
-    st.caption("Búsqueda y cotización AliExpress con destino / envío a Estados Unidos.")
-    st.markdown(
-        f'<div class="ae-casillero-chip">Casillero activo: {casillero}</div>',
-        unsafe_allow_html=True,
+def pintar_cotizador_eeuu(casillero):
+    """Cotizador de paquetes EE. UU. → Honduras, sin catálogo de terceros."""
+    st.markdown("#### 🇺🇸 Cotizador EE. UU. ➜ Honduras")
+    st.caption("Agregue uno o varios paquetes. El sistema calcula el peso cobrable y la tarifa total.")
+    st.markdown(f'<div class="ae-casillero-chip">Casillero activo: {casillero}</div>', unsafe_allow_html=True)
+
+    paquetes = st.session_state.setdefault("paquetes_eeuu", [])
+    if st.session_state.pop("_us_limpiar_formulario", False):
+        for clave in ("us_descripcion", "us_enlace", "us_peso", "us_ancho", "us_alto", "us_largo"):
+            st.session_state.pop(clave, None)
+    tarifa_default = float(get_tarifa("tarifa_eeuu_libra") or get_tarifa("tarifa_libra") or 0.0)
+    tarifa_lb = st.number_input(
+        "Tarifa vigente por libra (USD)", min_value=0.0, max_value=500.0,
+        value=float(st.session_state.get("us_tarifa_lb", tarifa_default)), step=0.01,
+        format="%.2f", key="us_tarifa_lb",
+        help="Ingrese aquí la tarifa aprobada para envíos desde EE. UU.",
     )
-    if credenciales_configuradas():
-        st.caption("API AliExpress Open Platform · moneda USD · país de destino US · idioma ES.")
-    else:
-        st.info(
-            "Configure `ALIEXPRESS_APP_SECRET` (y opcionalmente `ALIEXPRESS_TRACKING_ID`) "
-            "en secretos o variables de entorno para resultados en vivo. "
-            "Mientras tanto se usa un catálogo de demostración con envío a EE. UU."
-        )
 
-    flash = st.session_state.pop("ae_flash", None)
-    if flash:
-        st.success(flash)
+    with st.expander("✨ Cotizador inteligente: agregar desde un enlace de tienda", expanded=False):
+        st.info("Pegue un enlace de Amazon, Walmart, Best Buy, eBay u otra tienda como referencia. "
+                "Verifique siempre el peso y las medidas reales antes de agregar el paquete.")
+        st.text_input("Enlace del producto (opcional)", key="us_enlace", placeholder="https://www.amazon.com/...")
 
-    meta_prev = st.session_state.get("ae_busqueda_meta") or {}
-    if meta_prev.get("error"):
-        st.error(meta_prev["error"])
-    if meta_prev.get("aviso"):
-        st.warning(meta_prev["aviso"])
+    st.markdown("##### 📦 Agregar paquete")
+    st.text_input("Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
+    p1, p2 = st.columns(2)
+    with p1:
+        peso_lb = st.number_input("Peso real (lb) *", min_value=0.0, max_value=2000.0, value=0.0, step=0.1, key="us_peso")
+        alto = st.number_input("Alto *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_alto")
+    with p2:
+        ancho = st.number_input("Ancho *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_ancho")
+        largo = st.number_input("Largo *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_largo")
+    unidad = st.radio("Unidad de medida", ["Pulgadas", "Pies"], horizontal=True, key="us_unidad")
 
-    f1, f2, f3 = st.columns([1, 1, 1.2])
-    with f1:
-        min_usd = st.number_input(
-            "Precio mín. (USD)",
-            min_value=0.0,
-            max_value=100000.0,
-            value=0.0,
-            step=1.0,
-            key="ae_min_usd",
-        )
-    with f2:
-        max_usd = st.number_input(
-            "Precio máx. (USD)",
-            min_value=0.0,
-            max_value=100000.0,
-            value=0.0,
-            step=1.0,
-            key="ae_max_usd",
-        )
-    with f3:
-        orden = st.selectbox(
-            "Ordenar por",
-            ["Más vendidos", "Mejor precio", "Calificación"],
-            key="ae_orden",
-        )
-
-    tab_kw, tab_img = st.tabs(["Búsqueda por Palabra Clave", "Búsqueda por Imagen"])
-    with tab_kw:
-        keyword = st.text_input(
-            "Término de búsqueda",
-            placeholder="Ej. piezas cnc, auriculares, herramientas",
-            key="ae_keyword",
-        )
-        buscar_kw = st.button(
-            "🔍 Buscar en AliExpress",
-            type="primary",
-            key="btn_ae_buscar_kw",
-            use_container_width=True,
-        )
-        if buscar_kw:
-            with st.spinner("Buscando productos en AliExpress..."):
-                resultado = _ejecutar_busqueda_aliexpress(
-                    "texto", keyword, None, min_usd, max_usd, orden
-                )
-            st.session_state["ae_resultados"] = resultado.get("productos") or []
-            st.session_state["ae_busqueda_meta"] = resultado
-            st.rerun()
-    with tab_img:
-        img_up = st.file_uploader(
-            "Foto del producto (JPG o PNG)",
-            type=["jpg", "jpeg", "png"],
-            key="ae_img_upload",
-        )
-        buscar_img = st.button(
-            "🔍 Buscar en AliExpress",
-            type="primary",
-            key="btn_ae_buscar_img",
-            use_container_width=True,
-        )
-        if buscar_img:
-            imagen_bytes = img_up.getvalue() if img_up else None
-            with st.spinner("Buscando productos en AliExpress..."):
-                resultado = _ejecutar_busqueda_aliexpress(
-                    "imagen", "", imagen_bytes, min_usd, max_usd, orden
-                )
-            st.session_state["ae_resultados"] = resultado.get("productos") or []
-            st.session_state["ae_busqueda_meta"] = resultado
-            st.rerun()
-
-    resultados = st.session_state.get("ae_resultados") or []
-    meta = st.session_state.get("ae_busqueda_meta")
-    if not meta:
-        st.markdown(
-            '<div class="hub-empty-box ae-empty-hint">'
-            "<div style='font-weight:800;color:#0f172a;margin-bottom:6px;'>AliExpress · envío a EE. UU.</div>"
-            "<div style='font-size:0.86rem;font-weight:600;'>"
-            "Escriba un término (piezas CNC, auriculares, herramientas) o suba una foto del producto."
-            "</div>"
-            "<div style='font-size:0.78rem;margin-top:10px;color:#94a3b8;'>"
-            "Los resultados muestran precio en USD, calificación y enlace de compra. "
-            "Use Cotizar importación / Agregar a casillero para vincular el artículo a su casillero."
-            "</div></div>",
-            unsafe_allow_html=True,
-        )
-    elif not resultados:
-        if not meta.get("error"):
-            st.warning("No hay stock disponible para los filtros indicados.")
-    else:
-        fuente = (st.session_state.get("ae_busqueda_meta") or {}).get("fuente")
-        n_prod = len(resultados)
-        etiqueta_fuente = "AliExpress" if fuente == "api" else "demostración"
-        st.caption(f"{n_prod} producto{'s' if n_prod != 1 else ''} · {etiqueta_fuente} · destino US · USD")
-        n_cols = 3
-        for fila in range(0, n_prod, n_cols):
-            cols = st.columns(n_cols, gap="small")
-            for offset, col in enumerate(cols):
-                idx = fila + offset
-                if idx >= n_prod:
-                    break
-                prod = resultados[idx]
-                with col:
-                    pintar_tarjeta_aliexpress(prod, casillero, idx)
-
-    carrito = listar_carrito_ae(casillero)
-    st.markdown("##### Artículos AliExpress en el casillero")
-    if not carrito:
-        st.caption("Aún no hay productos de AliExpress vinculados a este casillero.")
-        return
-    for sku, nombre, cantidad, precio, _imagen, fecha in carrito:
-        st.markdown(
-            f"- **{nombre}** · `{sku}` · {int(cantidad)} ud. · "
-            f"**${float(precio):.2f} USD** · {fecha}"
-        )
-
-
-def pintar_tarjeta_aliexpress(prod, casillero, idx):
-    titulo = (prod.get("titulo") or "Producto AliExpress").strip()
-    if len(titulo) > 78:
-        titulo_corto = titulo[:75].rstrip() + "…"
-    else:
-        titulo_corto = titulo
-    precio = float(prod.get("precio_usd") or 0)
-    calif = prod.get("calificacion")
-    enlace = prod.get("enlace") or "https://www.aliexpress.com"
-    imagen = prod.get("imagen_url") or ""
-    calc = calcular_costo_puesto_honduras(
-        precio,
-        float(prod.get("peso_kg") or 0.8),
-        float(prod.get("volumen_m3") or 0.004),
-        1,
-    )
-    with st.container(border=True):
-        if imagen:
-            st.image(imagen, use_container_width=True)
-        st.markdown(f"**{titulo_corto}**")
-        if calif:
-            st.caption(f"★ {calif:.1f} · ID {prod.get('product_id')}")
+    if st.button("➕ Agregar paquete", type="primary", use_container_width=True, key="btn_us_agregar"):
+        descripcion = (st.session_state.get("us_descripcion") or "").strip()
+        if not descripcion or min(float(peso_lb), float(ancho), float(alto), float(largo)) <= 0:
+            st.error("Complete la descripción, peso y las tres medidas con valores mayores que cero.")
         else:
-            st.caption(f"ID {prod.get('product_id')}")
-        st.markdown(f'<div class="ae-price">${precio:.2f} USD</div>', unsafe_allow_html=True)
-        st.caption(f"Est. puesto en Honduras: ${calc['total_estimado_usd']:.2f} USD")
-        st.link_button("Ver en AliExpress", enlace, use_container_width=True)
-        if st.button(
-            "Cotizar importación / Agregar a casillero",
-            key=f"ae_add_{prod.get('product_id')}_{idx}",
-            use_container_width=True,
-        ):
-            sku = agregar_producto_ae_a_casillero(casillero, prod)
-            st.session_state["ae_flash"] = (
-                f"Artículo vinculado al casillero {casillero} (`{sku}`). "
-                f"Precio AliExpress ${precio:.2f} USD."
-            )
+            factor = 12.0 if unidad == "Pies" else 1.0
+            pulgadas_cubicas = float(ancho) * factor * float(alto) * factor * float(largo) * factor
+            peso_volumetrico = pulgadas_cubicas / 166.0
+            peso_cobrable = max(float(peso_lb), peso_volumetrico)
+            paquetes.append({
+                "descripcion": descripcion,
+                "peso_real": float(peso_lb),
+                "ancho": float(ancho), "alto": float(alto), "largo": float(largo),
+                "unidad": unidad,
+                "peso_cobrable": peso_cobrable,
+                "enlace": (st.session_state.get("us_enlace") or "").strip(),
+            })
+            st.session_state["_us_limpiar_formulario"] = True
             st.rerun()
+
+    st.markdown("##### Lista de paquetes agregados")
+    if not paquetes:
+        st.caption("Aún no hay paquetes. Agregue el primero para obtener su cotización.")
+        return
+
+    total_lb = 0.0
+    for indice, paquete in enumerate(list(paquetes)):
+        total_lb += float(paquete.get("peso_cobrable") or 0)
+        info, eliminar = st.columns([5, 0.55])
+        with info:
+            st.markdown(
+                f"**{html.escape(paquete['descripcion'])}**  \n"
+                f"Medidas ({paquete['unidad']}): {paquete['ancho']:g} × {paquete['alto']:g} × {paquete['largo']:g} · "
+                f"Peso a cobrar: **{paquete['peso_cobrable']:.2f} lb**"
+            )
+        with eliminar:
+            if st.button("🗑️", key=f"us_del_{indice}", help="Eliminar paquete"):
+                paquetes.pop(indice)
+                st.rerun()
+
+    total_usd = total_lb * float(tarifa_lb)
+    st.markdown("---")
+    a, b, c = st.columns(3)
+    a.metric("Paquetes", len(paquetes))
+    b.metric("Peso total a cobrar", f"{total_lb:.2f} lb")
+    c.metric("Total estimado", f"${total_usd:,.2f} USD")
+    st.caption("La cotización no incluye impuestos ni cargos de tienda. Se ajustará si cambian el peso o las medidas reales recibidas en bodega.")
 
 
 # ---------------------------------------------------------
@@ -8158,7 +8061,7 @@ elif st.session_state["rol"] == "cliente":
                 st.caption("Consolidación marítima China ➔ Honduras")
                 pintar_banner_promocional_china(casillero)
             elif hub_sel == "eeuu":
-                pintar_modulo_aliexpress_eeuu(casillero)
+                pintar_cotizador_eeuu(casillero)
             elif hub_sel in HUBS:
                 hub_vacio = HUBS[hub_sel]
                 st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
@@ -8191,7 +8094,7 @@ elif st.session_state["rol"] == "cliente":
         with c_q1:
             st.button("📖 Catálogo 1688", key="btn_consultas_1688", use_container_width=True, on_click=ir_a_catalogo)
         with c_q2:
-            st.button("🇺🇸 AliExpress", key="btn_consultas_ae", use_container_width=True, on_click=ir_a, args=("Inicio", "eeuu"))
+            st.button("🇺🇸 Cotizador EE. UU.", key="btn_consultas_eeuu", use_container_width=True, on_click=ir_a, args=("Inicio", "eeuu"))
 
     if st.session_state["sub_tab_inicio"] == "Configuración":
         st.markdown("#### ⚙️ Configuración")
@@ -9450,7 +9353,8 @@ elif es_rol_admin():
 
     with tab_t:
         st.markdown("#### Tarifas y constantes del cotizador")
-        n_lb = st.number_input("Tarifa por libra (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
+        n_lb = st.number_input("Tarifa por libra China (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
+        n_us_lb = st.number_input("Tarifa por libra EE. UU. (USD)", min_value=0.01, value=float(get_tarifa("tarifa_eeuu_libra") or n_lb), step=0.05)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
         n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd") or 10), step=0.50)
         n_umin = st.number_input("Umbral tarifa mínima (lb)", min_value=0.1, value=float(get_tarifa("umbral_minimo_lb") or 3), step=0.5)
@@ -9460,6 +9364,7 @@ elif es_rol_admin():
         n_com = st.number_input("Comisión CCM (0-1)", min_value=0.0, max_value=1.0, value=float(leer_config_moneda("COMISION_CCM_PORCENTAJE", 0.10)), step=0.01)
         if st.button("Guardar tarifas y fórmulas", type="primary"):
             set_tarifa("tarifa_libra", n_lb)
+            set_tarifa("tarifa_eeuu_libra", n_us_lb)
             set_tarifa("tarifa_m3", n_m3)
             set_tarifa("minimo_cobro_usd", n_min)
             set_tarifa("umbral_minimo_lb", n_umin)
