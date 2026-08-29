@@ -4514,7 +4514,10 @@ def limites_dimensiones(unidad_medida, comercial=False):
 
 def limites_peso(unidad_peso, paqueteria):
     if paqueteria:
-        max_lb = float(get_tarifa("umbral_paqueteria_lb") or PESO_MAX_PAQUETERIA_LB)
+        # El campo permite ingresar hasta la capacidad legal del contenedor.
+        # Si supera el umbral de paquetería, el Cotizador cambia el cálculo a
+        # CBM automáticamente; no bloquea al usuario en 99 lb.
+        max_lb = peso_max_contenedor_hn_lb()
         default_lb = 4.0
         min_lb = 0.5
         step_lb = 0.5
@@ -8750,7 +8753,32 @@ elif st.session_state["rol"] == "cliente":
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
             vol_ft3_val = vol_m3_val * 35.3147
 
-            if es_paqueteria:
+            # Validación absoluta: una carga que no cabe físicamente o excede
+            # el peso legal no puede enviarse ni siquiera como carga CBM.
+            excede_contenedor = (
+                al_val > CONTENEDOR_40_ALTO_M * 100.0 + 1e-6
+                or an_val > CONTENEDOR_40_ANCHO_M * 100.0 + 1e-6
+                or la_val > CONTENEDOR_40_LARGO_M * 100.0 + 1e-6
+                or pe_kg > PESO_MAX_CONTENEDOR_HN_KG + 1e-6
+            )
+            excede_paqueteria = es_paqueteria and pe_lb > umbral_paq + 1e-6
+            # La conversión automática solo procede si la carga aún cabe en el
+            # contenedor. El límite físico absoluto se informa por separado.
+            cambio_automatico_cbm = excede_paqueteria and not excede_contenedor
+            usar_paqueteria = es_paqueteria and not cambio_automatico_cbm
+
+            if excede_contenedor:
+                st.error(
+                    "La carga supera la capacidad física o el peso legal de un contenedor 40′ High Cube. "
+                    "Revise las medidas o divida el envío antes de emitir la tarifa."
+                )
+            elif cambio_automatico_cbm:
+                st.info(
+                    f"🚢 Cambio automático a carga consolidada por CBM: el peso ingresado "
+                    f"({pe_lb:.1f} lb) supera el máximo de paquetería ({umbral_paq:.0f} lb)."
+                )
+
+            if usar_paqueteria:
                 if pe_lb <= umbral_min:
                     tot = min_usd
                     desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
@@ -8785,7 +8813,11 @@ elif st.session_state["rol"] == "cliente":
                     st.metric("Total Estimado", f"${tot:.2f} USD")
 
                 modalidad_pdf = "Carga Comercial por Metro Cúbico (CBM)"
-                detalle_pdf = f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+                detalle_pdf = (
+                    f"Cambio automático desde paquetería: {cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+                    if cambio_automatico_cbm
+                    else f"{cbm_facturable:.4f} CBM @ ${t_m3:.2f}/m3"
+                )
 
             firma_actual = firma_parametros_cotizador(
                 al_val,
@@ -8817,8 +8849,13 @@ elif st.session_state["rol"] == "cliente":
                     key="btn_confirmar_tarifa",
                     use_container_width=True,
                     on_click=emitir_tarifa_desde_snapshot,
+                    disabled=excede_contenedor,
                 )
-            if pulso_confirmar and not isinstance(st.session_state.get("datos_pdf_confirmado"), dict):
+            if (
+                pulso_confirmar
+                and not excede_contenedor
+                and not isinstance(st.session_state.get("datos_pdf_confirmado"), dict)
+            ):
                 emitir_tarifa_desde_snapshot()
             if st.session_state.get("_ccm_emit_error"):
                 st.error(
