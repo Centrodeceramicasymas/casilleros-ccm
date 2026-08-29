@@ -4808,7 +4808,11 @@ def consultar_producto_enlace_eeuu(enlace):
     try:
         respuesta = requests.get(
             url,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
             timeout=12,
             allow_redirects=True,
         )
@@ -4816,6 +4820,10 @@ def consultar_producto_enlace_eeuu(enlace):
         pagina = respuesta.text
     except requests.RequestException as exc:
         return {"error": f"No se pudo consultar el enlace: {exc}"}
+
+    pagina_baja = pagina.lower()
+    if any(marca in pagina_baja for marca in ("robot check", "captcha", "automated access", "unusual traffic")):
+        return {"error": "La tienda bloqueó la consulta automática de este producto. Use la foto y las medidas publicadas por la tienda para completar el paquete."}
 
     def meta(nombre):
         for etiqueta in re.findall(r"<meta\b[^>]*>", pagina, flags=re.I):
@@ -4845,10 +4853,20 @@ def consultar_producto_enlace_eeuu(enlace):
 
     # JSON-LD suele contener las especificaciones de Amazon, Walmart, eBay y otras tiendas.
     nodos = []
+
+    def reunir_nodos(valor):
+        if isinstance(valor, dict):
+            nodos.append(valor)
+            for subvalor in valor.values():
+                reunir_nodos(subvalor)
+        elif isinstance(valor, list):
+            for subvalor in valor:
+                reunir_nodos(subvalor)
+
     for bloque in re.findall(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", pagina, flags=re.I | re.S):
         try:
             dato = json.loads(html.unescape(bloque.strip()))
-            nodos.extend(dato if isinstance(dato, list) else [dato])
+            reunir_nodos(dato)
         except (json.JSONDecodeError, TypeError):
             continue
     for nodo in nodos:
@@ -4863,6 +4881,10 @@ def consultar_producto_enlace_eeuu(enlace):
             valor = nodo.get(campo)
             if resultado[destino] is None and isinstance(valor, dict):
                 resultado[destino] = _valor_numerico_producto(valor.get("value"), valor.get("unitCode") or valor.get("unitText"), "peso" if destino == "peso_lb" else "medida")
+            elif resultado[destino] is None and isinstance(valor, str):
+                coincidencia = re.search(r"(\d+(?:[.,]\d+)?)\s*(lb|lbs|pounds?|kg|kilograms?|oz|inches?|in\.?|cm|ft|feet)", valor, flags=re.I)
+                if coincidencia:
+                    resultado[destino] = _valor_numerico_producto(coincidencia.group(1), coincidencia.group(2), "peso" if destino == "peso_lb" else "medida")
 
     texto = re.sub(r"<[^>]+>", " ", pagina)
     texto = html.unescape(re.sub(r"\s+", " ", texto))
@@ -4875,7 +4897,29 @@ def consultar_producto_enlace_eeuu(enlace):
         if medidas:
             vals = [_valor_numerico_producto(medidas.group(i), medidas.group(4), "medida") for i in (1, 2, 3)]
             resultado["largo_in"], resultado["ancho_in"], resultado["alto_in"] = vals
+    titulo_limpio = str(resultado.get("titulo") or "").strip()
+    host = urllib.parse.urlparse(respuesta.url).netloc.lower().removeprefix("www.")
+    if titulo_limpio.lower() in {host, host.replace(".com", ""), "amazon.com", "walmart.com", "ebay.com"}:
+        resultado["titulo"] = ""
     return resultado
+
+
+def descargar_imagen_producto(url):
+    """Descarga la imagen al servidor para evitar bloqueos de hotlink en el navegador."""
+    if not str(url or "").startswith(("https://", "http://")):
+        return None
+    try:
+        respuesta = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
+            timeout=10,
+        )
+        tipo = respuesta.headers.get("content-type", "").lower()
+        if respuesta.ok and tipo.startswith("image/") and len(respuesta.content) <= 5_000_000:
+            return respuesta.content
+    except requests.RequestException:
+        pass
+    return None
 
 
 def pintar_cotizador_eeuu(casillero):
@@ -4896,12 +4940,22 @@ def pintar_cotizador_eeuu(casillero):
         help="Ingrese aquí la tarifa aprobada para envíos desde EE. UU.",
     )
 
-    with st.expander("✨ Cotizador inteligente: agregar desde un enlace de tienda", expanded=False):
-        st.info("Pegue un enlace de Amazon, Walmart, Best Buy, eBay u otra tienda. Intentaremos completar los datos públicos del producto; confirme siempre las medidas finales de bodega.")
+    st.markdown(
+        "<div style='margin:14px 0 8px;padding:16px 18px;border-radius:16px;"
+        "background:linear-gradient(135deg,#eff6ff,#ffffff);border:1px solid #bfdbfe;'>"
+        "<div style='font-weight:800;font-size:1.05rem;color:#0f3d8f;'>✨ Cotizador inteligente</div>"
+        "<div style='margin-top:4px;color:#475569;'>Pega el enlace de cualquier tienda en línea. "
+        "Buscamos datos públicos del producto y tú confirmas el envío.</div></div>",
+        unsafe_allow_html=True,
+    )
+    with st.expander("Consultar producto desde enlace", expanded=True):
+        st.caption("Compatible con tiendas que publiquen datos estructurados: Amazon, Walmart, Best Buy, eBay, Target, Home Depot, tiendas Shopify y más.")
         st.text_input("Enlace del producto (opcional)", key="us_enlace", placeholder="https://www.amazon.com/...")
         if st.button("✨ Consultar enlace y autocompletar", key="btn_us_consultar_link", use_container_width=True):
             st.session_state.pop("us_imagen_producto", None)
-            datos_link = consultar_producto_enlace_eeuu(st.session_state.get("us_enlace"))
+            st.session_state.pop("us_imagen_producto_bytes", None)
+            with st.spinner("Consultando datos públicos del producto..."):
+                datos_link = consultar_producto_enlace_eeuu(st.session_state.get("us_enlace"))
             if datos_link.get("error"):
                 st.warning(datos_link["error"])
             else:
@@ -4919,14 +4973,25 @@ def pintar_cotizador_eeuu(casillero):
                 imagen = str(datos_link.get("imagen") or "").strip()
                 if imagen.startswith(("https://", "http://")):
                     st.session_state["us_imagen_producto"] = imagen
-                campos = sum(bool(datos_link.get(k)) for k in ("titulo", "peso_lb", "ancho_in", "alto_in", "largo_in"))
-                if campos:
-                    st.success("Producto consultado. Revise los datos completados antes de agregar el paquete.")
+                    imagen_bytes = descargar_imagen_producto(imagen)
+                    if imagen_bytes:
+                        st.session_state["us_imagen_producto_bytes"] = imagen_bytes
+                campos = sum(bool(datos_link.get(k)) for k in ("peso_lb", "ancho_in", "alto_in", "largo_in"))
+                if campos or st.session_state.get("us_imagen_producto_bytes"):
+                    st.success("Datos detectados. Revise el producto y confirme las medidas antes de agregarlo.")
                 else:
-                    st.warning("La tienda no expuso especificaciones públicas para este enlace. Complete los datos manualmente.")
-    imagen_producto = st.session_state.get("us_imagen_producto")
+                    st.warning("La tienda no publicó medidas, peso o una imagen accesible. Complete los datos manualmente o use una captura del producto.")
+        foto_manual = st.file_uploader("Si la tienda bloquea la imagen, sube una foto del producto", type=["jpg", "jpeg", "png", "webp"], key="us_foto_manual")
+        if foto_manual:
+            st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
+    imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
     if imagen_producto:
-        st.image(imagen_producto, caption="Imagen del producto detectada", width=260)
+        vista_img, vista_texto = st.columns([1, 2.3])
+        with vista_img:
+            st.image(imagen_producto, caption="Producto detectado", use_container_width=True)
+        with vista_texto:
+            st.success("Producto preparado para cotizar")
+            st.caption("Los campos de abajo se llenaron solo con información pública disponible. Revise peso y medidas reales antes de continuar.")
 
     st.markdown("##### 📦 Agregar paquete")
     st.text_input("Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
