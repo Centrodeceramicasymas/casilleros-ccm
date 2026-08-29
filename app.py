@@ -2366,9 +2366,9 @@ def on_confirmar_cot_historial(id_cot, casillero):
             st.session_state.pop("cotizacion_historial_foco", None)
         avanzar_guia_si(5, 6)
         st.session_state["flash_cotizacion_confirmada"] = int(id_cot)
-        # El callback termina con una recarga controlada: la tarjeta deja de
-        # ser pendiente y Envíos queda disponible en el mismo clic.
-        st.rerun()
+        # Streamlit vuelve a ejecutar la app automáticamente al terminar un
+        # callback. Forzar st.rerun() aquí muestra una advertencia en móvil y
+        # no aporta ningún refresco adicional.
     else:
         detalle = st.session_state.pop("ultimo_error_confirmacion", "")
         st.session_state["flash_error_confirmacion"] = (
