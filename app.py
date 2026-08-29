@@ -2249,13 +2249,18 @@ def ir_a(vista, hub="_omit"):
 
 
 def abrir_resumen_cotizaciones(estado):
-    """Desde las tarjetas de resumen, enfoca la tarifa correspondiente."""
+    """Las tarjetas conservan su aspecto y aplican/retiran su filtro de estado."""
+    estado = estado if estado in ("pendiente", "confirmada") else None
+    filtro_actual = st.session_state.get("filtro_historial_cotizaciones")
+    # Pulsar nuevamente la misma tarjeta vuelve a mostrar el historial completo.
+    st.session_state["filtro_historial_cotizaciones"] = None if filtro_actual == estado else estado
+    st.session_state.pop("cotizacion_historial_foco", None)
     cas = formatear_casillero(st.session_state.get("casillero", ""))
     try:
         _, filas = filas_cotizaciones_casillero(cas, obtener_tiempo_honduras())
         for fila in filas:
             es_confirmada = es_cotizacion_confirmada(fila[8])
-            if (estado == "pendiente" and not es_confirmada) or (estado == "confirmada" and es_confirmada):
+            if estado and ((estado == "pendiente" and not es_confirmada) or (estado == "confirmada" and es_confirmada)):
                 st.session_state["cotizacion_historial_foco"] = int(fila[0])
                 break
     except Exception:
@@ -8114,6 +8119,18 @@ elif st.session_state["rol"] == "cliente":
             elif error_confirmacion:
                 st.error(error_confirmacion)
 
+            # Las tarjetas superiores filtran el mismo historial. El segundo
+            # toque sobre la tarjeta activa quita el filtro.
+            filtro_historial = st.session_state.get("filtro_historial_cotizaciones")
+            if filtro_historial == "pendiente":
+                lista_mis_cotizaciones = [
+                    cot for cot in lista_mis_cotizaciones if not es_cotizacion_confirmada(cot[8])
+                ]
+            elif filtro_historial == "confirmada":
+                lista_mis_cotizaciones = [
+                    cot for cot in lista_mis_cotizaciones if es_cotizacion_confirmada(cot[8])
+                ]
+
             if lista_mis_cotizaciones:
                 try:
                     foco_hist = int(st.session_state.get("cotizacion_historial_foco") or 0)
@@ -8233,10 +8250,15 @@ elif st.session_state["rol"] == "cliente":
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
             else:
-                st.info(
-                    "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
-                    "tiene 1 hora para confirmarla y habilitar Envíos."
-                )
+                if filtro_historial == "pendiente":
+                    st.info("No tiene cotizaciones pendientes. Pulse nuevamente «Tarifa pendiente» para ver todas.")
+                elif filtro_historial == "confirmada":
+                    st.info("No tiene cotizaciones confirmadas. Pulse nuevamente «Tarifa confirmada» para ver todas.")
+                else:
+                    st.info(
+                        "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
+                        "tiene 1 hora para confirmarla y habilitar Envíos."
+                    )
             espaciador_barra_inferior("safe_historial")
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state.get("mostrar_gestion_direcciones"):
