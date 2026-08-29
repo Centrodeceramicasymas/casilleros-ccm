@@ -2248,6 +2248,21 @@ def ir_a(vista, hub="_omit"):
         del st.query_params["hub"]
 
 
+def abrir_resumen_cotizaciones(estado):
+    """Desde las tarjetas de resumen, enfoca la tarifa correspondiente."""
+    cas = formatear_casillero(st.session_state.get("casillero", ""))
+    try:
+        _, filas = filas_cotizaciones_casillero(cas, obtener_tiempo_honduras())
+        for fila in filas:
+            es_confirmada = es_cotizacion_confirmada(fila[8])
+            if (estado == "pendiente" and not es_confirmada) or (estado == "confirmada" and es_confirmada):
+                st.session_state["cotizacion_historial_foco"] = int(fila[0])
+                break
+    except Exception:
+        pass
+    ir_a("Mis Cotizaciones", hub="china")
+
+
 def ir_a_inicio():
     ir_a("Inicio", hub=None)
 
@@ -8046,16 +8061,45 @@ elif st.session_state["rol"] == "cliente":
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
             st.markdown(
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 14px;">'
-                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
-                '<b>⏳ Tarifa pendiente</b><br><span style="font-size:.86rem;">Confírmela en <b>1 hora</b> antes de que venza.</span></div>'
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
-                '<b>🛡️ Tarifa confirmada</b><br><span style="font-size:.86rem;">Permanece disponible durante <b>48 horas</b>.</span></div>'
-                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
-                '<b>📦 Seguimiento y documentos</b><br><span style="font-size:.86rem;">Abra <b>Ir a Envíos</b> para ver y descargar sus PDFs.</span></div>'
-                '</div>',
+                """
+                <style>
+                [class*="st-key-resumen_pendiente"] button,
+                [class*="st-key-resumen_confirmada"] button,
+                [class*="st-key-resumen_envios"] button {
+                    min-height: 68px !important; border-radius: 12px !important;
+                    text-align: left !important; white-space: pre-line !important;
+                    font-weight: 700 !important; line-height: 1.42 !important;
+                    padding: 11px 12px !important; transition: transform .16s ease, box-shadow .16s ease !important;
+                }
+                [class*="st-key-resumen_pendiente"] button { background:#fff7ed !important; border:1px solid #fed7aa !important; color:#9a3412 !important; }
+                [class*="st-key-resumen_confirmada"] button { background:#eff6ff !important; border:1px solid #bfdbfe !important; color:#1e3a8a !important; }
+                [class*="st-key-resumen_envios"] button { background:#f0fdf4 !important; border:1px solid #bbf7d0 !important; color:#166534 !important; }
+                [class*="st-key-resumen_pendiente"] button:hover,
+                [class*="st-key-resumen_confirmada"] button:hover,
+                [class*="st-key-resumen_envios"] button:hover { transform:translateY(-2px) !important; box-shadow:0 8px 18px rgba(15,23,42,.12) !important; }
+                </style>
+                """,
                 unsafe_allow_html=True,
             )
+            resumen_pendiente, resumen_confirmada, resumen_envios = st.columns(3)
+            with resumen_pendiente:
+                st.button(
+                    "⏳ Tarifa pendiente\nConfírmela en 1 hora antes de que venza.",
+                    key="resumen_pendiente", use_container_width=True,
+                    on_click=abrir_resumen_cotizaciones, args=("pendiente",),
+                )
+            with resumen_confirmada:
+                st.button(
+                    "🛡️ Tarifa confirmada\nPermanece disponible durante 48 horas.",
+                    key="resumen_confirmada", use_container_width=True,
+                    on_click=abrir_resumen_cotizaciones, args=("confirmada",),
+                )
+            with resumen_envios:
+                st.button(
+                    "📦 Seguimiento y documentos\nAbra para ver y descargar sus PDFs.",
+                    key="resumen_envios", use_container_width=True,
+                    on_click=ir_a, args=("Mis Envíos", "china"),
+                )
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
             error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
             if confirmada_flash:
