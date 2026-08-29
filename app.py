@@ -4311,17 +4311,19 @@ def migrar_prefijo_casillero():
         conn.commit()
 
 
-# Estas tareas de mantenimiento no deben repetirse en cada botón/rerun. Se
-# ejecutan una vez por sesión y la purga se limita a una vez por minuto.
+# Estas tareas son migraciones de la instalación SQLite original. En Supabase
+# no se ejecutan durante una sesión de cliente: una conexión lenta o una
+# migración antigua no debe impedir que aparezca el portal tras el login.
 if not st.session_state.get("_ccm_arranque_db_realizado"):
-    migrar_prefijo_casillero()
-    asegurar_superadmin()
-    abrir_permisos_todos_los_usuarios()
-    restaurar_datos_operativos_cliente()
+    if not USA_SUPABASE:
+        migrar_prefijo_casillero()
+        asegurar_superadmin()
+        abrir_permisos_todos_los_usuarios()
+        restaurar_datos_operativos_cliente()
     st.session_state["_ccm_arranque_db_realizado"] = True
 marca_purga = float(st.session_state.get("_ccm_ultima_purga") or 0)
 ahora_purga = datetime.now().timestamp()
-if ahora_purga - marca_purga >= 60:
+if not USA_SUPABASE and ahora_purga - marca_purga >= 60:
     purgar_cotizaciones_no_confirmadas_vencidas()
     st.session_state["_ccm_ultima_purga"] = ahora_purga
 
@@ -7867,7 +7869,7 @@ elif st.session_state["rol"] == "cliente":
     # La purga ya se ejecutó al arrancar y se limita a intervalos para que
     # navegar o pulsar botones no dispare una operación completa en la BD.
     marca_purga_cliente = float(st.session_state.get("_ccm_ultima_purga") or 0)
-    if datetime.now().timestamp() - marca_purga_cliente >= 60:
+    if not USA_SUPABASE and datetime.now().timestamp() - marca_purga_cliente >= 60:
         purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
         st.session_state["_ccm_ultima_purga"] = datetime.now().timestamp()
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
