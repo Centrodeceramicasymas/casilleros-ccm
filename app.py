@@ -4802,7 +4802,12 @@ def _valor_numerico_producto(valor, unidad, destino):
 
 
 def consultar_producto_enlace_eeuu(enlace):
-    """Obtiene metadatos públicos de tiendas; no depende de una API de AliExpress."""
+    """Obtiene metadatos públicos de cualquier tienda que permita su lectura.
+
+    No intenta evadir CAPTCHA, inicio de sesión ni otras protecciones de una
+    tienda: cuando no hay datos públicos, el usuario conserva la opción de
+    completar la ficha manualmente.
+    """
     url = str(enlace or "").strip()
     if not url.startswith(("https://", "http://")):
         return {"error": "Pegue un enlace completo que comience con https://."}
@@ -4836,10 +4841,19 @@ def consultar_producto_enlace_eeuu(enlace):
 
     resultado = {
         "titulo": meta("og:title") or meta("twitter:title"),
+        "descripcion": meta("og:description") or meta("twitter:description") or meta("description"),
         "imagen": meta("og:image") or meta("twitter:image"),
+        "precio_usd": None,
+        "moneda": meta("product:price:currency") or meta("og:price:currency") or "USD",
         "peso_lb": None, "ancho_in": None, "alto_in": None, "largo_in": None,
         "url_final": respuesta.url,
     }
+    precio_meta = meta("product:price:amount") or meta("og:price:amount")
+    if precio_meta:
+        try:
+            resultado["precio_usd"] = float(re.sub(r"[^0-9.,]", "", precio_meta).replace(",", ""))
+        except ValueError:
+            pass
     if not resultado["titulo"]:
         titulo_html = re.search(r"<title[^>]*>(.*?)</title>", pagina, flags=re.I | re.S)
         if titulo_html:
@@ -4878,6 +4892,18 @@ def consultar_producto_enlace_eeuu(enlace):
         imagen = nodo.get("image")
         if not resultado["imagen"] and imagen:
             resultado["imagen"] = imagen[0] if isinstance(imagen, list) else str(imagen)
+        if not resultado["descripcion"]:
+            resultado["descripcion"] = re.sub(r"\s+", " ", str(nodo.get("description") or "")).strip()
+        oferta = nodo.get("offers")
+        if isinstance(oferta, list):
+            oferta = oferta[0] if oferta else None
+        if isinstance(oferta, dict):
+            if resultado["precio_usd"] is None:
+                try:
+                    resultado["precio_usd"] = float(str(oferta.get("price") or oferta.get("lowPrice") or "").replace(",", ""))
+                except ValueError:
+                    pass
+            resultado["moneda"] = str(oferta.get("priceCurrency") or resultado["moneda"] or "USD").upper()
         for campo, destino in (("weight", "peso_lb"), ("width", "ancho_in"), ("height", "alto_in"), ("depth", "largo_in")):
             valor = nodo.get(campo)
             if resultado[destino] is None and isinstance(valor, dict):
@@ -4898,10 +4924,19 @@ def consultar_producto_enlace_eeuu(enlace):
         if medidas:
             vals = [_valor_numerico_producto(medidas.group(i), medidas.group(4), "medida") for i in (1, 2, 3)]
             resultado["largo_in"], resultado["ancho_in"], resultado["alto_in"] = vals
+    if resultado["precio_usd"] is None:
+        # Fallback para páginas sin JSON-LD: busca etiquetas de precio visibles.
+        precio = re.search(r"(?:price|precio|ourprice|saleprice)[^0-9]{0,40}(?:US\$|\$|USD)?\s*(\d{1,6}(?:[.,]\d{2})?)", texto, flags=re.I)
+        if precio:
+            try:
+                resultado["precio_usd"] = float(precio.group(1).replace(",", ""))
+            except ValueError:
+                pass
     titulo_limpio = str(resultado.get("titulo") or "").strip()
     host = urllib.parse.urlparse(respuesta.url).netloc.lower().removeprefix("www.")
     if titulo_limpio.lower() in {host, host.replace(".com", ""), "amazon.com", "walmart.com", "ebay.com"}:
         resultado["titulo"] = ""
+    resultado["descripcion"] = str(resultado.get("descripcion") or "").strip()[:900]
     return resultado
 
 
@@ -4969,7 +5004,7 @@ def pintar_cotizador_eeuu(casillero):
 
     paquetes = st.session_state.setdefault("paquetes_eeuu", [])
     if st.session_state.pop("_us_limpiar_formulario", False):
-        for clave in ("us_descripcion", "us_enlace", "us_peso", "us_ancho", "us_alto", "us_largo", "us_imagen_producto", "us_imagen_producto_bytes", "us_foto_manual"):
+        for clave in ("us_descripcion", "us_descripcion_origen", "us_enlace", "us_precio_unitario", "us_cantidad", "us_moneda_producto", "us_peso", "us_ancho", "us_alto", "us_largo", "us_imagen_producto", "us_imagen_producto_bytes", "us_foto_manual"):
             st.session_state.pop(clave, None)
     tarifa_default = float(get_tarifa("tarifa_eeuu_libra") or get_tarifa("tarifa_libra") or 0.0)
     tarifa_cbm_default = float(get_tarifa("tarifa_eeuu_m3") or get_tarifa("tarifa_m3") or 0.0)
@@ -5009,6 +5044,11 @@ def pintar_cotizador_eeuu(casillero):
             else:
                 if datos_link.get("titulo"):
                     st.session_state["us_descripcion"] = datos_link["titulo"]
+                if datos_link.get("descripcion"):
+                    st.session_state["us_descripcion_origen"] = datos_link["descripcion"]
+                if datos_link.get("precio_usd") is not None:
+                    st.session_state["us_precio_unitario"] = round(float(datos_link["precio_usd"]), 2)
+                st.session_state["us_moneda_producto"] = str(datos_link.get("moneda") or "USD").upper()
                 if datos_link.get("peso_lb"):
                     st.session_state["us_peso"] = round(float(datos_link["peso_lb"]), 2)
                 if datos_link.get("ancho_in"):
@@ -5024,11 +5064,11 @@ def pintar_cotizador_eeuu(casillero):
                     imagen_bytes = descargar_imagen_producto(imagen)
                     if imagen_bytes:
                         st.session_state["us_imagen_producto_bytes"] = imagen_bytes
-                campos = sum(bool(datos_link.get(k)) for k in ("peso_lb", "ancho_in", "alto_in", "largo_in"))
+                campos = sum(bool(datos_link.get(k)) for k in ("titulo", "descripcion", "precio_usd", "peso_lb", "ancho_in", "alto_in", "largo_in"))
                 if campos or st.session_state.get("us_imagen_producto_bytes"):
-                    st.success("Datos detectados. Revise el producto y confirme las medidas antes de agregarlo.")
+                    st.success("Datos públicos detectados. Revise precio, producto y medidas antes de agregarlo.")
                 else:
-                    st.warning("La tienda no publicó medidas, peso o una imagen accesible. Complete los datos manualmente o use una captura del producto.")
+                    st.warning("La tienda no publicó datos accesibles. Complete los campos manualmente o use una captura del producto.")
         foto_manual = st.file_uploader("Si la tienda bloquea la imagen, sube una foto del producto", type=["jpg", "jpeg", "png", "webp"], key="us_foto_manual")
         if foto_manual:
             st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
@@ -5052,7 +5092,18 @@ def pintar_cotizador_eeuu(casillero):
             "font-weight:700;margin:8px 0 18px;'>🖼️ La vista previa aparecerá al consultar un enlace o subir una foto</div>",
             unsafe_allow_html=True,
         )
-    st.text_input("📦 Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
+    st.text_input("📦 Nombre del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
+    st.text_area("📝 Descripción recuperada / notas", key="us_descripcion_origen", height=92,
+                 placeholder="La descripción pública de la tienda aparecerá aquí; puedes corregirla o añadir detalles.")
+    precio_col, cantidad_col, moneda_col = st.columns([1, 1, 0.7])
+    with precio_col:
+        precio_unitario = st.number_input("💳 Precio unitario", min_value=0.0, max_value=1_000_000.0,
+                                          value=0.0, step=0.01, format="%.2f", key="us_precio_unitario")
+    with cantidad_col:
+        cantidad = st.number_input("Cantidad", min_value=1, max_value=10000, value=1, step=1, key="us_cantidad")
+    with moneda_col:
+        moneda_producto = st.text_input("Moneda", value=st.session_state.get("us_moneda_producto", "USD"),
+                                         max_chars=3, key="us_moneda_producto").upper()
     p1, p2 = st.columns(2)
     with p1:
         peso_lb = st.number_input("⚖️ Peso (lb) *", min_value=0.0, max_value=2000.0, value=0.0, step=0.1, key="us_peso")
@@ -5083,6 +5134,9 @@ def pintar_cotizador_eeuu(casillero):
                     "cbm_facturable": calculo["cbm_facturable"],
                     "modalidad": calculo["modalidad"],
                     "total_usd": calculo["total_usd"],
+                    "precio_unitario": float(precio_unitario), "cantidad": int(cantidad),
+                    "moneda_producto": moneda_producto or "USD",
+                    "descripcion_origen": (st.session_state.get("us_descripcion_origen") or "").strip(),
                     "enlace": (st.session_state.get("us_enlace") or "").strip(),
                 })
                 st.session_state["_us_limpiar_formulario"] = True
@@ -5095,7 +5149,8 @@ def pintar_cotizador_eeuu(casillero):
 
     total_lb = 0.0
     total_cbm = 0.0
-    total_usd = 0.0
+    total_flete_usd = 0.0
+    total_producto_usd = 0.0
     for indice, paquete in enumerate(list(paquetes)):
         recalculo = calcular_paquete_eeuu(
             paquete.get("peso_real", 0), paquete.get("ancho", 0), paquete.get("alto", 0),
@@ -5109,11 +5164,16 @@ def pintar_cotizador_eeuu(casillero):
             })
         total_lb += float(paquete.get("peso_cobrable") or 0)
         total_cbm += float(paquete.get("cbm_facturable") or 0)
-        total_usd += float(paquete.get("total_usd") or 0)
+        total_flete_usd += float(paquete.get("total_usd") or 0)
+        # El precio se suma al total solo si está expresado en USD. Otras
+        # monedas se conservan como referencia para no inventar conversiones.
+        if str(paquete.get("moneda_producto") or "USD").upper() == "USD":
+            total_producto_usd += float(paquete.get("precio_unitario") or 0) * int(paquete.get("cantidad") or 1)
         info, eliminar = st.columns([5, 0.55])
         with info:
             st.markdown(
                 f"**{html.escape(paquete['descripcion'])}**  \n"
+                f"Producto: **{int(paquete.get('cantidad') or 1)} × {str(paquete.get('moneda_producto') or 'USD').upper()} ${float(paquete.get('precio_unitario') or 0):,.2f}**  \n"
                 f"Medidas ({paquete['unidad']}): {paquete['ancho']:g} × {paquete['alto']:g} × {paquete['largo']:g} · "
                 f"{paquete.get('modalidad', 'Paquetería menor')} · "
                 f"Peso a cobrar: **{paquete['peso_cobrable']:.2f} lb** · "
@@ -5125,11 +5185,13 @@ def pintar_cotizador_eeuu(casillero):
                 st.rerun()
 
     st.markdown("---")
-    a, b, c = st.columns(3)
+    total_usd = total_flete_usd + total_producto_usd
+    a, b, c, d = st.columns(4)
     a.metric("Paquetes", len(paquetes))
     b.metric("Peso/CBM cobrable", f"{total_lb:.2f} lb" if total_cbm == 0 else f"{total_cbm:.3f} CBM")
-    c.metric("Total estimado", f"${total_usd:,.2f} USD")
-    st.caption("La cotización no incluye impuestos ni cargos de tienda. Se ajustará si cambian el peso o las medidas reales recibidas en bodega.")
+    c.metric("Valor productos (USD)", f"${total_producto_usd:,.2f}")
+    d.metric("Total producto + flete", f"${total_usd:,.2f} USD")
+    st.caption(f"Flete estimado: ${total_flete_usd:,.2f} USD. El total no incluye impuestos, aranceles ni cargos de tienda. Se ajustará si cambian el peso o las medidas reales recibidas en bodega.")
 
 
 # ---------------------------------------------------------
