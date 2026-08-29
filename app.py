@@ -1229,7 +1229,8 @@ NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
 CLAVE_INICIAL_SUPERADMIN = "1301"
 # Hubs y módulos base siguen abiertos; Envíos solo se ve en la barra al abrir Mis Cotizaciones.
-PERMISOS_ABIERTOS_TEMPORAL = True
+# En producción los permisos deben salir de la tabla permisos_usuario.
+PERMISOS_ABIERTOS_TEMPORAL = False
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
     "Cotizador": "mod_cotizador",
@@ -3714,7 +3715,27 @@ ET"""
 # 3. BASE DE DATOS SQLITE & UTILIDADES
 # ---------------------------------------------------------
 def hash_pwd(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash con sal y derivación lenta; nunca guarda contraseñas en texto plano."""
+    salt = os.urandom(16)
+    derivada = hashlib.scrypt(str(password).encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+    return "scrypt$" + base64.b64encode(salt).decode("ascii") + "$" + base64.b64encode(derivada).decode("ascii")
+
+
+def verificar_pwd(password, almacenada):
+    """Acepta hashes SHA-256 históricos y los migra al siguiente inicio correcto."""
+    valor = str(almacenada or "")
+    if valor.startswith("scrypt$"):
+        try:
+            _, salt_b64, hash_b64 = valor.split("$", 2)
+            salt = base64.b64decode(salt_b64)
+            esperada = base64.b64decode(hash_b64)
+            calculada = hashlib.scrypt(str(password).encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+            return hmac.compare_digest(calculada, esperada)
+        except (ValueError, TypeError):
+            return False
+    # Compatibilidad de una sola vez con cuentas creadas antes de esta mejora.
+    anterior = hashlib.sha256(str(password).encode("utf-8")).hexdigest()
+    return hmac.compare_digest(anterior, valor)
 
 
 def get_db():
@@ -3748,7 +3769,11 @@ def validar_esquema_supabase():
 
 def init_db():
     if USA_SUPABASE:
-        validar_esquema_supabase()
+        # El esquema no cambia durante una sesión normal. Validarlo una vez
+        # evita una conexión y consulta adicional en cada clic de Streamlit.
+        if not st.session_state.get("_ccm_esquema_supabase_validado"):
+            validar_esquema_supabase()
+            st.session_state["_ccm_esquema_supabase_validado"] = True
         return
     with get_db() as conn:
         c = conn.cursor()
@@ -4138,6 +4163,7 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
                 bool(vals["mod_fichas"]),
             ),
         )
+    st.session_state.pop(f"_ccm_permisos_{cas}", None)
 
 
 def abrir_permisos_todos_los_usuarios():
@@ -4158,6 +4184,10 @@ def permisos_de(casillero=None):
     base = permisos_default(st.session_state.get("rol", "cliente"))
     if not cas:
         return base
+    clave_cache = f"_ccm_permisos_{cas}"
+    en_cache = st.session_state.get(clave_cache)
+    if isinstance(en_cache, dict):
+        return en_cache
     try:
         with get_db() as conn:
             c = conn.cursor()
@@ -4172,7 +4202,9 @@ def permisos_de(casillero=None):
             row = c.fetchone()
         if not row:
             asegurar_permisos_casillero(cas, st.session_state.get("rol", "cliente"))
-            return permisos_default(st.session_state.get("rol", "cliente"))
+            permisos = permisos_default(st.session_state.get("rol", "cliente"))
+            st.session_state[clave_cache] = permisos
+            return permisos
         claves = (
             "hub_china",
             "hub_eeuu",
@@ -4183,7 +4215,9 @@ def permisos_de(casillero=None):
             "mod_envios",
             "mod_fichas",
         )
-        return dict(zip(claves, [int(v or 0) for v in row]))
+        permisos = dict(zip(claves, [int(v or 0) for v in row]))
+        st.session_state[clave_cache] = permisos
+        return permisos
     except Exception:
         return base
 
@@ -4238,6 +4272,7 @@ def guardar_permisos(casillero, datos):
                 bool(datos.get("mod_fichas", 0)),
             ),
         )
+    st.session_state.pop(f"_ccm_permisos_{cas}", None)
 
 
 def _migrar_casillero_tablas(conn, origen, destino):
@@ -4917,8 +4952,12 @@ if "autenticado" not in st.session_state:
 
 
 def restaurar_sesion_persistente():
-    if st.session_state.get("autenticado", False):
-        return True
+    """No autentica nunca desde parámetros de URL.
+
+    Un enlace puede indicar una vista, pero no demuestra la identidad de quien
+    lo abre. La sesión solo se establece después de verificar contraseña.
+    """
+    return bool(st.session_state.get("autenticado", False))
 
     try:
         params = st.query_params
@@ -7678,7 +7717,6 @@ if not st.session_state["autenticado"]:
             u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
             u_pass = st.session_state.get("log_pwd") or u_pass or ""
             if u_ident and u_pass:
-                p_hash = hash_pwd(u_pass)
                 u_correo = normalizar_correo(u_ident)
                 claves = coincidencias_casillero(u_ident)
                 placeholders = ",".join("?" * len(claves))
@@ -7686,15 +7724,20 @@ if not st.session_state["autenticado"]:
                     c = conn.cursor()
                     c.execute(
                         f"""
-                        SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad
+                        SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad, password_hash
                         FROM usuarios
-                        WHERE (LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({placeholders})) AND password_hash = ?
+                        WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({placeholders})
                         """,
-                        (u_correo, u_ident, *claves, p_hash),
+                        (u_correo, u_ident, *claves),
                     )
                     user = c.fetchone()
 
-                if user:
+                if user and verificar_pwd(u_pass, user[8]):
+                    # Al entrar correctamente se actualiza de forma transparente
+                    # cualquier hash SHA-256 legado a scrypt con sal.
+                    if not str(user[8] or "").startswith("scrypt$"):
+                        with get_db() as conn:
+                            conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(u_pass), user[0]))
                     if user[5] == 0:
                         st.error("⛔ Cuenta inactiva. Contacte al soporte.")
                     else:
