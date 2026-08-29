@@ -2049,11 +2049,15 @@ def guardar_nueva_direccion(casillero):
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            cur.execute("BEGIN IMMEDIATE")
+            # BEGIN IMMEDIATE solo existe en SQLite. En Supabase/PostgreSQL la
+            # conexión ya abre y confirma una transacción normal mediante el
+            # administrador de contexto, por lo que no debe ejecutarse aquí.
+            if not USA_SUPABASE:
+                cur.execute("BEGIN IMMEDIATE")
             cur.execute(
                 """
                 INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion, activa)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)
                 """,
                 (cas_norm, etiqueta, receptor, tel, dep, ciu, dir_exacta, f_ahora),
             )
@@ -2075,13 +2079,15 @@ def guardar_nueva_direccion(casillero):
     if error_db:
         st.session_state["_dir_form_error"] = f"No se pudo guardar la dirección: {error_db}"
         return False
-    # Relee la fila recién confirmada desde SQLite; el selector del siguiente
-    # rerun se construye desde esta fuente persistente, no desde una caché local.
+    # Relee la fila recién confirmada desde la base de datos; el selector del
+    # siguiente rerun se construye desde esta fuente persistente, no desde una
+    # caché local.
     direcciones_sesion(cas_norm)
-    # Las direcciones se administran aquí, pero los documentos del Cotizador
-    # siempre imprimen la Bodega Principal como destino predeterminado.
-    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
-    st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
+    # La dirección recién creada queda seleccionada automáticamente y aparece
+    # como opción del desplegable sin que el usuario tenga que recargar la página.
+    nueva_opcion = f"📍 {etiqueta} - {ciu}"
+    seleccionar_modalidad_entrega(nueva_opcion)
+    st.session_state["destino_entrega_activo"] = nueva_opcion
     # Se mantiene abierto el administrador tras el commit para que el usuario
     # vea la fila recién leída desde SQLite y confirme que quedó registrada.
     st.session_state["mostrar_gestion_direcciones"] = True
