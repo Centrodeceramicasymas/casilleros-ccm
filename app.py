@@ -2030,6 +2030,36 @@ ALIAS_VISTA = {
 }
 
 
+def preparar_nueva_cotizacion():
+    """Restablece el Cotizador para iniciar una tarifa nueva, sin borradores visibles."""
+    claves_fijas = (
+        "sb_tipo_carga_select",
+        "sb_unidad_medida",
+        "sb_unidad_peso",
+        "datos_pdf_confirmado",
+        "ultima_cot_id",
+        "_cot_emit_snapshot",
+        "_ccm_scroll_emit",
+        "_ccm_emit_error",
+        "_mod_entrega_lista",
+        "_mod_entrega_pendiente",
+        "sb_modalidad_entrega",
+        "destino_entrega_activo",
+        "cotizacion_historial_foco",
+        "cotizacion_envio_foco",
+    )
+    for clave in claves_fijas:
+        st.session_state.pop(clave, None)
+    for clave in list(st.session_state.keys()):
+        nombre_clave = str(clave)
+        if (
+            nombre_clave.startswith(("in_al_", "in_an_", "in_la_", "in_pe_", "dl_pdf_fab_", "btn_ver_mis_cotizaciones_"))
+        ):
+            st.session_state.pop(clave, None)
+    st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+    st.session_state["mostrar_gestion_direcciones"] = False
+
+
 def ir_a(vista, hub="_omit"):
     """Cambia de vista en session_state. Pensado para on_click (un solo rerun)."""
     if vista == "Cerrar":
@@ -2047,6 +2077,8 @@ def ir_a(vista, hub="_omit"):
         st.session_state["hub"] = None
         if vista != "Inicio":
             vista = "Inicio"
+    if vista == "Cotizador":
+        preparar_nueva_cotizacion()
     st.session_state["sub_tab_inicio"] = vista
     st.session_state["vista_activa"] = vista
     cas = formatear_casillero(st.session_state.get("casillero", ""))
@@ -4715,6 +4747,15 @@ def restaurar_sesion_persistente():
 
 restaurar_sesion_persistente()
 
+# La URL también puede abrir el Cotizador directamente. Solo al entrar desde
+# otra vista se reinicia el formulario; los cambios del usuario sobreviven a
+# los reruns normales mientras permanece dentro del Cotizador.
+vista_sesion_anterior = st.session_state.get("_vista_operativa_anterior")
+vista_sesion_actual = st.session_state.get("sub_tab_inicio")
+if vista_sesion_actual == "Cotizador" and vista_sesion_anterior != "Cotizador":
+    preparar_nueva_cotizacion()
+st.session_state["_vista_operativa_anterior"] = vista_sesion_actual
+
 if st.session_state.get("autenticado", False):
     cas_actual = formatear_casillero(st.session_state.get("casillero", ""))
     if cas_actual:
@@ -4763,6 +4804,7 @@ def logout():
         "dir_exacta_in",
         "sub_tab_inicio",
         "vista_activa",
+        "_vista_operativa_anterior",
         "hub",
         "china_modulos_desbloqueados",
         "cotizacion_envio_foco",
@@ -8508,21 +8550,18 @@ elif st.session_state["rol"] == "cliente":
                         '</div>'
                         if es_foco else ""
                     )
-                    st.markdown(
-                        f"""
-                    <div {id_ancla_env} style="background:{fondo}; border:1.5px solid {borde}; border-radius:12px; padding:14px; margin-bottom:8px; font-size:0.88rem; box-shadow:0 3px 10px rgba(15,23,42,.06);">
-                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-                            <b style="color:#0f172a;">🔖 CCM-COT-{id_e:05d}</b>
-                            <span style="color:#004ac1;font-weight:800;">✅ Confirmada</span>
-                        </div>
-                        {aviso_seguimiento}
-                        <div style="color:#475569;margin-top:5px;">Fecha de emisión: {formatear_fecha_pantalla(fec_e)}</div>
-                        <div style="color:#334155;margin-top:6px;">📐 <b>Medidas:</b> {al_e:.1f} × {an_e:.1f} × {la_e:.1f} cm &nbsp;|&nbsp; ⚖️ <b>Peso:</b> {pe_e:.1f} lbs &nbsp;|&nbsp; 💰 <b>Total:</b> ${tot_e:.2f} USD</div>
-                        <div style="color:#1d4ed8;font-weight:700;margin-top:8px;">⏳ {estado_envio}</div>
-                    </div>
-                    """,
-                        unsafe_allow_html=True,
+                    html_tarjeta_envio = (
+                        f'<div {id_ancla_env} style="background:{fondo};border:1.5px solid {borde};border-radius:12px;padding:14px;margin-bottom:8px;font-size:.88rem;box-shadow:0 3px 10px rgba(15,23,42,.06);">'
+                        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
+                        f'<b style="color:#0f172a;">🔖 CCM-COT-{id_e:05d}</b>'
+                        '<span style="color:#004ac1;font-weight:800;">✅ Confirmada</span>'
+                        f'</div>{aviso_seguimiento}'
+                        f'<div style="color:#475569;margin-top:5px;">Fecha de emisión: {formatear_fecha_pantalla(fec_e)}</div>'
+                        f'<div style="color:#334155;margin-top:6px;">📐 <b>Medidas:</b> {al_e:.1f} × {an_e:.1f} × {la_e:.1f} cm &nbsp;|&nbsp; ⚖️ <b>Peso:</b> {pe_e:.1f} lbs &nbsp;|&nbsp; 💰 <b>Total:</b> ${tot_e:.2f} USD</div>'
+                        f'<div style="color:#1d4ed8;font-weight:700;margin-top:8px;">⏳ {estado_envio}</div>'
+                        '</div>'
                     )
+                    st.markdown(html_tarjeta_envio, unsafe_allow_html=True)
                     pdf_ficha_env = generar_pdf_etiqueta_proveedor(
                         casillero=casillero,
                         nombre=nombre_completo,
