@@ -2088,9 +2088,9 @@ def guardar_nueva_direccion(casillero):
     nueva_opcion = f"📍 {etiqueta} - {ciu}"
     seleccionar_modalidad_entrega(nueva_opcion)
     st.session_state["destino_entrega_activo"] = nueva_opcion
-    # Se mantiene abierto el administrador tras el commit para que el usuario
-    # vea la fila recién leída desde SQLite y confirme que quedó registrada.
-    st.session_state["mostrar_gestion_direcciones"] = True
+    # Al guardar se vuelve al Cotizador. La dirección queda seleccionada y se
+    # usará en la cotización, ficha y documentos que se emitan a continuación.
+    st.session_state["mostrar_gestion_direcciones"] = False
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
@@ -2135,9 +2135,8 @@ def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
 
 
 def cancelar_nueva_direccion():
-    """Cierra la gestión de direcciones y conserva la Bodega Principal como destino documental."""
+    """Cierra la gestión de direcciones sin alterar el destino ya seleccionado."""
     st.session_state["mostrar_gestion_direcciones"] = False
-    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
@@ -2145,11 +2144,20 @@ def cancelar_nueva_direccion():
 
 def abrir_gestion_direcciones():
     st.session_state["mostrar_gestion_direcciones"] = True
-    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
+
+
+def usar_direccion_y_cotizar(opcion):
+    """Selecciona un destino guardado y regresa de inmediato al Cotizador."""
+    seleccionar_modalidad_entrega(opcion)
+    st.session_state["destino_entrega_activo"] = opcion
+    st.session_state["mostrar_gestion_direcciones"] = False
+    st.session_state.pop("datos_pdf_confirmado", None)
 
 
 def selector_modalidad_entrega(opciones_modalidad):
     """Select de entrega en el cuerpo del Cotizador (fuera del header sticky, sin CSS sobre Baseweb)."""
+    if not opciones_modalidad:
+        return
     pendiente = st.session_state.pop("_mod_entrega_pendiente", None)
     if pendiente in opciones_modalidad:
         st.session_state["sb_modalidad_entrega"] = pendiente
@@ -2160,6 +2168,9 @@ def selector_modalidad_entrega(opciones_modalidad):
         st.session_state["_mod_entrega_pendiente"] = pendiente
         if st.session_state.get("sb_modalidad_entrega") == "➕ Crear Nueva Dirección de Envío":
             st.session_state["sb_modalidad_entrega"] = OPCION_PREDETERMINADA
+    if st.session_state.get("modalidad_envio_seleccionada") not in opciones_modalidad:
+        st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+        st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
     idx_mod = opciones_modalidad.index(st.session_state["modalidad_envio_seleccionada"])
     sel_kwargs = {"key": "sb_modalidad_entrega"}
     if "sb_modalidad_entrega" not in st.session_state:
@@ -8410,7 +8421,7 @@ elif st.session_state["rol"] == "cliente":
                         <span style="background:#0757c8;color:#fff;font-size:.72rem;padding:5px 10px;border-radius:999px;font-weight:800;white-space:nowrap;">⭐ DESTINO PREDETERMINADO</span>
                     </div>
                     <div style="margin-top:12px;padding-top:10px;border-top:1px solid #dbeafe;color:#34506f;font-size:.82rem;">
-                        📍 Esta es la <b>Bodega Principal</b> y se imprimirá automáticamente en todos los documentos. <span style="color:#64748b;">No se puede eliminar.</span>
+                        📍 Esta es la <b>Bodega Principal</b>. Puedes usarla o elegir una dirección personalizada; el destino elegido se imprimirá en todos los documentos. <span style="color:#64748b;">No se puede eliminar.</span>
                     </div>
                 </div>
                 """,
@@ -8428,7 +8439,7 @@ elif st.session_state["rol"] == "cliente":
                         ciu_d = dir_item.get("ciudad", "")
                         dir_e = dir_item.get("direccion", "")
                         id_dir = dir_item.get("id")
-                        col_info_d, col_btn_del = st.columns([3.8, 1])
+                        col_info_d, col_btn_usar, col_btn_del = st.columns([3.1, 1.15, 0.85])
                         with col_info_d:
                             st.markdown(
                                 f"""
@@ -8438,6 +8449,16 @@ elif st.session_state["rol"] == "cliente":
                             </div>
                             """,
                                 unsafe_allow_html=True,
+                            )
+                        with col_btn_usar:
+                            opcion_dir = f"📍 {etiq} - {ciu_d}"
+                            st.button(
+                                "✓ Usar para cotizar",
+                                key=f"usar_dir_{id_dir or f'ses_{idx_dir}'}",
+                                type="primary",
+                                use_container_width=True,
+                                on_click=usar_direccion_y_cotizar,
+                                args=(opcion_dir,),
                             )
                         with col_btn_del:
                             if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir or f'ses_{idx_dir}'}", type="secondary"):
@@ -8569,7 +8590,10 @@ elif st.session_state["rol"] == "cliente":
     ):
         with st.container(key="vista_cotizador"):
             st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
-            seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
+            # El usuario puede cambiar de destino antes de emitir. Esta misma
+            # selección alimenta las cotizaciones, fichas y documentos.
+            opciones_destino = [op for op in opciones_modalidad if op != crear_nueva_dir]
+            selector_modalidad_entrega(opciones_destino)
             destino_estampado = html.escape(destino_para_documentos())
             st.markdown(
                 f"""
@@ -8588,8 +8612,7 @@ elif st.session_state["rol"] == "cliente":
                 use_container_width=True,
                 on_click=abrir_gestion_direcciones,
             )
-            # No se muestra un banner de éxito persistente: la Bodega Principal
-            # es el destino documental fijo del Cotizador.
+            # El destino elegido se conserva durante todo el flujo documental.
             st.session_state.pop("_dir_form_exito", None)
             error_db_dir = st.session_state.pop("_dir_db_error", None)
             if error_db_dir:
