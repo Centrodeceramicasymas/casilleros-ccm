@@ -2586,20 +2586,24 @@ def pintar_banner_promocional_china(casillero):
     url_wa = f"https://wa.me/50495771099?text={msg}"
     st.markdown(
         f'<div class="promo-ad-card">'
-        f'<div class="promo-ad-kicker">Promoción vigente · Casillero {cas_txt}</div>'
-        f'<div class="promo-ad-title">Tarifa especial de consolidación marítima</div>'
-        f'<div class="promo-ad-body">'
-        f"Reserve cupo en el contenedor 40&prime; HC China ➔ Honduras. "
-        f"Próximo cierre: <b>{cierre}</b>. Paquetería por libra o carga comercial por CBM, "
-        f"con asesoría de casillero incluida."
-        f"</div>"
+        f'<div class="promo-ad-glow" aria-hidden="true">🚢</div>'
+        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> PROMOCIÓN VIGENTE <span>•</span> {cas_txt}</div>'
+        f'<div class="promo-ad-title">Importe más. Pague mejor.</div>'
+        f'<div class="promo-ad-subtitle">Consolidación marítima <b>China ➔ Honduras</b></div>'
+        f'<div class="promo-ad-body">Reserve su espacio en contenedor <b>40′ High Cube</b>. '
+        f'Cotizamos paquetería por libra y carga comercial por CBM, con acompañamiento de un asesor CCM.</div>'
+        f'<div class="promo-ad-product-label">PRODUCTOS QUE PUEDE IMPORTAR</div>'
+        f'<div class="promo-ad-products">'
+        f'<span>🏺 Cerámica</span><span>🔧 Ferretería</span><span>💡 Iluminación</span>'
+        f'<span>🛋️ Hogar</span><span>👗 Moda</span><span>🧸 Juguetes</span>'
+        f'</div>'
         f'<div class="promo-ad-pills">'
-        f'<span class="promo-ad-pill">Cierre {cierre}</span>'
-        f'<span class="promo-ad-pill">Cerámica y carga mixta</span>'
-        f'<span class="promo-ad-pill">Asesor CCM</span>'
+        f'<span class="promo-ad-pill">📅 Cierre: {cierre}</span>'
+        f'<span class="promo-ad-pill">✓ Carga mixta</span>'
+        f'<span class="promo-ad-pill">☎ Asesor CCM</span>'
         f"</div>"
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
-        f"Consultar Promoción</a>"
+        f"💬 Reservar cupo y consultar</a>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -6379,32 +6383,48 @@ st.markdown(
         z-index: 1;
         overflow: hidden;
         background:
-            linear-gradient(135deg, rgba(11, 58, 145, 0.92) 0%, rgba(0, 74, 193, 0.88) 52%, rgba(29, 78, 216, 0.9) 100%),
-            radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.22) 0%, transparent 42%);
-        border-radius: 16px;
-        padding: 20px 18px 18px 18px;
+            radial-gradient(circle at 95% 4%, rgba(251, 191, 36, 0.30) 0%, transparent 29%),
+            radial-gradient(circle at 4% 98%, rgba(56, 189, 248, 0.28) 0%, transparent 35%),
+            linear-gradient(135deg, #062c76 0%, #004ac1 55%, #1558d6 100%);
+        border: 1px solid rgba(191, 219, 254, 0.42);
+        border-radius: 20px;
+        padding: 22px 20px 19px 20px;
         color: #ffffff;
-        margin: 14px 0 18px 0;
-        box-shadow: 0 14px 32px rgba(0, 74, 193, 0.28);
+        margin: 16px 0 22px 0;
+        box-shadow: 0 18px 38px rgba(0, 58, 145, 0.30);
         box-sizing: border-box;
         scroll-margin-top: calc(var(--header-offset, 208px) + 12px);
     }
+    .promo-ad-glow {
+        position: absolute;
+        right: -12px;
+        top: 9px;
+        font-size: 5rem;
+        opacity: 0.16;
+        transform: rotate(-9deg);
+        pointer-events: none;
+    }
     .promo-ad-kicker {
-        font-size: 0.72rem;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 0.68rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #bfdbfe;
+        color: #dbeafe;
         margin: 0 0 8px 0;
     }
+    .promo-ad-live { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 4px rgba(74,222,128,.16); }
     .promo-ad-title {
-        font-size: 1.22rem;
-        font-weight: 800;
+        font-size: clamp(1.36rem, 4vw, 1.72rem);
+        font-weight: 900;
         line-height: 1.25;
-        margin: 0 0 10px 0;
+        margin: 0 0 3px 0;
         color: #ffffff;
         letter-spacing: -0.02em;
     }
+    .promo-ad-subtitle { font-size: 0.90rem; color: #fef3c7; margin: 0 0 13px 0; }
     .promo-ad-body {
         font-size: 0.88rem;
         font-weight: 500;
@@ -6412,6 +6432,9 @@ st.markdown(
         color: #e2e8f0;
         margin: 0 0 14px 0;
     }
+    .promo-ad-product-label { font-size: .65rem; font-weight: 800; letter-spacing: .08em; color: #bfdbfe; margin: 0 0 7px; }
+    .promo-ad-products { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
+    .promo-ad-products span { background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: 5px 8px; color: #fff; font-size: .72rem; font-weight: 700; }
     .promo-ad-pills {
         display: flex;
         flex-wrap: wrap;
@@ -6432,8 +6455,8 @@ st.markdown(
         width: 100%;
         box-sizing: border-box;
         text-align: center;
-        background: #ffffff;
-        color: #004ac1;
+        background: linear-gradient(135deg, #fef3c7, #fbbf24);
+        color: #713f12;
         font-weight: 800;
         font-size: 0.95rem;
         text-decoration: none;
@@ -6441,6 +6464,7 @@ st.markdown(
         padding: 12px 14px;
         box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
     }
+    .promo-ad-cta:hover { filter: brightness(1.04); color: #713f12; text-decoration: none; }
 
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
         display: flex !important;
