@@ -860,6 +860,16 @@ def traducir_sql_postgres(sql):
     sql_pg = re.sub(r"\bactivo\s*=\s*1\b", "activo = TRUE", sql_pg, flags=re.I)
     sql_pg = re.sub(r"\bconfirmada\s*=\s*1\b", "confirmada = TRUE", sql_pg, flags=re.I)
     sql_pg = re.sub(r"\bconfirmada\s*=\s*0\b", "confirmada = FALSE", sql_pg, flags=re.I)
+    for campo_bool in (
+        "hub_china", "hub_eeuu", "hub_honduras", "mod_cotizador", "mod_catalogo",
+        "mod_cotizaciones", "mod_envios", "mod_fichas",
+    ):
+        sql_pg = re.sub(
+            rf"\b{campo_bool}\s*=\s*1\b", f"{campo_bool} = TRUE", sql_pg, flags=re.I
+        )
+        sql_pg = re.sub(
+            rf"\b{campo_bool}\s*=\s*0\b", f"{campo_bool} = FALSE", sql_pg, flags=re.I
+        )
     return sql_pg.replace("?", "%s")
 
 
