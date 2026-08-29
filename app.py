@@ -7898,9 +7898,18 @@ elif st.session_state["rol"] == "cliente":
 
                 st.markdown(
                     f"""
-                <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.85rem;">
-                    <b>{OPCION_PREDETERMINADA}</b> <span style="background:#004ac1; color:white; font-size:0.7rem; padding:2px 8px; border-radius:12px; font-weight:bold; margin-left:6px;">⭐ Predeterminada (Fija)</span><br>
-                    <small style="color:#64748b;">📍 Bodega Central Centro de Cerámicas y Más &bull; San Juan, Intibucá (No se puede eliminar)</small>
+                <div style="background:linear-gradient(135deg,#eff6ff,#f8fbff);border:1px solid #bfdbfe;border-left:5px solid #0757c8;border-radius:14px;padding:15px 16px;margin:8px 0 18px;box-shadow:0 5px 14px rgba(7,87,200,.10);">
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#0757c8;color:#fff;font-size:1.15rem;">🏬</span>
+                        <div style="flex:1;min-width:190px;">
+                            <div style="color:#0f172a;font-size:.98rem;font-weight:800;line-height:1.25;">Retiro en Almacén Principal</div>
+                            <div style="color:#475569;font-size:.82rem;margin-top:2px;">San Juan, Intibucá · Centro de Cerámicas y Más</div>
+                        </div>
+                        <span style="background:#0757c8;color:#fff;font-size:.72rem;padding:5px 10px;border-radius:999px;font-weight:800;white-space:nowrap;">⭐ DESTINO PREDETERMINADO</span>
+                    </div>
+                    <div style="margin-top:12px;padding-top:10px;border-top:1px solid #dbeafe;color:#34506f;font-size:.82rem;">
+                        📍 Esta es la <b>Bodega Principal</b> y se imprimirá automáticamente en todos los documentos. <span style="color:#64748b;">No se puede eliminar.</span>
+                    </div>
                 </div>
                 """,
                     unsafe_allow_html=True,
