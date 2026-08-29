@@ -852,6 +852,20 @@ def traducir_sql_postgres(sql):
     sql_pg = str(sql)
     sql_pg = re.sub(r"\bIFNULL\(confirmada\s*,\s*0\)", "COALESCE(confirmada, FALSE)", sql_pg, flags=re.I)
     sql_pg = re.sub(r"\bIFNULL\(", "COALESCE(", sql_pg, flags=re.I)
+    # Después de convertir IFNULL, también hay que convertir la comparación
+    # histórica con 0/1. PostgreSQL no permite comparar boolean con entero.
+    sql_pg = re.sub(
+        r"COALESCE\(confirmada\s*,\s*FALSE\)\s*=\s*0\b",
+        "COALESCE(confirmada, FALSE) = FALSE",
+        sql_pg,
+        flags=re.I,
+    )
+    sql_pg = re.sub(
+        r"COALESCE\(confirmada\s*,\s*FALSE\)\s*=\s*1\b",
+        "COALESCE(confirmada, FALSE) = TRUE",
+        sql_pg,
+        flags=re.I,
+    )
     sql_pg = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql_pg, flags=re.I)
     if re.match(r"^\s*INSERT\s+INTO\b", sql_pg, flags=re.I) and "ON CONFLICT" not in sql_pg.upper():
         # Solo los INSERT OR IGNORE originales necesitan ignorar conflictos.
@@ -1637,8 +1651,8 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
             cur.execute(
                 """
                 UPDATE cotizaciones
-                SET confirmada = 1, fecha_confirmacion = ?
-                WHERE id = ? AND IFNULL(confirmada, 0) = 0
+                SET confirmada = TRUE, fecha_confirmacion = ?
+                WHERE id = ? AND COALESCE(confirmada, FALSE) = FALSE
                 """,
                 (ahora, cid),
             )
