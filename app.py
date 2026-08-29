@@ -1227,7 +1227,24 @@ ROLES_ADMIN = ("admin", "superadmin")
 DNI_SUPERADMIN = "1301199800990"
 NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
 CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
-CLAVE_INICIAL_SUPERADMIN = "1301"
+
+
+def leer_clave_inicial_superadmin():
+    """Lee la clave de bootstrap únicamente desde Secrets o entorno.
+
+    No debe existir una clave administrativa conocida dentro del repositorio.
+    """
+    try:
+        return str(
+            st.secrets.get("SUPERADMIN_INITIAL_PASSWORD")
+            or os.environ.get("SUPERADMIN_INITIAL_PASSWORD")
+            or ""
+        ).strip()
+    except Exception:
+        return str(os.environ.get("SUPERADMIN_INITIAL_PASSWORD") or "").strip()
+
+
+CLAVE_INICIAL_SUPERADMIN = leer_clave_inicial_superadmin()
 # Hubs y módulos base siguen abiertos; Envíos solo se ve en la barra al abrir Mis Cotizaciones.
 # En producción los permisos deben salir de la tabla permisos_usuario.
 PERMISOS_ABIERTOS_TEMPORAL = False
@@ -3961,59 +3978,9 @@ def init_db():
             "INSERT OR IGNORE INTO config_sistema (clave, valor, descripcion) VALUES ('COMISION_CCM_PORCENTAJE', '0.10', 'Comisión CCM sobre FOB')"
         )
 
-        admin_pass = hash_pwd("admin123")
-        c.execute(
-            """
-            INSERT OR IGNORE INTO usuarios (
-                codigo_casillero, nombre_completo, dni, correo_principal,
-                telefono_principal, departamento, ciudad, direccion_exacta,
-                password_hash, rol, activo, fecha_creacion
-            ) VALUES (
-                'CCM-08011990', 'Super Administrador', '0801199000000', 'admin@ccm.hn',
-                '+504 9999-0000', 'Intibucá', 'San Juan', 'Oficina Central CCM',
-                ?, 'admin', 1, '2026-08-22 00:00:00'
-            )
-            """,
-            (admin_pass,),
-        )
-
-        demo_pass = hash_pwd("cliente123")
-        c.execute(
-            """
-            INSERT OR IGNORE INTO usuarios (
-                codigo_casillero, nombre_completo, dni, correo_principal,
-                telefono_principal, departamento, ciudad, direccion_exacta,
-                rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion
-            ) VALUES (
-                'CCM-15011985', 'María Elena López', '1501198500990', 'cliente@ccm.hn',
-                '+504 9577-1099', 'Intibucá', 'San Juan', 'Barrio El Centro, frente al parque',
-                'Cerámica & Acabados', 'Retiro en Bodega Central (San Juan, Intibucá)',
-                ?, 'cliente', 1, '2026-08-22 00:00:00'
-            )
-            """,
-            (demo_pass,),
-        )
-        super_pass = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
-        c.execute(
-            """
-            INSERT OR IGNORE INTO usuarios (
-                codigo_casillero, nombre_completo, dni, correo_principal,
-                telefono_principal, departamento, ciudad, direccion_exacta,
-                password_hash, rol, activo, fecha_creacion
-            ) VALUES (
-                'CCM-13011998', 'Domingo Heriberto Ardon', '1301199800990', 'heribertoardon1998@gmail.com',
-                '+504 9577-1099', 'Intibucá', 'San Juan', 'Oficina Central CCM',
-                ?, 'superadmin', 1, '2026-08-22 00:00:00'
-            )
-            """,
-            (super_pass,),
-        )
-        c.execute(
-            """
-            INSERT OR IGNORE INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
-            VALUES ('CN-GZ-88421', 'CCM-15011985', 'Cajas de porcelanato 60x120', 'CCM-CNT-014', 'En Travesía Marítima', '2026-08-20 09:15:00')
-            """
-        )
+        # No se crean usuarios, contraseñas ni datos de demostración en un
+        # arranque de producción. Las cuentas se gestionan desde el panel
+        # administrativo o mediante el bootstrap protegido por Secrets.
 
 
 init_db()
@@ -4305,6 +4272,10 @@ def _migrar_casillero_tablas(conn, origen, destino):
 
 
 def asegurar_superadmin():
+    # Solo puede crear la cuenta raíz cuando un administrador configuró una
+    # clave de bootstrap privada. Nunca sobreescribe la contraseña existente.
+    if not CLAVE_INICIAL_SUPERADMIN:
+        return
     cas_root = generar_codigo_casillero_dni(DNI_SUPERADMIN)
     hash_root = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
     with get_db() as conn:
@@ -4337,10 +4308,10 @@ def asegurar_superadmin():
             c.execute(
                 """
                 UPDATE usuarios SET nombre_completo = ?, dni = ?, codigo_casillero = ?,
-                    correo_principal = ?, password_hash = ?, rol = 'superadmin', activo = 1
+                    correo_principal = ?, rol = 'superadmin', activo = 1
                 WHERE id = ?
                 """,
-                (NOMBRE_SUPERADMIN, DNI_SUPERADMIN, cas_root, CORREO_SUPERADMIN, hash_root, existente[0]),
+                (NOMBRE_SUPERADMIN, DNI_SUPERADMIN, cas_root, CORREO_SUPERADMIN, existente[0]),
             )
         else:
             c.execute(
@@ -8083,15 +8054,19 @@ if not st.session_state["autenticado"]:
         st.markdown("### 📋 Apertura de Casillero en China")
         if st.session_state.get("reg_exito"):
             creado = st.session_state["reg_exito"]
+            nombre_creado = html.escape(str(creado.get("nombre") or ""))
+            correo_creado = html.escape(str(creado.get("correo") or ""))
+            casillero_creado = html.escape(str(creado.get("casillero") or ""))
+            clave_creada = html.escape(str(creado.get("password") or ""))
             st.markdown(
                 f"""
                 <div class="reg-confirm-card">
                     <h4>🎉 Casillero y correo confirmados</h4>
                     <div>Guarde estos datos para iniciar sesión:</div>
-                    <div>👤 {creado.get("nombre", "")}</div>
-                    <div>📧 Correo: <b>{creado.get("correo", "")}</b></div>
-                    <div>🔑 Casillero: <b>{creado.get("casillero", "")}</b></div>
-                    <div>🔒 Contraseña: <b>{creado.get("password", "")}</b></div>
+                    <div>👤 {nombre_creado}</div>
+                    <div>📧 Correo: <b>{correo_creado}</b></div>
+                    <div>🔑 Casillero: <b>{casillero_creado}</b></div>
+                    <div>🔒 Contraseña: <b>{clave_creada}</b></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -9637,7 +9612,7 @@ elif es_rol_admin():
                 clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
                 with get_db() as conn:
                     conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(clave), uid))
-                st.success(f"Contraseña actualizada (hash SHA-256). Clave temporal: **{clave}**")
+                st.success(f"Contraseña actualizada con almacenamiento seguro. Clave temporal: **{clave}**")
 
             if rol_u != "superadmin" and st.button("Eliminar cuenta", key="adm_del_user"):
                 with get_db() as conn:
