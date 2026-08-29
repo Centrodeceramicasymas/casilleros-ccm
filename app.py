@@ -3929,11 +3929,18 @@ asegurar_esquema_direcciones()
 
 @st.cache_data(ttl=120, show_spinner=False)
 def get_tarifa(clave):
+    """Devuelve siempre una tarifa numérica, aun si Supabase la almacena como texto."""
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT valor FROM config_maritima WHERE clave = ?", (clave,))
         res = c.fetchone()
-        return res[0] if res else 0.0
+    if not res or res[0] is None:
+        return 0.0
+    try:
+        # Acepta tanto 3.50 como 3,50 en configuraciones antiguas.
+        return float(str(res[0]).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def set_tarifa(clave, valor):
@@ -8492,11 +8499,11 @@ elif st.session_state["rol"] == "cliente":
                 la_val = la_input
 
             if "Kilogramos" in unidad_peso:
-                pe_lb = pe_input * 2.20462
-                pe_kg = pe_input
+                pe_lb = float(pe_input) * 2.20462
+                pe_kg = float(pe_input)
             else:
-                pe_lb = pe_input
-                pe_kg = pe_input / 2.20462
+                pe_lb = float(pe_input)
+                pe_kg = float(pe_input) / 2.20462
 
             vol_m3_val = (al_val * an_val * la_val) / 1_000_000.0
             vol_ft3_val = vol_m3_val * 35.3147
@@ -8506,7 +8513,7 @@ elif st.session_state["rol"] == "cliente":
                     tot = min_usd
                     desc = f"Tarifa Mínima Base (1 a {umbral_min:.0f} lbs): ${min_usd:.2f} USD"
                 else:
-                    tot = pe_lb * t_lb
+                    tot = float(pe_lb) * float(t_lb)
                     desc = f"Tarifa por Libra: {pe_lb:.1f} lbs x ${t_lb:.2f}/lb"
 
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
