@@ -4778,6 +4778,106 @@ def _ejecutar_busqueda_aliexpress(modo, keyword, imagen_bytes, min_usd, max_usd,
     return buscar_aliexpress_texto(keyword, min_usd=min_usd, max_usd=max_usd, orden=orden)
 
 
+def _valor_numerico_producto(valor, unidad, destino):
+    """Convierte peso a lb y dimensiones a pulgadas cuando la tienda indica unidad."""
+    try:
+        numero = float(str(valor).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    u = str(unidad or "").lower()
+    if destino == "peso":
+        if "kg" in u or "kilogram" in u:
+            return numero * LB_POR_KG
+        if "oz" in u or "ounce" in u:
+            return numero / 16.0
+        return numero
+    if "cm" in u or "centimeter" in u:
+        return numero / 2.54
+    if u in ("m", "meter", "meters"):
+        return numero * 39.3701
+    if "ft" in u or "feet" in u or "foot" in u:
+        return numero * 12.0
+    return numero
+
+
+def consultar_producto_enlace_eeuu(enlace):
+    """Obtiene metadatos públicos de tiendas; no depende de una API de AliExpress."""
+    url = str(enlace or "").strip()
+    if not url.startswith(("https://", "http://")):
+        return {"error": "Pegue un enlace completo que comience con https://."}
+    try:
+        respuesta = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
+            timeout=12,
+            allow_redirects=True,
+        )
+        respuesta.raise_for_status()
+        pagina = respuesta.text
+    except requests.RequestException as exc:
+        return {"error": f"No se pudo consultar el enlace: {exc}"}
+
+    def meta(nombre):
+        for etiqueta in re.findall(r"<meta\b[^>]*>", pagina, flags=re.I):
+            coincide_nombre = re.search(r"(?:property|name)=[\"']" + re.escape(nombre) + r"[\"']", etiqueta, flags=re.I)
+            coincide_valor = re.search(r"content=[\"']([^\"']+)[\"']", etiqueta, flags=re.I)
+            if coincide_nombre and coincide_valor:
+                return html.unescape(coincide_valor.group(1)).strip()
+        return ""
+
+    resultado = {
+        "titulo": meta("og:title") or meta("twitter:title"),
+        "imagen": meta("og:image") or meta("twitter:image"),
+        "peso_lb": None, "ancho_in": None, "alto_in": None, "largo_in": None,
+        "url_final": respuesta.url,
+    }
+    if not resultado["titulo"]:
+        titulo_html = re.search(r"<title[^>]*>(.*?)</title>", pagina, flags=re.I | re.S)
+        if titulo_html:
+            resultado["titulo"] = html.unescape(re.sub(r"\s+", " ", titulo_html.group(1))).strip()
+    titulo_amazon = re.search(r'id=["\']productTitle["\'][^>]*>(.*?)<', pagina, flags=re.I | re.S)
+    if titulo_amazon:
+        resultado["titulo"] = html.unescape(re.sub(r"\s+", " ", titulo_amazon.group(1))).strip() or resultado["titulo"]
+    if not resultado["imagen"]:
+        imagen_amazon = re.search(r'id=["\']landingImage["\'][^>]+(?:data-old-hires|src)=["\']([^"\']+)', pagina, flags=re.I)
+        if imagen_amazon:
+            resultado["imagen"] = html.unescape(imagen_amazon.group(1))
+
+    # JSON-LD suele contener las especificaciones de Amazon, Walmart, eBay y otras tiendas.
+    nodos = []
+    for bloque in re.findall(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", pagina, flags=re.I | re.S):
+        try:
+            dato = json.loads(html.unescape(bloque.strip()))
+            nodos.extend(dato if isinstance(dato, list) else [dato])
+        except (json.JSONDecodeError, TypeError):
+            continue
+    for nodo in nodos:
+        if not isinstance(nodo, dict):
+            continue
+        if not resultado["titulo"]:
+            resultado["titulo"] = str(nodo.get("name") or "").strip()
+        imagen = nodo.get("image")
+        if not resultado["imagen"] and imagen:
+            resultado["imagen"] = imagen[0] if isinstance(imagen, list) else str(imagen)
+        for campo, destino in (("weight", "peso_lb"), ("width", "ancho_in"), ("height", "alto_in"), ("depth", "largo_in")):
+            valor = nodo.get(campo)
+            if resultado[destino] is None and isinstance(valor, dict):
+                resultado[destino] = _valor_numerico_producto(valor.get("value"), valor.get("unitCode") or valor.get("unitText"), "peso" if destino == "peso_lb" else "medida")
+
+    texto = re.sub(r"<[^>]+>", " ", pagina)
+    texto = html.unescape(re.sub(r"\s+", " ", texto))
+    if resultado["peso_lb"] is None:
+        peso = re.search(r"(?:item\s*)?weight\s*[:\-]?\s*(\d+(?:[.,]\d+)?)\s*(lb|lbs|pounds?|kg|kilograms?|oz)", texto, flags=re.I)
+        if peso:
+            resultado["peso_lb"] = _valor_numerico_producto(peso.group(1), peso.group(2), "peso")
+    if not all(resultado[k] is not None for k in ("ancho_in", "alto_in", "largo_in")):
+        medidas = re.search(r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(inches?|in\.?|cm|ft|feet)", texto, flags=re.I)
+        if medidas:
+            vals = [_valor_numerico_producto(medidas.group(i), medidas.group(4), "medida") for i in (1, 2, 3)]
+            resultado["largo_in"], resultado["ancho_in"], resultado["alto_in"] = vals
+    return resultado
+
+
 def pintar_cotizador_eeuu(casillero):
     """Cotizador de paquetes EE. UU. → Honduras, sin catálogo de terceros."""
     st.markdown("#### 🇺🇸 Cotizador EE. UU. ➜ Honduras")
@@ -4797,9 +4897,36 @@ def pintar_cotizador_eeuu(casillero):
     )
 
     with st.expander("✨ Cotizador inteligente: agregar desde un enlace de tienda", expanded=False):
-        st.info("Pegue un enlace de Amazon, Walmart, Best Buy, eBay u otra tienda como referencia. "
-                "Verifique siempre el peso y las medidas reales antes de agregar el paquete.")
+        st.info("Pegue un enlace de Amazon, Walmart, Best Buy, eBay u otra tienda. Intentaremos completar los datos públicos del producto; confirme siempre las medidas finales de bodega.")
         st.text_input("Enlace del producto (opcional)", key="us_enlace", placeholder="https://www.amazon.com/...")
+        if st.button("✨ Consultar enlace y autocompletar", key="btn_us_consultar_link", use_container_width=True):
+            st.session_state.pop("us_imagen_producto", None)
+            datos_link = consultar_producto_enlace_eeuu(st.session_state.get("us_enlace"))
+            if datos_link.get("error"):
+                st.warning(datos_link["error"])
+            else:
+                if datos_link.get("titulo"):
+                    st.session_state["us_descripcion"] = datos_link["titulo"]
+                if datos_link.get("peso_lb"):
+                    st.session_state["us_peso"] = round(float(datos_link["peso_lb"]), 2)
+                if datos_link.get("ancho_in"):
+                    st.session_state["us_ancho"] = round(float(datos_link["ancho_in"]), 2)
+                if datos_link.get("alto_in"):
+                    st.session_state["us_alto"] = round(float(datos_link["alto_in"]), 2)
+                if datos_link.get("largo_in"):
+                    st.session_state["us_largo"] = round(float(datos_link["largo_in"]), 2)
+                st.session_state["us_unidad"] = "Pulgadas"
+                imagen = str(datos_link.get("imagen") or "").strip()
+                if imagen.startswith(("https://", "http://")):
+                    st.session_state["us_imagen_producto"] = imagen
+                campos = sum(bool(datos_link.get(k)) for k in ("titulo", "peso_lb", "ancho_in", "alto_in", "largo_in"))
+                if campos:
+                    st.success("Producto consultado. Revise los datos completados antes de agregar el paquete.")
+                else:
+                    st.warning("La tienda no expuso especificaciones públicas para este enlace. Complete los datos manualmente.")
+    imagen_producto = st.session_state.get("us_imagen_producto")
+    if imagen_producto:
+        st.image(imagen_producto, caption="Imagen del producto detectada", width=260)
 
     st.markdown("##### 📦 Agregar paquete")
     st.text_input("Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
