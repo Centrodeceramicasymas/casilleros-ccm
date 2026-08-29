@@ -4015,11 +4015,17 @@ def coincidencias_casillero(valor):
 
 
 def es_rol_admin(rol=None):
-    return (rol if rol is not None else st.session_state.get("rol")) in ROLES_ADMIN
+    return normalizar_rol(rol if rol is not None else st.session_state.get("rol")) in ROLES_ADMIN
 
 
 def es_superadmin(rol=None):
-    return (rol if rol is not None else st.session_state.get("rol")) == "superadmin"
+    return normalizar_rol(rol if rol is not None else st.session_state.get("rol")) == "superadmin"
+
+
+def normalizar_rol(rol):
+    """Evita una sesión válida sin vista cuando la BD trae un rol vacío o con mayúsculas."""
+    valor = str(rol or "").strip().lower()
+    return valor if valor in ("cliente", "admin", "superadmin") else "cliente"
 
 
 def permisos_default(rol="cliente"):
@@ -4879,7 +4885,7 @@ def restaurar_sesion_persistente():
             return False
 
         st.session_state["autenticado"] = True
-        st.session_state["rol"] = user_rec[4]
+        st.session_state["rol"] = normalizar_rol(user_rec[4])
         perfil_rest = cargar_perfil_usuario(user_rec[1])
         if perfil_rest:
             aplicar_perfil_en_sesion(perfil_rest)
@@ -4924,6 +4930,13 @@ def restaurar_sesion_persistente():
 
 
 restaurar_sesion_persistente()
+
+# Una cuenta creada en versiones anteriores puede tener el rol vacío, con
+# mayúsculas o espacios. La autenticación sigue siendo válida; en ese caso
+# debe abrir el portal de cliente y nunca dejar la aplicación en blanco.
+if st.session_state.get("autenticado"):
+    rol_sesion = normalizar_rol(st.session_state.get("rol"))
+    st.session_state["rol"] = rol_sesion
 
 # La URL también puede abrir el Cotizador directamente. Solo al entrar desde
 # otra vista se reinicia el formulario; los cambios del usuario sobreviven a
@@ -7565,7 +7578,7 @@ if not st.session_state["autenticado"]:
                         st.error("⛔ Cuenta inactiva. Contacte al soporte.")
                     else:
                         st.session_state["autenticado"] = True
-                        st.session_state["rol"] = user[4]
+                        st.session_state["rol"] = normalizar_rol(user[4])
                         perfil_login = cargar_perfil_usuario(user[1])
                         if perfil_login:
                             aplicar_perfil_en_sesion(perfil_login)
@@ -7859,7 +7872,7 @@ elif st.session_state["rol"] == "cliente":
         st.session_state["_ccm_ultima_purga"] = datetime.now().timestamp()
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
     hidratar_cotizaciones_sesion(casillero)
-    nombre_completo = st.session_state["nombre"]
+    nombre_completo = str(st.session_state.get("nombre") or "Cliente")
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
 
