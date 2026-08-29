@@ -8807,10 +8807,10 @@ elif es_rol_admin():
                 else:
                     n_cod = generar_codigo_casillero_dni(c_dni)
                     n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute(
+                    try:
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            cur.execute(
                                 """
                                 INSERT INTO usuarios (
                                     codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
@@ -8831,6 +8831,7 @@ elif es_rol_admin():
                                     obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
                                 ),
                             )
+                            conn.commit()
                         asegurar_permisos_casillero(n_cod, c_rol)
                         st.success(f"Cuenta creada. Casillero `{n_cod}` • Contraseña `{n_pwd}`")
                         st.rerun()
