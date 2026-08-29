@@ -16,6 +16,7 @@ import base64
 import hmac
 import json
 import html
+import re
 
 import requests
 
@@ -819,6 +820,112 @@ except Exception:
 # 1. CONFIGURACIÓN DEL SISTEMA & ZONA HORARIA HONDURAS (UTC-6)
 # ---------------------------------------------------------
 DB_NAME = str(Path(__file__).resolve().parent / "ccm_maritime_enterprise.db")
+
+
+def leer_database_url():
+    """Obtiene la conexión privada desde Streamlit Secrets, sin exponerla en el código."""
+    try:
+        return str(st.secrets.get("DATABASE_URL") or os.environ.get("DATABASE_URL") or "").strip()
+    except Exception:
+        return str(os.environ.get("DATABASE_URL") or "").strip()
+
+
+DATABASE_URL = leer_database_url()
+USA_SUPABASE = DATABASE_URL.lower().startswith(("postgresql://", "postgres://"))
+
+if USA_SUPABASE:
+    try:
+        import psycopg
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta psycopg. Agregue 'psycopg[binary]' al archivo requirements.txt de Streamlit."
+        ) from exc
+    # El resto de la aplicación conserva manejadores sqlite3.Error. Se mapean
+    # al tipo de error de PostgreSQL para mantener mensajes controlados.
+    sqlite3.Error = psycopg.Error
+    sqlite3.IntegrityError = psycopg.IntegrityError
+    sqlite3.OperationalError = psycopg.OperationalError
+
+
+def traducir_sql_postgres(sql):
+    """Compatibilidad temporal entre las consultas históricas SQLite y PostgreSQL."""
+    sql_pg = str(sql)
+    sql_pg = re.sub(r"\bIFNULL\(confirmada\s*,\s*0\)", "COALESCE(confirmada, FALSE)", sql_pg, flags=re.I)
+    sql_pg = re.sub(r"\bIFNULL\(", "COALESCE(", sql_pg, flags=re.I)
+    sql_pg = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql_pg, flags=re.I)
+    if re.match(r"^\s*INSERT\s+INTO\b", sql_pg, flags=re.I) and "ON CONFLICT" not in sql_pg.upper():
+        # Solo los INSERT OR IGNORE originales necesitan ignorar conflictos.
+        if re.search(r"\bINSERT\s+OR\s+IGNORE\b", str(sql), flags=re.I):
+            sql_pg = sql_pg.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+    sql_pg = re.sub(r"\bactivo\s*=\s*1\b", "activo = TRUE", sql_pg, flags=re.I)
+    sql_pg = re.sub(r"\bconfirmada\s*=\s*1\b", "confirmada = TRUE", sql_pg, flags=re.I)
+    sql_pg = re.sub(r"\bconfirmada\s*=\s*0\b", "confirmada = FALSE", sql_pg, flags=re.I)
+    return sql_pg.replace("?", "%s")
+
+
+class CursorPostgresCompatible:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self.lastrowid = None
+        self.rowcount = -1
+
+    def execute(self, sql, params=None):
+        sql_original = str(sql)
+        self._cursor.execute(traducir_sql_postgres(sql_original), params or ())
+        self.rowcount = self._cursor.rowcount
+        self.lastrowid = None
+        if re.match(r"^\s*INSERT\b", sql_original, flags=re.I) and self.rowcount:
+            try:
+                self._cursor.execute("SELECT LASTVAL()")
+                fila = self._cursor.fetchone()
+                self.lastrowid = int(fila[0]) if fila else None
+            except Exception:
+                self.lastrowid = None
+        return self
+
+    def executemany(self, sql, params_seq):
+        self._cursor.executemany(traducir_sql_postgres(sql), params_seq)
+        self.rowcount = self._cursor.rowcount
+        return self
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __getattr__(self, nombre):
+        return getattr(self._cursor, nombre)
+
+
+class ConexionPostgresCompatible:
+    def __init__(self, conexion):
+        self._conexion = conexion
+
+    def cursor(self):
+        return CursorPostgresCompatible(self._conexion.cursor())
+
+    def execute(self, sql, params=None):
+        return self.cursor().execute(sql, params)
+
+    def commit(self):
+        self._conexion.commit()
+
+    def rollback(self):
+        self._conexion.rollback()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo_error, valor_error, traza):
+        try:
+            if tipo_error is None:
+                self.commit()
+            else:
+                self.rollback()
+        finally:
+            self._conexion.close()
+        return False
 LOGO_FILENAME = "logo_ccm_print.jpg"
 RUTAS_LOGO = (
     Path(__file__).resolve().parent / "assets" / "logo_ccm_print.jpg",
@@ -1491,7 +1598,14 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            columnas = {fila[1] for fila in cur.execute("PRAGMA table_info(cotizaciones)").fetchall()}
+            if USA_SUPABASE:
+                cur.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'cotizaciones'"
+                )
+                columnas = {fila[0] for fila in cur.fetchall()}
+            else:
+                columnas = {fila[1] for fila in cur.execute("PRAGMA table_info(cotizaciones)").fetchall()}
             requeridas = {"id", "codigo_casillero", "confirmada", "fecha_confirmacion"}
             faltantes = sorted(requeridas - columnas)
             if faltantes:
@@ -1630,7 +1744,7 @@ def emitir_tarifa_desde_snapshot():
                     codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
                     total_usd, fecha, confirmada, fecha_creacion
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?)
                 """,
                 (
                     casillero,
@@ -1780,6 +1894,24 @@ CAMPOS_FORM_DIRECCION = ("dir_etiqueta_in", "dir_receptor_in", "dir_tel_in", "di
 def asegurar_esquema_direcciones():
     """Garantiza tabla y columnas de direcciones_entrega (migra bases desplegadas viejas)."""
     try:
+        if USA_SUPABASE:
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'direcciones_entrega'"
+                )
+                columnas_dir = {fila[0] for fila in c.fetchall()}
+            requeridas = {
+                "id", "codigo_casillero", "etiqueta", "receptor_nombre", "telefono",
+                "departamento", "ciudad", "direccion_exacta", "fecha_creacion", "activa",
+            }
+            faltantes = sorted(requeridas - columnas_dir)
+            if faltantes:
+                raise sqlite3.OperationalError(
+                    "Faltan columnas en direcciones_entrega: " + ", ".join(faltantes)
+                )
+            return True
         with get_db() as conn:
             c = conn.cursor()
             c.execute(
@@ -3521,6 +3653,8 @@ def hash_pwd(password):
 
 
 def get_db():
+    if USA_SUPABASE:
+        return ConexionPostgresCompatible(psycopg.connect(DATABASE_URL, connect_timeout=20))
     conn = sqlite3.connect(DB_NAME, timeout=30)
     # Evita que una escritura breve de otro ciclo de Streamlit haga que el
     # botón parezca no responder; SQLite espera hasta 30 segundos por el lock.
@@ -3528,7 +3662,29 @@ def get_db():
     return conn
 
 
+def validar_esquema_supabase():
+    """Comprueba que las tablas creadas en Supabase estén disponibles antes de operar."""
+    requeridas = {
+        "usuarios", "direcciones_entrega", "config_maritima", "cotizaciones", "paquetes",
+        "catalogo_productos", "carrito_catalogo", "permisos_usuario", "config_sistema",
+    }
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        )
+        existentes = {fila[0] for fila in cur.fetchall()}
+    faltantes = sorted(requeridas - existentes)
+    if faltantes:
+        raise sqlite3.OperationalError(
+            "Faltan tablas en Supabase: " + ", ".join(faltantes)
+        )
+
+
 def init_db():
+    if USA_SUPABASE:
+        validar_esquema_supabase()
+        return
     with get_db() as conn:
         c = conn.cursor()
         c.execute(
@@ -3894,14 +4050,14 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
             """,
             (
                 cas,
-                vals["hub_china"],
-                vals["hub_eeuu"],
-                vals["hub_honduras"],
-                vals["mod_cotizador"],
-                vals["mod_catalogo"],
-                vals["mod_cotizaciones"],
-                vals["mod_envios"],
-                vals["mod_fichas"],
+                bool(vals["hub_china"]),
+                bool(vals["hub_eeuu"]),
+                bool(vals["hub_honduras"]),
+                bool(vals["mod_cotizador"]),
+                bool(vals["mod_catalogo"]),
+                bool(vals["mod_cotizaciones"]),
+                bool(vals["mod_envios"]),
+                bool(vals["mod_fichas"]),
             ),
         )
 
@@ -3994,14 +4150,14 @@ def guardar_permisos(casillero, datos):
             """,
             (
                 cas,
-                int(datos.get("hub_china", 0)),
-                int(datos.get("hub_eeuu", 0)),
-                int(datos.get("hub_honduras", 0)),
-                int(datos.get("mod_cotizador", 0)),
-                int(datos.get("mod_catalogo", 0)),
-                int(datos.get("mod_cotizaciones", 0)),
-                int(datos.get("mod_envios", 0)),
-                int(datos.get("mod_fichas", 0)),
+                bool(datos.get("hub_china", 0)),
+                bool(datos.get("hub_eeuu", 0)),
+                bool(datos.get("hub_honduras", 0)),
+                bool(datos.get("mod_cotizador", 0)),
+                bool(datos.get("mod_catalogo", 0)),
+                bool(datos.get("mod_cotizaciones", 0)),
+                bool(datos.get("mod_envios", 0)),
+                bool(datos.get("mod_fichas", 0)),
             ),
         )
 
@@ -4063,7 +4219,7 @@ def asegurar_superadmin():
                     codigo_casillero, nombre_completo, dni, correo_principal,
                     telefono_principal, departamento, ciudad, direccion_exacta,
                     password_hash, rol, activo, fecha_creacion
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'superadmin', 1, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'superadmin', TRUE, ?)
                 """,
                 (
                     cas_root,
@@ -4091,14 +4247,14 @@ def asegurar_superadmin():
                 """,
                 (
                     cas,
-                    vals["hub_china"],
-                    vals["hub_eeuu"],
-                    vals["hub_honduras"],
-                    vals["mod_cotizador"],
-                    vals["mod_catalogo"],
-                    vals["mod_cotizaciones"],
-                    vals["mod_envios"],
-                    vals["mod_fichas"],
+                    bool(vals["hub_china"]),
+                    bool(vals["hub_eeuu"]),
+                    bool(vals["hub_honduras"]),
+                    bool(vals["mod_cotizador"]),
+                    bool(vals["mod_catalogo"]),
+                    bool(vals["mod_cotizaciones"]),
+                    bool(vals["mod_envios"]),
+                    bool(vals["mod_fichas"]),
                 ),
             )
             if rol in ROLES_ADMIN or PERMISOS_ABIERTOS_TEMPORAL:
@@ -7560,7 +7716,7 @@ if not st.session_state["autenticado"]:
                             )
                         else:
                             cur.execute(
-                                "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', 1, ?)",
+                                "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', TRUE, ?)",
                                 (
                                     n_cod,
                                     d["nom"],
@@ -8796,7 +8952,7 @@ elif es_rol_admin():
                                 departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
                             WHERE id=?
                             """,
-                            (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, 1 if n_act else 0, uid),
+                            (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, bool(n_act), uid),
                         )
                     guardar_permisos(
                         nuevo_cas,
@@ -8854,7 +9010,7 @@ elif es_rol_admin():
                                 INSERT INTO usuarios (
                                     codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
                                     departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
                                 """,
                                 (
                                     n_cod,
@@ -8940,7 +9096,13 @@ elif es_rol_admin():
         st.markdown("#### Mantenimiento de base de datos")
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            if USA_SUPABASE:
+                c.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' ORDER BY table_name"
+                )
+            else:
+                c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             tablas = [r[0] for r in c.fetchall()]
             conteos = {}
             for t in tablas:
