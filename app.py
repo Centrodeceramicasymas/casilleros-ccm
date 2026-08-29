@@ -2313,6 +2313,17 @@ def ir_a_mas():
     ir_a("Más")
 
 
+def ir_a_actividad():
+    """Centro único para cotizaciones, envíos y fichas del cliente."""
+    ir_a("Actividad", hub="china")
+
+
+def abrir_direcciones_desde_mas():
+    """Abre Direcciones sin duplicar un acceso permanente en la barra inferior."""
+    ir_a("Cotizador", hub="china")
+    abrir_gestion_direcciones()
+
+
 def iniciar_guia_desde_mas():
     """Activa la guía interactiva y abre Inicio (China) para el recorrido."""
     st.session_state["mostrar_guia"] = True
@@ -2772,8 +2783,38 @@ def abrir_dialogo_editar_perfil():
     dialogo_editar_perfil()
 
 
+def pintar_vista_actividad(total_cotizaciones=0):
+    """Panel de actividad: concentra documentos y seguimiento sin recargar la navegación."""
+    with st.container(key="vista_actividad"):
+        st.markdown("#### 📌 Actividad")
+        st.caption("Consulte sus tarifas, seguimiento y documentos desde un solo lugar.")
+        cot, env, fichas = st.columns(3, gap="small")
+        with cot:
+            st.button(
+                f"📄 Cotizaciones\n{int(total_cotizaciones or 0)} registradas",
+                type="primary",
+                key="actividad_cotizaciones",
+                use_container_width=True,
+                on_click=ir_a_mis_cotizaciones,
+            )
+        with env:
+            st.button(
+                "📦 Envíos\nSeguimiento de carga",
+                key="actividad_envios",
+                use_container_width=True,
+                on_click=ir_a_envios,
+            )
+        with fichas:
+            st.button(
+                "🏷️ Fichas\nDocumentos disponibles",
+                key="actividad_fichas",
+                use_container_width=True,
+                on_click=ir_a_fichas,
+            )
+
+
 def pintar_vista_mas():
-    """Pantalla completa Más: cuenta, módulos restantes y cierre de sesión."""
+    """Pantalla personal: cuenta, direcciones, catálogo, soporte y sesión."""
     hub_activo = st.session_state.get("hub")
     mostrar_btn_guia = hub_activo == "china"
     perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
@@ -2804,23 +2845,13 @@ def pintar_vista_mas():
             if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
                 abrir_dialogo_editar_perfil()
         if hub_activo == "china":
-            st.markdown('<div class="mas-seccion mas-seccion-modulos">Módulos y operaciones</div>', unsafe_allow_html=True)
+            st.markdown('<div class="mas-seccion mas-seccion-modulos">Cuenta y herramientas</div>', unsafe_allow_html=True)
             with st.container(key="mas_modulos"):
-                if modulo_china_disponible_en_hub_actual("Mis Envíos"):
-                    st.button("📦  Mis envíos", key="mas_envios", use_container_width=True, on_click=ir_a_envios)
-                if modulo_china_disponible_en_hub_actual("Etiqueta"):
-                    st.button("📋  Fichas", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
-                if (
-                    modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
-                    and casillero_tiene_cotizacion_emitida(st.session_state.get("casillero", ""))
-                ):
-                    st.button("📄  Mis Cotizaciones", key="mas_cotizaciones", use_container_width=True, on_click=ir_a_mis_cotizaciones)
+                st.button("📍  Direcciones de envío", key="mas_direcciones", use_container_width=True, on_click=abrir_direcciones_desde_mas)
                 if catalogo_disponible_en_hub_actual():
                     st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
-                if modulo_china_disponible_en_hub_actual("Cotizador"):
-                    st.button("🧮  Cotizador", key="mas_cotizador", use_container_width=True, on_click=ir_a_cotizador)
         with st.container(key="mas_sesion"):
-            st.markdown('<div class="mas-seccion">Sistema / Sesión</div>', unsafe_allow_html=True)
+            st.markdown('<div class="mas-seccion">Soporte y sesión</div>', unsafe_allow_html=True)
             if mostrar_btn_guia:
                 st.button(
                     "Guía",
@@ -2841,11 +2872,10 @@ def espaciador_barra_inferior(clave):
 
 
 def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
-    """Píldora flotante iOS: Inicio, Catálogo, Mis cotizaciones, Cotizador y Más."""
+    """Píldora flotante simple: Inicio, Cotizar, Actividad y Más."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
-    catalogo_activo = vista == "Catálogo"
-    cot_activo = vista in ("Mis Cotizaciones", "Mis Envíos", "Etiqueta")
+    actividad_activa = vista in ("Actividad", "Mis Cotizaciones", "Mis Envíos", "Etiqueta")
     cotizador_activo = vista == "Cotizador"
     mas_activo = vista in ("Más", "Configuración", "Consultas")
     n_badge = int(total_cotizaciones or 0)
@@ -2856,15 +2886,10 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
     )
 
     items = [("inicio", "🏠", "Inicio", inicio_activo)]
-    if catalogo_disponible_en_hub_actual():
-        items.append(("catalogo", "🔍", "Catálogo", catalogo_activo))
-    tiene_cotizacion = casillero_tiene_cotizacion_emitida(
-        casillero or st.session_state.get("casillero", "")
-    )
-    if modulo_china_disponible_en_hub_actual("Mis Cotizaciones") and tiene_cotizacion:
-        items.append(("cotizaciones", "📄", "Cotiz.", cot_activo))
     if modulo_china_disponible_en_hub_actual("Cotizador"):
-        items.append(("cotizador", "🧮", "Cotizador", cotizador_activo))
+        items.append(("cotizador", "🧮", "Cotizar", cotizador_activo))
+    if st.session_state.get("hub") == "china":
+        items.append(("actividad", "📌", "Actividad", actividad_activa))
     items.append(("mas", "☰", "Más", mas_activo))
     with st.container(key="bottom_nav"):
         cols = st.columns(len(items), gap="small")
@@ -2878,21 +2903,13 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
                         use_container_width=True,
                         on_click=ir_a_inicio,
                     )
-                elif dest == "catalogo":
+                elif dest == "actividad":
                     st.button(
                         f"{icono}\n{etiqueta}",
                         type="primary" if activo else "secondary",
                         key=f"bnav_{dest}",
                         use_container_width=True,
-                        on_click=ir_a_catalogo,
-                    )
-                elif dest == "cotizaciones":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_mis_cotizaciones,
+                        on_click=ir_a_actividad,
                     )
                 elif dest == "cotizador":
                     st.button(
@@ -4950,7 +4967,7 @@ def restaurar_sesion_persistente():
         if isinstance(hub_url, list):
             hub_url = hub_url[0] if hub_url else ""
 
-        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración", "Más", "Fichas"} | VISTAS_MODULO
+        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración", "Más", "Actividad", "Fichas"} | VISTAS_MODULO
         if vista_url in ALIAS_VISTA:
             vista_url = ALIAS_VISTA[vista_url]
         if vista_url in vistas_validas:
@@ -7451,6 +7468,7 @@ st.markdown(
     .st-key-bnav_inicio button,
     .st-key-bnav_catalogo button,
     .st-key-bnav_cotizaciones button,
+    .st-key-bnav_actividad button,
     .st-key-bnav_cotizador button,
     .st-key-bnav_mas button {
         width: 100% !important;
@@ -7524,6 +7542,10 @@ st.markdown(
     .st-key-bnav_cotizaciones div.stButton > button[kind="primary"],
     .st-key-bnav_cotizaciones div.stButton > button[kind="secondary"],
     .st-key-bnav_cotizaciones [data-testid^="stBaseButton"],
+    .st-key-bnav_actividad div.stButton > button,
+    .st-key-bnav_actividad div.stButton > button[kind="primary"],
+    .st-key-bnav_actividad div.stButton > button[kind="secondary"],
+    .st-key-bnav_actividad [data-testid^="stBaseButton"],
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button,
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button[kind="primary"],
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button[kind="secondary"],
@@ -7534,6 +7556,8 @@ st.markdown(
     }
     .st-key-bnav_cotizaciones div.stButton > button::after,
     .st-key-bnav_cotizaciones [data-testid^="stBaseButton"]::after,
+    .st-key-bnav_actividad div.stButton > button::after,
+    .st-key-bnav_actividad [data-testid^="stBaseButton"]::after,
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) div.stButton > button::after {
         content: var(--ccm-cot-badge, "0");
         position: absolute;
@@ -8075,6 +8099,9 @@ elif st.session_state["rol"] == "cliente":
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+
+    if st.session_state["sub_tab_inicio"] == "Actividad":
+        pintar_vista_actividad(total_cotizaciones)
 
     if st.session_state["sub_tab_inicio"] == "Más":
         pintar_vista_mas()
