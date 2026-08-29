@@ -1892,6 +1892,7 @@ def guardar_nueva_direccion(casillero):
     try:
         with get_db() as conn:
             cur = conn.cursor()
+            cur.execute("BEGIN IMMEDIATE")
             cur.execute(
                 """
                 INSERT INTO direcciones_entrega (codigo_casillero, etiqueta, receptor_nombre, telefono, departamento, ciudad, direccion_exacta, fecha_creacion, activa)
@@ -3488,7 +3489,11 @@ def hash_pwd(password):
 
 
 def get_db():
-    return sqlite3.connect(DB_NAME, timeout=10)
+    conn = sqlite3.connect(DB_NAME, timeout=30)
+    # Evita que una escritura breve de otro ciclo de Streamlit haga que el
+    # botón parezca no responder; SQLite espera hasta 30 segundos por el lock.
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
 
 
 def init_db():
@@ -8802,10 +8807,10 @@ elif es_rol_admin():
                 else:
                     n_cod = generar_codigo_casillero_dni(c_dni)
                     n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
-                    try:
-                        with get_db() as conn:
-                            cur = conn.cursor()
-                            cur.execute(
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
                                 """
                                 INSERT INTO usuarios (
                                     codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
