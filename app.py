@@ -1917,12 +1917,14 @@ def guardar_nueva_direccion(casillero):
     if error_db:
         st.session_state["_dir_form_error"] = "No se pudo guardar la dirección. Revise el aviso e inténtelo de nuevo."
         return
-    opcion_nueva = f"📍 {etiqueta} - {ciu}"
     # Relee la fila recién confirmada desde SQLite; el selector del siguiente
     # rerun se construye desde esta fuente persistente, no desde una caché local.
     direcciones_sesion(cas_norm)
-    seleccionar_modalidad_entrega(opcion_nueva)
-    st.session_state["destino_entrega_activo"] = opcion_nueva
+    # Las direcciones se administran aquí, pero los documentos del Cotizador
+    # siempre imprimen la Bodega Principal como destino predeterminado.
+    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
+    st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
+    st.session_state["mostrar_gestion_direcciones"] = False
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
@@ -1966,11 +1968,17 @@ def eliminar_direccion_usuario(casillero, etiqueta, ciudad, id_dir=None):
 
 
 def cancelar_nueva_direccion():
-    """on_click de Cancelar: cierra el formulario y vuelve al destino previo (o al almacén)."""
-    seleccionar_modalidad_entrega(st.session_state.get("destino_entrega_activo") or OPCION_PREDETERMINADA)
+    """Cierra la gestión de direcciones y conserva la Bodega Principal como destino documental."""
+    st.session_state["mostrar_gestion_direcciones"] = False
+    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
+
+
+def abrir_gestion_direcciones():
+    st.session_state["mostrar_gestion_direcciones"] = True
+    seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
 
 
 def selector_modalidad_entrega(opciones_modalidad):
@@ -7879,12 +7887,11 @@ elif st.session_state["rol"] == "cliente":
                 )
             espaciador_barra_inferior("safe_historial")
 
-    if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
+    if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state.get("mostrar_gestion_direcciones"):
         # Esta vista puede completar la selección durante el mismo rerun; usa
         # una clave distinta para no colisionar con el Cotizador principal.
         with st.container(key="vista_direcciones"):
             with st.container(key="formulario_direcciones"):
-                selector_modalidad_entrega(opciones_modalidad)
                 st.markdown("#### 📍 Administrar Direcciones de Envío")
 
                 st.markdown(
@@ -8041,11 +8048,11 @@ elif st.session_state["rol"] == "cliente":
 
     elif (
         st.session_state["sub_tab_inicio"] == "Cotizador"
-        and st.session_state["modalidad_envio_seleccionada"] != "➕ Crear Nueva Dirección de Envío"
+        and not st.session_state.get("mostrar_gestion_direcciones")
     ):
         with st.container(key="vista_cotizador"):
             st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
-            selector_modalidad_entrega(opciones_modalidad)
+            seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
             destino_estampado = html.escape(destino_para_documentos())
             st.markdown(
                 f"""
@@ -8057,8 +8064,15 @@ elif st.session_state["rol"] == "cliente":
                 """,
                 unsafe_allow_html=True,
             )
-            # No se muestra un banner de éxito persistente: la dirección elegida
-            # queda reflejada directamente en el selector y en la tarjeta destino.
+            st.button(
+                "📍 Administrar direcciones de envío",
+                type="secondary",
+                key="btn_abrir_gestion_direcciones",
+                use_container_width=True,
+                on_click=abrir_gestion_direcciones,
+            )
+            # No se muestra un banner de éxito persistente: la Bodega Principal
+            # es el destino documental fijo del Cotizador.
             st.session_state.pop("_dir_form_exito", None)
             error_db_dir = st.session_state.pop("_dir_db_error", None)
             if error_db_dir:
