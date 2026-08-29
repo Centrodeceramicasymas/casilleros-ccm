@@ -3926,6 +3926,7 @@ def init_db():
         )
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_libra', 3.50)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_eeuu_libra', 3.50)")
+        c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_eeuu_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('tarifa_m3', 680.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('minimo_cobro_usd', 10.00)")
         c.execute("INSERT OR IGNORE INTO config_maritima (clave, valor) VALUES ('divisor_peso_volumetrico', 390.00)")
@@ -4922,6 +4923,44 @@ def descargar_imagen_producto(url):
     return None
 
 
+def calcular_paquete_eeuu(peso_lb, ancho, alto, largo, unidad, tarifa_lb, tarifa_m3):
+    """Determina el método de cobro para un paquete EE. UU. → Honduras."""
+    factor_in = 12.0 if unidad == "Pies" else 1.0
+    ancho_m = float(ancho) * factor_in * 0.0254
+    alto_m = float(alto) * factor_in * 0.0254
+    largo_m = float(largo) * factor_in * 0.0254
+    peso_real_lb = float(peso_lb)
+    peso_volumetrico_lb = (float(ancho) * factor_in * float(alto) * factor_in * float(largo) * factor_in) / 166.0
+    peso_cobrable_lb = max(peso_real_lb, peso_volumetrico_lb)
+    peso_kg = peso_real_lb / LB_POR_KG
+    volumen_m3 = ancho_m * alto_m * largo_m
+    excede_contenedor = (
+        alto_m > CONTENEDOR_40_ALTO_M + 1e-9
+        or ancho_m > CONTENEDOR_40_ANCHO_M + 1e-9
+        or largo_m > CONTENEDOR_40_LARGO_M + 1e-9
+        or peso_kg > PESO_MAX_CONTENEDOR_HN_KG + 1e-9
+    )
+    usa_cbm = peso_cobrable_lb > PESO_MAX_PAQUETERIA_LB
+    if excede_contenedor:
+        return {
+            "valido": False,
+            "error": "El paquete supera las dimensiones internas o el peso legal de un contenedor 40′ HC. Divida la carga para cotizarla.",
+        }
+    if usa_cbm:
+        cbm_por_peso = peso_kg / float(get_tarifa("divisor_peso_volumetrico") or 390.0)
+        cbm_facturable = max(volumen_m3, cbm_por_peso)
+        return {
+            "valido": True, "modalidad": "Carga consolidada por CBM", "es_cbm": True,
+            "peso_cobrable_lb": peso_cobrable_lb, "volumen_m3": volumen_m3,
+            "cbm_facturable": cbm_facturable, "total_usd": cbm_facturable * float(tarifa_m3),
+        }
+    return {
+        "valido": True, "modalidad": "Paquetería menor", "es_cbm": False,
+        "peso_cobrable_lb": peso_cobrable_lb, "volumen_m3": volumen_m3,
+        "cbm_facturable": 0.0, "total_usd": peso_cobrable_lb * float(tarifa_lb),
+    }
+
+
 def pintar_cotizador_eeuu(casillero):
     """Cotizador de paquetes EE. UU. → Honduras, sin catálogo de terceros."""
     st.markdown("#### 🇺🇸 Cotizador EE. UU. ➜ Honduras")
@@ -4933,12 +4972,21 @@ def pintar_cotizador_eeuu(casillero):
         for clave in ("us_descripcion", "us_enlace", "us_peso", "us_ancho", "us_alto", "us_largo", "us_imagen_producto", "us_imagen_producto_bytes", "us_foto_manual"):
             st.session_state.pop(clave, None)
     tarifa_default = float(get_tarifa("tarifa_eeuu_libra") or get_tarifa("tarifa_libra") or 0.0)
-    tarifa_lb = st.number_input(
-        "Tarifa vigente por libra (USD)", min_value=0.0, max_value=500.0,
-        value=float(st.session_state.get("us_tarifa_lb", tarifa_default)), step=0.01,
-        format="%.2f", key="us_tarifa_lb",
-        help="Ingrese aquí la tarifa aprobada para envíos desde EE. UU.",
-    )
+    tarifa_cbm_default = float(get_tarifa("tarifa_eeuu_m3") or get_tarifa("tarifa_m3") or 0.0)
+    tarifa_col_1, tarifa_col_2 = st.columns(2)
+    with tarifa_col_1:
+        tarifa_lb = st.number_input(
+            "Tarifa EE. UU. por libra (USD)", min_value=0.0, max_value=500.0,
+            value=float(st.session_state.get("us_tarifa_lb", tarifa_default)), step=0.01,
+            format="%.2f", key="us_tarifa_lb",
+        )
+    with tarifa_col_2:
+        tarifa_m3 = st.number_input(
+            "Tarifa EE. UU. por CBM (USD)", min_value=0.0, max_value=10000.0,
+            value=float(st.session_state.get("us_tarifa_m3", tarifa_cbm_default)), step=1.0,
+            format="%.2f", key="us_tarifa_m3",
+        )
+    st.caption("Paquetería: hasta 99 lb por paquete. Al superar ese peso, el cálculo cambia automáticamente a CBM. Límite 40′ HC: 2.69 × 2.35 × 12.03 m y 25,000 kg.")
 
     st.markdown(
         "<div style='margin:14px 0 8px;padding:16px 18px;border-radius:16px;"
@@ -5021,20 +5069,24 @@ def pintar_cotizador_eeuu(casillero):
         if not descripcion or min(float(peso_lb), float(ancho), float(alto), float(largo)) <= 0:
             st.error("Complete la descripción, peso y las tres medidas con valores mayores que cero.")
         else:
-            factor = 12.0 if unidad == "Pies" else 1.0
-            pulgadas_cubicas = float(ancho) * factor * float(alto) * factor * float(largo) * factor
-            peso_volumetrico = pulgadas_cubicas / 166.0
-            peso_cobrable = max(float(peso_lb), peso_volumetrico)
-            paquetes.append({
-                "descripcion": descripcion,
-                "peso_real": float(peso_lb),
-                "ancho": float(ancho), "alto": float(alto), "largo": float(largo),
-                "unidad": unidad,
-                "peso_cobrable": peso_cobrable,
-                "enlace": (st.session_state.get("us_enlace") or "").strip(),
-            })
-            st.session_state["_us_limpiar_formulario"] = True
-            st.rerun()
+            calculo = calcular_paquete_eeuu(peso_lb, ancho, alto, largo, unidad, tarifa_lb, tarifa_m3)
+            if not calculo["valido"]:
+                st.error(calculo["error"])
+            else:
+                paquetes.append({
+                    "descripcion": descripcion,
+                    "peso_real": float(peso_lb),
+                    "ancho": float(ancho), "alto": float(alto), "largo": float(largo),
+                    "unidad": unidad,
+                    "peso_cobrable": calculo["peso_cobrable_lb"],
+                    "volumen_m3": calculo["volumen_m3"],
+                    "cbm_facturable": calculo["cbm_facturable"],
+                    "modalidad": calculo["modalidad"],
+                    "total_usd": calculo["total_usd"],
+                    "enlace": (st.session_state.get("us_enlace") or "").strip(),
+                })
+                st.session_state["_us_limpiar_formulario"] = True
+                st.rerun()
 
     st.markdown("##### Lista de paquetes agregados")
     if not paquetes:
@@ -5042,25 +5094,40 @@ def pintar_cotizador_eeuu(casillero):
         return
 
     total_lb = 0.0
+    total_cbm = 0.0
+    total_usd = 0.0
     for indice, paquete in enumerate(list(paquetes)):
+        recalculo = calcular_paquete_eeuu(
+            paquete.get("peso_real", 0), paquete.get("ancho", 0), paquete.get("alto", 0),
+            paquete.get("largo", 0), paquete.get("unidad", "Pulgadas"), tarifa_lb, tarifa_m3,
+        )
+        if recalculo.get("valido"):
+            paquete.update({
+                "peso_cobrable": recalculo["peso_cobrable_lb"], "volumen_m3": recalculo["volumen_m3"],
+                "cbm_facturable": recalculo["cbm_facturable"], "modalidad": recalculo["modalidad"],
+                "total_usd": recalculo["total_usd"],
+            })
         total_lb += float(paquete.get("peso_cobrable") or 0)
+        total_cbm += float(paquete.get("cbm_facturable") or 0)
+        total_usd += float(paquete.get("total_usd") or 0)
         info, eliminar = st.columns([5, 0.55])
         with info:
             st.markdown(
                 f"**{html.escape(paquete['descripcion'])}**  \n"
                 f"Medidas ({paquete['unidad']}): {paquete['ancho']:g} × {paquete['alto']:g} × {paquete['largo']:g} · "
-                f"Peso a cobrar: **{paquete['peso_cobrable']:.2f} lb**"
+                f"{paquete.get('modalidad', 'Paquetería menor')} · "
+                f"Peso a cobrar: **{paquete['peso_cobrable']:.2f} lb** · "
+                f"**${float(paquete.get('total_usd') or 0):,.2f} USD**"
             )
         with eliminar:
             if st.button("🗑️", key=f"us_del_{indice}", help="Eliminar paquete"):
                 paquetes.pop(indice)
                 st.rerun()
 
-    total_usd = total_lb * float(tarifa_lb)
     st.markdown("---")
     a, b, c = st.columns(3)
     a.metric("Paquetes", len(paquetes))
-    b.metric("Peso total a cobrar", f"{total_lb:.2f} lb")
+    b.metric("Peso/CBM cobrable", f"{total_lb:.2f} lb" if total_cbm == 0 else f"{total_cbm:.3f} CBM")
     c.metric("Total estimado", f"${total_usd:,.2f} USD")
     st.caption("La cotización no incluye impuestos ni cargos de tienda. Se ajustará si cambian el peso o las medidas reales recibidas en bodega.")
 
@@ -9559,6 +9626,7 @@ elif es_rol_admin():
         st.markdown("#### Tarifas y constantes del cotizador")
         n_lb = st.number_input("Tarifa por libra China (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
         n_us_lb = st.number_input("Tarifa por libra EE. UU. (USD)", min_value=0.01, value=float(get_tarifa("tarifa_eeuu_libra") or n_lb), step=0.05)
+        n_us_m3 = st.number_input("Tarifa por CBM EE. UU. (USD)", min_value=0.01, value=float(get_tarifa("tarifa_eeuu_m3") or get_tarifa("tarifa_m3") or 680), step=1.0)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
         n_min = st.number_input("Mínimo de cobro (USD)", min_value=0.01, value=float(get_tarifa("minimo_cobro_usd") or 10), step=0.50)
         n_umin = st.number_input("Umbral tarifa mínima (lb)", min_value=0.1, value=float(get_tarifa("umbral_minimo_lb") or 3), step=0.5)
@@ -9569,6 +9637,7 @@ elif es_rol_admin():
         if st.button("Guardar tarifas y fórmulas", type="primary"):
             set_tarifa("tarifa_libra", n_lb)
             set_tarifa("tarifa_eeuu_libra", n_us_lb)
+            set_tarifa("tarifa_eeuu_m3", n_us_m3)
             set_tarifa("tarifa_m3", n_m3)
             set_tarifa("minimo_cobro_usd", n_min)
             set_tarifa("umbral_minimo_lb", n_umin)
