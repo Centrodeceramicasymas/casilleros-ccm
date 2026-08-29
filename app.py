@@ -8599,6 +8599,13 @@ elif st.session_state["rol"] == "cliente":
     ):
         with st.container(key="vista_cotizador"):
             st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+            st.button(
+                "📍 Administrar direcciones de envío",
+                type="secondary",
+                key="btn_abrir_gestion_direcciones",
+                use_container_width=True,
+                on_click=abrir_gestion_direcciones,
+            )
             # El usuario puede cambiar de destino antes de emitir. Esta misma
             # selección alimenta las cotizaciones, fichas y documentos.
             opciones_destino = [op for op in opciones_modalidad if op != crear_nueva_dir]
@@ -8613,13 +8620,6 @@ elif st.session_state["rol"] == "cliente":
                 </div>
                 """,
                 unsafe_allow_html=True,
-            )
-            st.button(
-                "📍 Administrar direcciones de envío",
-                type="secondary",
-                key="btn_abrir_gestion_direcciones",
-                use_container_width=True,
-                on_click=abrir_gestion_direcciones,
             )
             # El destino elegido se conserva durante todo el flujo documental.
             st.session_state.pop("_dir_form_exito", None)
