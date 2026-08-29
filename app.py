@@ -2880,7 +2880,11 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
 
 
 def anclar_barra_inferior():
-    """Aplica position:fixed a la píldora sin mover nodos del DOM (evita errores de React)."""
+    """La barra se fija con CSS; no se modifica el DOM de Streamlit desde JavaScript."""
+    # El script antiguo observaba y modificaba el DOM en cada actualización.
+    # En algunos navegadores podía ocultar la vista completa, dejando una
+    # pantalla blanca. Las reglas CSS de la aplicación ya fijan esta barra.
+    return
     with st.container(key="bottom_nav_pin"):
         components.html(
             """
