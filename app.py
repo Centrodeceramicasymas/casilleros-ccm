@@ -1924,7 +1924,9 @@ def guardar_nueva_direccion(casillero):
     # siempre imprimen la Bodega Principal como destino predeterminado.
     seleccionar_modalidad_entrega(OPCION_PREDETERMINADA)
     st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
-    st.session_state["mostrar_gestion_direcciones"] = False
+    # Se mantiene abierto el administrador tras el commit para que el usuario
+    # vea la fila recién leída desde SQLite y confirme que quedó registrada.
+    st.session_state["mostrar_gestion_direcciones"] = True
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
