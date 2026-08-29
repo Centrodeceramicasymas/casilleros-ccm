@@ -4068,8 +4068,8 @@ def abrir_permisos_todos_los_usuarios():
         c.execute(
             """
             UPDATE permisos_usuario SET
-                hub_china=1, hub_eeuu=1, hub_honduras=1,
-                mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+                hub_china=TRUE, hub_eeuu=TRUE, hub_honduras=TRUE,
+                mod_cotizador=TRUE, mod_catalogo=TRUE, mod_cotizaciones=TRUE, mod_envios=TRUE, mod_fichas=TRUE
             """
         )
         conn.commit()
@@ -4260,8 +4260,8 @@ def asegurar_superadmin():
             if rol in ROLES_ADMIN or PERMISOS_ABIERTOS_TEMPORAL:
                 c.execute(
                     """
-                    UPDATE permisos_usuario SET hub_china=1, hub_eeuu=1, hub_honduras=1,
-                        mod_cotizador=1, mod_catalogo=1, mod_cotizaciones=1, mod_envios=1, mod_fichas=1
+                    UPDATE permisos_usuario SET hub_china=TRUE, hub_eeuu=TRUE, hub_honduras=TRUE,
+                        mod_cotizador=TRUE, mod_catalogo=TRUE, mod_cotizaciones=TRUE, mod_envios=TRUE, mod_fichas=TRUE
                     WHERE codigo_casillero = ?
                     """,
                     (cas,),
