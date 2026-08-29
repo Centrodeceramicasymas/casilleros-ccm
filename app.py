@@ -2587,21 +2587,17 @@ def pintar_banner_promocional_china(casillero):
     st.markdown(
         f'<div class="promo-ad-card">'
         f'<div class="promo-ad-glow" aria-hidden="true">🚢</div>'
-        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> PROMOCIÓN VIGENTE <span>•</span> {cas_txt}</div>'
-        f'<div class="promo-ad-title">Importe más. Pague mejor.</div>'
-        f'<div class="promo-ad-subtitle">Consolidación marítima <b>China ➔ Honduras</b></div>'
-        f'<div class="promo-ad-body">Reserve su espacio en contenedor <b>40′ High Cube</b>. '
-        f'Cotizamos paquetería por libra y carga comercial por CBM, con acompañamiento de un asesor CCM.</div>'
-        f'<div class="promo-ad-product-label">PRODUCTOS QUE PUEDE IMPORTAR</div>'
-        f'<div class="promo-ad-products">'
-        f'<span>🏺 Cerámica</span><span>🔧 Ferretería</span><span>💡 Iluminación</span>'
-        f'<span>🛋️ Hogar</span><span>👗 Moda</span><span>🧸 Juguetes</span>'
+        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> SALIDA PROGRAMADA · CHINA ➔ HONDURAS</div>'
+        f'<div class="promo-ad-title">📦 Importación Consolidada Marítima</div>'
+        f'<div class="promo-ad-subtitle">China ➔ Honduras · Contenedor 40′ HC</div>'
+        f'<div class="promo-ad-body">Reserve su espacio en nuestro <b>Contenedor 40′ HC</b> con salida programada. '
+        f'Ofrecemos soluciones integrales para carga comercial variada, cerámicas, acabados y mercancía general. '
+        f'Modalidad flexible en paquetería por libra o carga consolidada por CBM con asesoría de casillero incluida.</div>'
+        f'<div class="promo-ad-badges">'
+        f'<div class="promo-ad-badge promo-ad-badge-close"><span>🚀</span><div><small>PRÓXIMO CIERRE</small><b>{cierre}</b></div></div>'
+        f'<div class="promo-ad-badge"><span>🏢</span><div><small>CASILLERO AUTORIZADO</small><b>{cas_txt}</b></div></div>'
+        f'<div class="promo-ad-badge"><span>✨</span><div><small>MODALIDAD</small><b>Carga mixta y variedad</b></div></div>'
         f'</div>'
-        f'<div class="promo-ad-pills">'
-        f'<span class="promo-ad-pill">📅 Cierre: {cierre}</span>'
-        f'<span class="promo-ad-pill">✓ Carga mixta</span>'
-        f'<span class="promo-ad-pill">☎ Asesor CCM</span>'
-        f"</div>"
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
         f"💬 Reservar cupo y consultar</a>"
         f"</div>",
@@ -6432,6 +6428,28 @@ st.markdown(
         color: #e2e8f0;
         margin: 0 0 14px 0;
     }
+    .promo-ad-badges {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0 0 16px 0;
+    }
+    .promo-ad-badge {
+        display: flex;
+        gap: 7px;
+        align-items: flex-start;
+        min-width: 0;
+        padding: 9px 8px;
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.20);
+        border-radius: 12px;
+        color: #fff;
+    }
+    .promo-ad-badge > span { font-size: 1.05rem; line-height: 1.1; }
+    .promo-ad-badge div { min-width: 0; }
+    .promo-ad-badge small { display: block; font-size: .57rem; letter-spacing: .045em; color: #bfdbfe; font-weight: 800; line-height: 1.2; }
+    .promo-ad-badge b { display: block; font-size: .70rem; line-height: 1.25; margin-top: 3px; color: #fff; overflow-wrap: anywhere; }
+    .promo-ad-badge-close { background: rgba(245, 158, 11, .20); border-color: rgba(253, 230, 138, .42); }
     .promo-ad-product-label { font-size: .65rem; font-weight: 800; letter-spacing: .08em; color: #bfdbfe; margin: 0 0 7px; }
     .promo-ad-products { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
     .promo-ad-products span { background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: 5px 8px; color: #fff; font-size: .72rem; font-weight: 700; }
@@ -6465,6 +6483,14 @@ st.markdown(
         box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
     }
     .promo-ad-cta:hover { filter: brightness(1.04); color: #713f12; text-decoration: none; }
+    @media (max-width: 640px) {
+        .promo-ad-card { padding: 18px 15px 16px 15px; border-radius: 17px; }
+        .promo-ad-title { font-size: 1.22rem; padding-right: 32px; }
+        .promo-ad-body { font-size: .82rem; line-height: 1.43; }
+        .promo-ad-badges { grid-template-columns: 1fr; gap: 7px; }
+        .promo-ad-badge { padding: 8px 10px; }
+        .promo-ad-badge b { font-size: .77rem; }
+    }
 
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
         display: flex !important;
