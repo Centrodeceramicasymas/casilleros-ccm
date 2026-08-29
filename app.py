@@ -4495,13 +4495,20 @@ def limites_dimensiones(unidad_medida, comercial=False):
         defaults_com = {"alto": 120.0, "ancho": 120.0, "largo": 120.0}
         codigo = "cm"
 
-    maxes = {
+    maxes_fisicos = {
         "alto": max_alineado(min_v, CONTENEDOR_40_ALTO_M * factor, step),
         "ancho": max_alineado(min_v, CONTENEDOR_40_ANCHO_M * factor, step),
         "largo": max_alineado(min_v, CONTENEDOR_40_LARGO_M * factor, step),
     }
+    # El campo permite registrar la medida real aun si excede el contenedor.
+    # Así el cálculo se actualiza inmediatamente y la validación posterior
+    # explica que debe dividirse la carga, en vez de dejar métricas antiguas.
+    maxes = {
+        clave: max_alineado(min_v, max(valor, 100.0 * factor), step)
+        for clave, valor in maxes_fisicos.items()
+    }
     base = defaults_com if comercial else defaults_paq
-    defaults = {k: min(v, maxes[k]) for k, v in base.items()}
+    defaults = {k: min(v, maxes_fisicos[k]) for k, v in base.items()}
     return {
         "min": min_v,
         "step": step,
@@ -4509,6 +4516,7 @@ def limites_dimensiones(unidad_medida, comercial=False):
         "codigo": codigo,
         "defaults": defaults,
         "max": maxes,
+        "max_fisico": maxes_fisicos,
     }
 
 
@@ -4566,7 +4574,7 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato, on_chan
                 st.session_state[clave] = limitado
         except (TypeError, ValueError):
             st.session_state[clave] = float(valor)
-        return st.number_input(
+        valor_widget = st.number_input(
             label,
             min_value=float(lim_min),
             max_value=float(lim_max),
@@ -4575,7 +4583,8 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato, on_chan
             key=clave,
             **kwargs,
         )
-    return st.number_input(
+        return float(st.session_state.get(clave, valor_widget))
+    valor_widget = st.number_input(
         label,
         min_value=float(lim_min),
         max_value=float(lim_max),
@@ -4585,6 +4594,7 @@ def campo_numerico(label, lim_min, valor, lim_max, paso, clave, formato, on_chan
         key=clave,
         **kwargs,
     )
+    return float(st.session_state.get(clave, valor_widget))
 
 
 # ---------------------------------------------------------
