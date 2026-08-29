@@ -4925,12 +4925,12 @@ def descargar_imagen_producto(url):
 def pintar_cotizador_eeuu(casillero):
     """Cotizador de paquetes EE. UU. → Honduras, sin catálogo de terceros."""
     st.markdown("#### 🇺🇸 Cotizador EE. UU. ➜ Honduras")
-    st.caption("Agregue uno o varios paquetes. El sistema calcula el peso cobrable y la tarifa total.")
+    st.caption("Agregue sus paquetes y obtenga el total estimado al instante.")
     st.markdown(f'<div class="ae-casillero-chip">Casillero activo: {casillero}</div>', unsafe_allow_html=True)
 
     paquetes = st.session_state.setdefault("paquetes_eeuu", [])
     if st.session_state.pop("_us_limpiar_formulario", False):
-        for clave in ("us_descripcion", "us_enlace", "us_peso", "us_ancho", "us_alto", "us_largo"):
+        for clave in ("us_descripcion", "us_enlace", "us_peso", "us_ancho", "us_alto", "us_largo", "us_imagen_producto", "us_imagen_producto_bytes", "us_foto_manual"):
             st.session_state.pop(clave, None)
     tarifa_default = float(get_tarifa("tarifa_eeuu_libra") or get_tarifa("tarifa_libra") or 0.0)
     tarifa_lb = st.number_input(
@@ -4985,26 +4985,38 @@ def pintar_cotizador_eeuu(casillero):
         if foto_manual:
             st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
     imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
-    if imagen_producto:
-        vista_img, vista_texto = st.columns([1, 2.3])
-        with vista_img:
-            st.image(imagen_producto, caption="Producto detectado", use_container_width=True)
-        with vista_texto:
-            st.success("Producto preparado para cotizar")
-            st.caption("Los campos de abajo se llenaron solo con información pública disponible. Revise peso y medidas reales antes de continuar.")
 
-    st.markdown("##### 📦 Agregar paquete")
-    st.text_input("Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
+    st.markdown("##### 📦 Detalles del paquete")
+    imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
+    if imagen_producto:
+        with st.container(border=True):
+            c_img, c_res = st.columns([1.15, 1])
+            with c_img:
+                st.image(imagen_producto, caption="Vista previa del producto", use_container_width=True)
+            with c_res:
+                st.markdown("**Producto detectado**")
+                st.caption("Verifica los valores antes de agregarlo a la cotización.")
+                st.success("Información lista para revisar")
+    else:
+        st.markdown(
+            "<div style='height:120px;display:flex;align-items:center;justify-content:center;"
+            "border:1px dashed #94a3b8;border-radius:18px;background:#f8fafc;color:#64748b;"
+            "font-weight:700;margin:8px 0 18px;'>🖼️ La vista previa aparecerá al consultar un enlace o subir una foto</div>",
+            unsafe_allow_html=True,
+        )
+    st.text_input("📦 Descripción del producto *", key="us_descripcion", placeholder="Ej. Laptop HP 16 pulgadas")
     p1, p2 = st.columns(2)
     with p1:
-        peso_lb = st.number_input("Peso real (lb) *", min_value=0.0, max_value=2000.0, value=0.0, step=0.1, key="us_peso")
-        alto = st.number_input("Alto *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_alto")
+        peso_lb = st.number_input("⚖️ Peso (lb) *", min_value=0.0, max_value=2000.0, value=0.0, step=0.1, key="us_peso")
+        alto = st.number_input("📏 Alto *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_alto")
     with p2:
-        ancho = st.number_input("Ancho *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_ancho")
-        largo = st.number_input("Largo *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_largo")
-    unidad = st.radio("Unidad de medida", ["Pulgadas", "Pies"], horizontal=True, key="us_unidad")
+        ancho = st.number_input("📐 Ancho *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_ancho")
+        largo = st.number_input("📏 Largo *", min_value=0.0, max_value=500.0, value=0.0, step=0.1, key="us_largo")
+    with st.container(border=True):
+        st.markdown("**Tipo de unidad de medida**")
+        unidad = st.radio("", ["Pulgadas", "Pies"], key="us_unidad", label_visibility="collapsed")
 
-    if st.button("➕ Agregar paquete", type="primary", use_container_width=True, key="btn_us_agregar"):
+    if st.button("➕ Agregar paquete a la cotización", type="primary", use_container_width=True, key="btn_us_agregar"):
         descripcion = (st.session_state.get("us_descripcion") or "").strip()
         if not descripcion or min(float(peso_lb), float(ancho), float(alto), float(largo)) <= 0:
             st.error("Complete la descripción, peso y las tres medidas con valores mayores que cero.")
