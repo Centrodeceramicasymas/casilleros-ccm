@@ -8439,7 +8439,7 @@ elif st.session_state["rol"] == "cliente":
                         ciu_d = dir_item.get("ciudad", "")
                         dir_e = dir_item.get("direccion", "")
                         id_dir = dir_item.get("id")
-                        col_info_d, col_btn_usar, col_btn_del = st.columns([3.1, 1.15, 0.85])
+                        col_info_d, col_btn_usar, col_btn_del = st.columns([3.35, 1.15, 0.45])
                         with col_info_d:
                             st.markdown(
                                 f"""
@@ -8461,7 +8461,16 @@ elif st.session_state["rol"] == "cliente":
                                 args=(opcion_dir,),
                             )
                         with col_btn_del:
-                            if st.button("🗑️ Eliminar", key=f"del_dir_{id_dir or f'ses_{idx_dir}'}", type="secondary"):
+                            # Solo las direcciones personalizadas tienen eliminación.
+                            # La Bodega Principal se muestra fuera de este ciclo y
+                            # por eso permanece siempre protegida.
+                            if st.button(
+                                "🗑️",
+                                key=f"del_dir_{id_dir or f'ses_{idx_dir}'}",
+                                type="secondary",
+                                help="Eliminar esta dirección",
+                                use_container_width=True,
+                            ):
                                 eliminar_direccion_usuario(casillero, etiq, ciu_d, id_dir)
                                 st.session_state.pop("datos_pdf_confirmado", None)
                                 st.toast(f"🗑️ Dirección '{etiq}' eliminada.")
