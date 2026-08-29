@@ -8118,17 +8118,21 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(
                 """
                 <style>
+                .st-key-resumen_pendiente, .st-key-resumen_confirmada, .st-key-resumen_envios,
                 [class*="st-key-resumen_pendiente"] button,
                 [class*="st-key-resumen_confirmada"] button,
                 [class*="st-key-resumen_envios"] button {
-                    min-height: 68px !important; border-radius: 12px !important;
+                    min-height: 72px !important; border-radius: 12px !important;
                     text-align: left !important; white-space: pre-line !important;
                     font-weight: 700 !important; line-height: 1.42 !important;
                     padding: 11px 12px !important; transition: transform .16s ease, box-shadow .16s ease !important;
                 }
-                [class*="st-key-resumen_pendiente"] button { background:#fff7ed !important; border:1px solid #fed7aa !important; color:#9a3412 !important; }
-                [class*="st-key-resumen_confirmada"] button { background:#eff6ff !important; border:1px solid #bfdbfe !important; color:#1e3a8a !important; }
-                [class*="st-key-resumen_envios"] button { background:#f0fdf4 !important; border:1px solid #bbf7d0 !important; color:#166534 !important; }
+                .st-key-resumen_pendiente, [class*="st-key-resumen_pendiente"] button { background:#fff7ed !important; border:1px solid #fed7aa !important; color:#9a3412 !important; }
+                .st-key-resumen_confirmada, [class*="st-key-resumen_confirmada"] button { background:#eff6ff !important; border:1px solid #bfdbfe !important; color:#1e3a8a !important; }
+                .st-key-resumen_envios, [class*="st-key-resumen_envios"] button { background:#f0fdf4 !important; border:1px solid #bbf7d0 !important; color:#166534 !important; }
+                .st-key-resumen_pendiente p, .st-key-resumen_confirmada p, .st-key-resumen_envios p,
+                [class*="st-key-resumen_"] button p { white-space:pre-line !important; margin:0 !important; line-height:1.5 !important; }
+                .st-key-resumen_pendiente:hover, .st-key-resumen_confirmada:hover, .st-key-resumen_envios:hover,
                 [class*="st-key-resumen_pendiente"] button:hover,
                 [class*="st-key-resumen_confirmada"] button:hover,
                 [class*="st-key-resumen_envios"] button:hover { transform:translateY(-2px) !important; box-shadow:0 8px 18px rgba(15,23,42,.12) !important; }
