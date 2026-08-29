@@ -1881,14 +1881,14 @@ def guardar_nueva_direccion(casillero):
     dir_exacta = (st.session_state.get("dir_exacta_in") or "").strip()
     if not (etiqueta and receptor and tel and dep and ciu and dir_exacta):
         st.session_state["_dir_form_error"] = "Completa todos los campos obligatorios (*)."
-        return
+        return False
     cas_norm = formatear_casillero(casillero)
     f_ahora = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     id_dir_nuevo = None
     error_db = None
     if not asegurar_esquema_direcciones():
         st.session_state["_dir_form_error"] = "No se pudo preparar la base de datos para guardar la dirección."
-        return
+        return False
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -1915,8 +1915,8 @@ def guardar_nueva_direccion(casillero):
         registrar_error_direcciones(exc, "INSERT direcciones_entrega")
     invalidar_cache_direcciones()
     if error_db:
-        st.session_state["_dir_form_error"] = "No se pudo guardar la dirección. Revise el aviso e inténtelo de nuevo."
-        return
+        st.session_state["_dir_form_error"] = f"No se pudo guardar la dirección: {error_db}"
+        return False
     # Relee la fila recién confirmada desde SQLite; el selector del siguiente
     # rerun se construye desde esta fuente persistente, no desde una caché local.
     direcciones_sesion(cas_norm)
@@ -1930,6 +1930,7 @@ def guardar_nueva_direccion(casillero):
     st.session_state["_dir_form_reset"] = True
     st.session_state.pop("_dir_form_error", None)
     st.session_state.pop("datos_pdf_confirmado", None)
+    return True
 
 
 def destino_para_documentos():
@@ -7975,14 +7976,18 @@ elif st.session_state["rol"] == "cliente":
                 error_dir = st.session_state.pop("_dir_form_error", None)
                 if error_dir:
                     st.error(error_dir)
-                st.button(
+                guardar_direccion_pulsado = st.button(
                     "💾 Guardar Dirección",
                     type="primary",
                     key="btn_guardar_nueva_dir",
                     use_container_width=True,
-                    on_click=guardar_nueva_direccion,
-                    args=(casillero,),
                 )
+                if guardar_direccion_pulsado:
+                    if guardar_nueva_direccion(casillero):
+                        st.rerun()
+                    error_guardado = st.session_state.pop("_dir_form_error", None)
+                    if error_guardado:
+                        st.error(error_guardado)
                 st.button(
                     "Cancelar",
                     type="secondary",
