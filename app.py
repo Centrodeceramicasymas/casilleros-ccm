@@ -7880,7 +7880,9 @@ elif st.session_state["rol"] == "cliente":
             espaciador_barra_inferior("safe_historial")
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state["modalidad_envio_seleccionada"] == "➕ Crear Nueva Dirección de Envío":
-        with st.container(key="vista_cotizador"):
+        # Esta vista puede completar la selección durante el mismo rerun; usa
+        # una clave distinta para no colisionar con el Cotizador principal.
+        with st.container(key="vista_direcciones"):
             with st.container(key="formulario_direcciones"):
                 selector_modalidad_entrega(opciones_modalidad)
                 st.markdown("#### 📍 Administrar Direcciones de Envío")
