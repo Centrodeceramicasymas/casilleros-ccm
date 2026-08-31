@@ -2283,23 +2283,30 @@ def ir_a(vista, hub="_omit"):
         del st.query_params["hub"]
 
 
-def abrir_resumen_cotizaciones(estado):
-    """Las tarjetas conservan su aspecto y aplican/retiran su filtro de estado."""
-    estado = estado if estado in ("pendiente", "confirmada") else None
-    filtro_actual = st.session_state.get("filtro_historial_cotizaciones")
-    # Pulsar nuevamente la misma tarjeta vuelve a mostrar el historial completo.
-    st.session_state["filtro_historial_cotizaciones"] = None if filtro_actual == estado else estado
-    st.session_state.pop("cotizacion_historial_foco", None)
-    cas = formatear_casillero(st.session_state.get("casillero", ""))
-    try:
-        _, filas = filas_cotizaciones_casillero(cas, obtener_tiempo_honduras())
-        for fila in filas:
-            es_confirmada = es_cotizacion_confirmada(fila[8])
-            if estado and ((estado == "pendiente" and not es_confirmada) or (estado == "confirmada" and es_confirmada)):
-                st.session_state["cotizacion_historial_foco"] = int(fila[0])
-                break
-    except Exception:
-        pass
+def pintar_guias_informativas(guias):
+    """Muestra reglas de contexto como información estática, no como controles."""
+    paleta = {
+        "azul": ("#eff6ff", "#bfdbfe", "#1e3a8a"),
+        "verde": ("#f0fdf4", "#bbf7d0", "#166534"),
+        "naranja": ("#fff7ed", "#fed7aa", "#9a3412"),
+    }
+    tarjetas = []
+    for icono, titulo, descripcion, color in guias:
+        fondo, borde, texto = paleta[color]
+        tarjetas.append(
+            f'<div style="background:{fondo};border:1px solid {borde};border-radius:12px;'
+            f'padding:11px 12px;color:{texto};">'
+            f'<b>{html.escape(icono)} {html.escape(titulo)}</b><br>'
+            f'<span style="font-size:.86rem;">{descripcion}</span></div>'
+        )
+    st.markdown(
+        '<div role="note" aria-label="Información importante" '
+        'style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));'
+        'gap:10px;margin:12px 0 14px;">'
+        + "".join(tarjetas)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
     ir_a("Mis Cotizaciones", hub="china")
 
 
@@ -8475,50 +8482,15 @@ elif st.session_state["rol"] == "cliente":
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-            st.markdown(
-                """
-                <style>
-                .st-key-resumen_pendiente, .st-key-resumen_confirmada, .st-key-resumen_envios,
-                [class*="st-key-resumen_pendiente"] button,
-                [class*="st-key-resumen_confirmada"] button,
-                [class*="st-key-resumen_envios"] button {
-                    min-height: 72px !important; border-radius: 12px !important;
-                    text-align: left !important; white-space: pre-line !important;
-                    font-weight: 700 !important; line-height: 1.42 !important;
-                    padding: 11px 12px !important; transition: transform .16s ease, box-shadow .16s ease !important;
-                }
-                .st-key-resumen_pendiente, [class*="st-key-resumen_pendiente"] button { background:#fff7ed !important; border:1px solid #fed7aa !important; color:#9a3412 !important; }
-                .st-key-resumen_confirmada, [class*="st-key-resumen_confirmada"] button { background:#eff6ff !important; border:1px solid #bfdbfe !important; color:#1e3a8a !important; }
-                .st-key-resumen_envios, [class*="st-key-resumen_envios"] button { background:#f0fdf4 !important; border:1px solid #bbf7d0 !important; color:#166534 !important; }
-                .st-key-resumen_pendiente p, .st-key-resumen_confirmada p, .st-key-resumen_envios p,
-                [class*="st-key-resumen_"] button p { white-space:pre-line !important; margin:0 !important; line-height:1.5 !important; }
-                .st-key-resumen_pendiente:hover, .st-key-resumen_confirmada:hover, .st-key-resumen_envios:hover,
-                [class*="st-key-resumen_pendiente"] button:hover,
-                [class*="st-key-resumen_confirmada"] button:hover,
-                [class*="st-key-resumen_envios"] button:hover { transform:translateY(-2px) !important; box-shadow:0 8px 18px rgba(15,23,42,.12) !important; }
-                </style>
-                """,
-                unsafe_allow_html=True,
+            pintar_guias_informativas(
+                [
+                    ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
+                    ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
+                    ("📦", "Seguimiento y documentos", "El seguimiento y los PDFs están disponibles en <b>Mis Envíos</b>.", "verde"),
+                ]
             )
-            resumen_pendiente, resumen_confirmada, resumen_envios = st.columns(3)
-            with resumen_pendiente:
-                st.button(
-                    "⏳ Tarifa pendiente\nConfírmela en 1 hora antes de que venza.",
-                    key="resumen_pendiente", use_container_width=True,
-                    on_click=abrir_resumen_cotizaciones, args=("pendiente",),
-                )
-            with resumen_confirmada:
-                st.button(
-                    "🛡️ Tarifa confirmada\nPermanece disponible durante 48 horas.",
-                    key="resumen_confirmada", use_container_width=True,
-                    on_click=abrir_resumen_cotizaciones, args=("confirmada",),
-                )
-            with resumen_envios:
-                st.button(
-                    "📦 Seguimiento y documentos\nAbra para ver y descargar sus PDFs.",
-                    key="resumen_envios", use_container_width=True,
-                    on_click=ir_a, args=("Mis Envíos", "china"),
-                )
+            # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
+            st.session_state.pop("filtro_historial_cotizaciones", None)
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
             error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
             if confirmada_flash:
@@ -8532,18 +8504,6 @@ elif st.session_state["rol"] == "cliente":
                 )
             elif error_confirmacion:
                 st.error(error_confirmacion)
-
-            # Las tarjetas superiores filtran el mismo historial. El segundo
-            # toque sobre la tarjeta activa quita el filtro.
-            filtro_historial = st.session_state.get("filtro_historial_cotizaciones")
-            if filtro_historial == "pendiente":
-                lista_mis_cotizaciones = [
-                    cot for cot in lista_mis_cotizaciones if not es_cotizacion_confirmada(cot[8])
-                ]
-            elif filtro_historial == "confirmada":
-                lista_mis_cotizaciones = [
-                    cot for cot in lista_mis_cotizaciones if es_cotizacion_confirmada(cot[8])
-                ]
 
             if lista_mis_cotizaciones:
                 try:
@@ -8664,15 +8624,10 @@ elif st.session_state["rol"] == "cliente":
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
             else:
-                if filtro_historial == "pendiente":
-                    st.info("No tiene cotizaciones pendientes. Pulse nuevamente «Tarifa pendiente» para ver todas.")
-                elif filtro_historial == "confirmada":
-                    st.info("No tiene cotizaciones confirmadas. Pulse nuevamente «Tarifa confirmada» para ver todas.")
-                else:
-                    st.info(
-                        "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
-                        "tiene 1 hora para confirmarla y habilitar Envíos."
-                    )
+                st.info(
+                    "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
+                    "tiene 1 hora para confirmarla y habilitar Envíos."
+                )
             espaciador_barra_inferior("safe_historial")
 
     if st.session_state["sub_tab_inicio"] == "Cotizador" and st.session_state.get("mostrar_gestion_direcciones"):
@@ -9271,16 +9226,12 @@ elif st.session_state["rol"] == "cliente":
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
             pintar_banner_promocional_china(casillero)
-            st.markdown(
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
-                '<b>🛡️ Vigencia confirmada</b><br><span style="font-size:.86rem;">Cada cotización confirmada se conserva por <b>48 horas</b>.</span></div>'
-                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
-                '<b>📦 Seguimiento activo</b><br><span style="font-size:.86rem;">Consulte aquí el estado de sus paquetes en tránsito.</span></div>'
-                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
-                '<b>📄 Documentos oficiales</b><br><span style="font-size:.86rem;">La Ficha y el PDF Tarifa están debajo de cada envío.</span></div>'
-                '</div>',
-                unsafe_allow_html=True,
+            pintar_guias_informativas(
+                [
+                    ("🛡️", "Vigencia confirmada", "Cada cotización confirmada se conserva por <b>48 horas</b>.", "azul"),
+                    ("📦", "Seguimiento activo", "Consulte aquí el estado de sus paquetes en tránsito.", "verde"),
+                    ("📄", "Documentos oficiales", "La Ficha y el PDF Tarifa están debajo de cada envío.", "naranja"),
+                ]
             )
             with get_db() as conn:
                 c = conn.cursor()
