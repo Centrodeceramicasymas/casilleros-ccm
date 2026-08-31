@@ -8757,68 +8757,16 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         with st.container(key="vista_catalogo"):
-            with st.container(key="catalogo_formulario"):
-                st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
-
-                modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
-
-                resultados_1688 = []
-                if modo_busq == "🔎 Por Nombre / Palabras":
-                    kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
-                    if st.button(
-                        "Buscar Productos en China ➔",
-                        type="primary",
-                        key="btn_buscar_china",
-                        use_container_width=True,
-                    ) and kw:
-                        with st.spinner("Consultando catálogo de 1688..."):
-                            resultados_1688 = buscar_productos_1688_texto(kw)
-                else:
-                    img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-                    if img_up and st.button(
-                        "Escanear Coincidencia Visual ➔",
-                        type="primary",
-                        key="btn_escanear_catalogo",
-                        use_container_width=True,
-                    ):
-                        with st.spinner("Buscando por reconocimiento visual..."):
-                            resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
-
-            if resultados_1688:
-                st.markdown("---")
-                for prod in resultados_1688:
-                    calc = calcular_costo_puesto_honduras(
-                        prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
-                    )
-
-                    c_img, c_det = st.columns([1, 1.8])
-                    with c_img:
-                        st.image(prod["imagen_url"], use_container_width=True)
-                    with c_det:
-                        st.markdown(f"**{prod['nombre']}**")
-                        st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
-                        st.markdown(
-                            f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
-                        )
-                        st.success(
-                            f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {destino_para_documentos()})*"
-                        )
-
-                        msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {destino_para_documentos()}. Enlace: {prod['url_proveedor']}"
-                        url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
-
-                        c_b1, c_b2 = st.columns(2)
-                        with c_b1:
-                            st.markdown(
-                                f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
-                                unsafe_allow_html=True,
-                            )
-                        with c_b2:
-                            st.markdown(
-                                f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
-                                unsafe_allow_html=True,
-                            )
-                    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div role="status" style="margin:42px 0;padding:38px 20px;text-align:center;
+                background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;color:#1e3a8a;">
+                    <div style="font-size:2.5rem;line-height:1;margin-bottom:14px;">🛍️</div>
+                    <div style="font-size:1.35rem;font-weight:800;">Catálogo próximamente disponible</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             espaciador_barra_inferior("safe_catalogo")
 
     elif (
