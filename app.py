@@ -35,6 +35,9 @@ GATEWAY_DEFAULT = "https://api-sg.aliexpress.com/sync"
 TIMEOUT_S = 25
 PAGE_SIZE = 20
 TZ_CN = timezone(timedelta(hours=8))
+ENLACE_DOCUMENTO_CLIENTES = (
+    "https://drive.google.com/file/d/1OevqlVTqsWSWb_R95QBTAOJq5h_F7kiK/view?usp=sharing"
+)
 
 ORDEN_API = {
     "Más vendidos": "LAST_VOLUME_DESC",
@@ -3031,6 +3034,11 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
+        st.link_button(
+            "📘 Abrir documento para clientes",
+            ENLACE_DOCUMENTO_CLIENTES,
+            use_container_width=True,
+        )
 
 
 def pintar_vista_mas():
