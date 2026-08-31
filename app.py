@@ -17,6 +17,8 @@ import hmac
 import json
 import html
 import re
+import queue
+import threading
 
 import requests
 
@@ -711,6 +713,7 @@ def _llamar_con_reintentos(method, biz_params, image_bytes=None):
     raise ultimo or AliExpressError("No se pudo firmar la consulta a AliExpress.")
 
 
+@st.cache_data(ttl=60, max_entries=128, show_spinner=False)
 def buscar_aliexpress_texto(keyword, min_usd=0, max_usd=0, orden="Más vendidos"):
     kw = (keyword or "").strip()
     if not kw:
@@ -750,6 +753,7 @@ def buscar_aliexpress_texto(keyword, min_usd=0, max_usd=0, orden="Más vendidos"
     return _resultado(productos, fuente="api", metodo="aliexpress.affiliate.product.query")
 
 
+@st.cache_data(ttl=60, max_entries=64, show_spinner=False)
 def buscar_aliexpress_imagen(image_bytes, min_usd=0, max_usd=0, orden="Más vendidos"):
     if not image_bytes:
         return _resultado([], error="Cargue una imagen JPG o PNG del producto.", fuente="none")
@@ -895,16 +899,20 @@ class CursorPostgresCompatible:
 
     def execute(self, sql, params=None):
         sql_original = str(sql)
-        self._cursor.execute(traducir_sql_postgres(sql_original), params or ())
+        sql_pg = traducir_sql_postgres(sql_original)
+        tabla_con_id = re.match(
+            r"^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(cotizaciones|direcciones_entrega)\b",
+            sql_original,
+            flags=re.I,
+        )
+        if tabla_con_id and "RETURNING" not in sql_pg.upper():
+            sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+        self._cursor.execute(sql_pg, params or ())
         self.rowcount = self._cursor.rowcount
         self.lastrowid = None
-        if re.match(r"^\s*INSERT\b", sql_original, flags=re.I) and self.rowcount:
-            try:
-                self._cursor.execute("SELECT LASTVAL()")
-                fila = self._cursor.fetchone()
-                self.lastrowid = int(fila[0]) if fila else None
-            except Exception:
-                self.lastrowid = None
+        if tabla_con_id and self.rowcount:
+            fila = self._cursor.fetchone()
+            self.lastrowid = int(fila[0]) if fila else None
         return self
 
     def executemany(self, sql, params_seq):
@@ -922,9 +930,68 @@ class CursorPostgresCompatible:
         return getattr(self._cursor, nombre)
 
 
+class PoolPostgresSimple:
+    """Pool acotado y seguro para hilos, sin dependencias adicionales."""
+
+    def __init__(self, dsn, min_size=1, max_size=8, timeout=20):
+        self.dsn = dsn
+        self.max_size = max(1, int(max_size))
+        self.timeout = max(1, int(timeout))
+        self._disponibles = queue.LifoQueue(maxsize=self.max_size)
+        self._creadas = 0
+        self._lock = threading.Lock()
+        for _ in range(min(max(0, int(min_size)), self.max_size)):
+            self._disponibles.put(self._nueva_conexion())
+
+    def _nueva_conexion(self):
+        conexion = psycopg.connect(self.dsn, connect_timeout=self.timeout)
+        with self._lock:
+            self._creadas += 1
+        return conexion
+
+    def obtener(self):
+        try:
+            conexion = self._disponibles.get_nowait()
+        except queue.Empty:
+            with self._lock:
+                puede_crear = self._creadas < self.max_size
+                if puede_crear:
+                    self._creadas += 1
+            if puede_crear:
+                try:
+                    conexion = psycopg.connect(self.dsn, connect_timeout=self.timeout)
+                except Exception:
+                    with self._lock:
+                        self._creadas = max(0, self._creadas - 1)
+                    raise
+            else:
+                conexion = self._disponibles.get(timeout=self.timeout)
+        if getattr(conexion, "closed", False) or getattr(conexion, "broken", False):
+            with self._lock:
+                self._creadas = max(0, self._creadas - 1)
+            conexion = self._nueva_conexion()
+        return conexion
+
+    def devolver(self, conexion, descartar=False):
+        if descartar or getattr(conexion, "closed", False) or getattr(conexion, "broken", False):
+            try:
+                conexion.close()
+            finally:
+                with self._lock:
+                    self._creadas = max(0, self._creadas - 1)
+            return
+        try:
+            self._disponibles.put_nowait(conexion)
+        except queue.Full:
+            conexion.close()
+            with self._lock:
+                self._creadas = max(0, self._creadas - 1)
+
+
 class ConexionPostgresCompatible:
-    def __init__(self, conexion):
+    def __init__(self, conexion, pool=None):
         self._conexion = conexion
+        self._pool = pool
 
     def cursor(self):
         return CursorPostgresCompatible(self._conexion.cursor())
@@ -942,13 +1009,29 @@ class ConexionPostgresCompatible:
         return self
 
     def __exit__(self, tipo_error, valor_error, traza):
+        descartar = False
         try:
             if tipo_error is None:
-                self.commit()
+                try:
+                    self.commit()
+                except Exception:
+                    descartar = True
+                    try:
+                        self.rollback()
+                    except Exception:
+                        pass
+                    raise
             else:
-                self.rollback()
+                try:
+                    self.rollback()
+                except Exception:
+                    descartar = True
+                descartar = descartar or bool(getattr(self._conexion, "broken", False))
         finally:
-            self._conexion.close()
+            if self._pool is None:
+                self._conexion.close()
+            else:
+                self._pool.devolver(self._conexion, descartar=descartar)
         return False
 LOGO_FILENAME = "logo_ccm_print.jpg"
 RUTAS_LOGO = (
@@ -962,6 +1045,7 @@ VIGENCIA_COTIZACION_HORAS = 1
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
 VIGENCIA_COTIZACION_CONFIRMADA_HORAS = 48
 VIGENCIA_COTIZACION_CONFIRMADA = timedelta(hours=VIGENCIA_COTIZACION_CONFIRMADA_HORAS)
+HISTORIAL_COTIZACIONES_MAX = 500
 FORMATOS_FECHA_COTIZACION = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S.%f",
@@ -1100,15 +1184,12 @@ def texto_vigencia_cotizacion_confirmada(fecha_confirmacion, ahora=None):
 
 def leer_config_moneda(clave, valor_default):
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT valor FROM config_sistema WHERE clave = ?", (clave,))
-            row = cur.fetchone()
-            if row and row[0] not in (None, ""):
-                try:
-                    return float(row[0])
-                except ValueError:
-                    return row[0]
+        valor = get_config_sistema(clave, "")
+        if valor not in (None, ""):
+            try:
+                return float(valor)
+            except (TypeError, ValueError):
+                return valor
     except Exception:
         pass
     try:
@@ -1551,8 +1632,9 @@ def cargar_cotizaciones_db(casillero):
             FROM cotizaciones
             WHERE codigo_casillero IN ({marcadores})
             ORDER BY fecha_creacion DESC, id DESC
+            LIMIT ?
             """,
-            variantes,
+            (*variantes, HISTORIAL_COTIZACIONES_MAX),
         )
         return cur.fetchall()
 
@@ -1596,14 +1678,17 @@ def cargar_paquetes_db(casillero):
         ).fetchall()
 
 
-def hidratar_cotizaciones_sesion(casillero):
+def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
     cas, lista = bolsa_cotizaciones_sesion(casillero)
     if not cas:
         return
     conocidos = {int(r.get("id") or 0) for r in lista}
     try:
-        confirmaciones = cargar_confirmaciones_db(cas)
-        for fila in cargar_cotizaciones_db(cas):
+        if filas_db is None:
+            filas_db = cargar_cotizaciones_db(cas)
+        if confirmaciones is None:
+            confirmaciones = cargar_confirmaciones_db(cas)
+        for fila in filas_db:
             cid = int(fila[0])
             if cid in conocidos:
                 continue
@@ -1631,21 +1716,34 @@ def hidratar_cotizaciones_sesion(casillero):
 def filas_cotizaciones_casillero(casillero, ahora=None):
     cas = formatear_casillero(casillero or "")
     ahora = ahora or obtener_tiempo_honduras()
-    hidratar_cotizaciones_sesion(cas)
-    by_id = {}
     try:
-        for fila in cargar_cotizaciones_db(cas):
-            by_id[int(fila[0])] = fila
+        filas_db = cargar_cotizaciones_db(cas)
+        confirmaciones_db = cargar_confirmaciones_db(cas)
     except Exception:
-        pass
+        filas_db = []
+        confirmaciones_db = {}
+    hidratar_cotizaciones_sesion(cas, filas_db=filas_db, confirmaciones=confirmaciones_db)
+    by_id = {}
+    for fila in filas_db:
+        by_id[int(fila[0])] = fila
     _, lista = bolsa_cotizaciones_sesion(cas)
+    ids_db = {int(fila[0]) for fila in filas_db}
+    lista[:] = [
+        reg for reg in lista
+        if int(reg.get("id") or 0) in ids_db
+        or cotizacion_visible_historial(
+            reg.get("fecha_creacion") or reg.get("fecha"),
+            reg.get("confirmada"),
+            ahora,
+            reg.get("fecha_confirmacion"),
+        )
+    ]
     for reg in lista:
         try:
             by_id[int(reg.get("id") or 0)] = registro_sesion_a_fila(reg)
         except (TypeError, ValueError):
             continue
     todas = ordenar_cotizaciones_desc([f for f in by_id.values() if f and f[0]])
-    confirmaciones_db = cargar_confirmaciones_db(cas)
     confirmaciones_sesion = {
         int(reg.get("id") or 0): reg.get("fecha_confirmacion")
         for reg in lista
@@ -1658,7 +1756,9 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
             confirmaciones_sesion.get(int(f[0])) or confirmaciones_db.get(int(f[0])),
         )
     ]
-    return todas, visibles
+    confirmaciones = dict(confirmaciones_db)
+    confirmaciones.update(confirmaciones_sesion)
+    return todas, visibles, confirmaciones
 
 
 def marcar_cotizacion_sesion_confirmada(id_cot, casillero, fecha_confirmacion=None):
@@ -1933,6 +2033,28 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
         return len(ids_borrar)
 
 
+@st.cache_resource(show_spinner=False)
+def estado_mantenimiento_db():
+    return {"lock": threading.Lock(), "ultima_purga": 0.0}
+
+
+def purgar_cotizaciones_si_corresponde(ahora=None, intervalo_s=300):
+    """Ejecuta el barrido SQLite una vez por proceso, no una vez por sesión."""
+    if USA_SUPABASE:
+        return 0
+    estado = estado_mantenimiento_db()
+    marca = datetime.now().timestamp()
+    if marca - float(estado.get("ultima_purga") or 0) < intervalo_s:
+        return 0
+    with estado["lock"]:
+        marca = datetime.now().timestamp()
+        if marca - float(estado.get("ultima_purga") or 0) < intervalo_s:
+            return 0
+        eliminadas = purgar_cotizaciones_no_confirmadas_vencidas(ahora)
+        estado["ultima_purga"] = marca
+        return eliminadas
+
+
 def vista_muestra_envios_fichas():
     """Envíos solo en la barra cuando el usuario está en Mis Cotizaciones o Envíos."""
     return st.session_state.get("sub_tab_inicio") in ("Mis Cotizaciones", "Mis Envíos")
@@ -2082,16 +2204,21 @@ def direcciones_sesion(casillero):
     return combinadas
 
 
-def opciones_entrega_desde_sesion(casillero):
+def opciones_entrega_desde_sesion(casillero, direcciones=None):
     """Reconstruye el desplegable desde SQLite en cada run: almacén → direcciones activas → Crear Nueva."""
     opciones = [OPCION_PREDETERMINADA]
-    try:
-        filas = cargar_direcciones_db(casillero)
-    except Exception as exc:
-        registrar_error_direcciones(exc, "Consulta directa para selector de entrega")
-        filas = []
-    for _, etiqueta, _, ciudad, _ in filas:
-        opciones.append(f"📍 {etiqueta} - {ciudad}")
+    if direcciones is None:
+        try:
+            filas = cargar_direcciones_db(casillero)
+            direcciones = [
+                {"etiqueta": fila[1], "ciudad": fila[3]}
+                for fila in filas
+            ]
+        except Exception as exc:
+            registrar_error_direcciones(exc, "Consulta directa para selector de entrega")
+            direcciones = []
+    for direccion in direcciones:
+        opciones.append(f"📍 {direccion.get('etiqueta', '')} - {direccion.get('ciudad', '')}")
     opciones.append("➕ Crear Nueva Dirección de Envío")
     return opciones
 
@@ -3333,7 +3460,7 @@ def anclar_barra_inferior():
                     el.style.setProperty("opacity", "0", "important");
                   });
                   const vista = rootDoc.defaultView || win;
-                  rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
+                  rootDoc.querySelectorAll("button, a, iframe").forEach((el) => {
                     if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
                     if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
                     const etiqueta = ((el.innerText || el.getAttribute("aria-label") || el.title || "") + "").replace(/\\s+/g, " ").trim();
@@ -3376,7 +3503,8 @@ def anclar_barra_inferior():
                     clearTimeout(espera);
                     espera = setTimeout(anclar, 60);
                   };
-                  new MutationObserver(anclarSuave).observe(doc.body, { childList: true, subtree: true });
+                  const raizObservada = doc.querySelector("[data-testid='stAppViewContainer']") || doc.body;
+                  new MutationObserver(anclarSuave).observe(raizObservada, { childList: true, subtree: true });
                 } catch (e) {}
               }
             })();
@@ -3618,7 +3746,7 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 
-@st.cache_data(show_spinner=False, max_entries=256)
+@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
 def generar_pdf_etiqueta_proveedor(
     casillero,
     nombre,
@@ -3700,7 +3828,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 
-@st.cache_data(show_spinner=False, max_entries=256)
+@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
 def generar_pdf_confirmacion_cotizacion(
     casillero,
     nombre,
@@ -3828,9 +3956,16 @@ def verificar_pwd(password, almacenada):
     return hmac.compare_digest(anterior, valor)
 
 
+@st.cache_resource(show_spinner=False)
+def obtener_pool_postgres():
+    max_size = int(os.environ.get("CCM_DB_POOL_MAX", "8") or 8)
+    return PoolPostgresSimple(DATABASE_URL, min_size=1, max_size=max_size, timeout=20)
+
+
 def get_db():
     if USA_SUPABASE:
-        return ConexionPostgresCompatible(psycopg.connect(DATABASE_URL, connect_timeout=20))
+        pool = obtener_pool_postgres()
+        return ConexionPostgresCompatible(pool.obtener(), pool=pool)
     conn = sqlite3.connect(DB_NAME, timeout=30)
     # Evita que una escritura breve de otro ciclo de Streamlit haga que el
     # botón parezca no responder; SQLite espera hasta 30 segundos por el lock.
@@ -4055,10 +4190,56 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
             "ON direcciones_entrega(codigo_casillero, activa, id)"
         )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_dni ON usuarios(dni)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_correo_normalizado "
+            "ON usuarios(LOWER(TRIM(correo_principal)))"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_rol_nombre "
+            "ON usuarios(rol, nombre_completo)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_carrito_casillero_sku "
+            "ON carrito_catalogo(codigo_casillero, sku)"
+        )
 
         # No se crean usuarios, contraseñas ni datos de demostración en un
         # arranque de producción. Las cuentas se gestionan desde el panel
         # administrativo o mediante el bootstrap protegido por Secrets.
+
+
+def asegurar_indices_rendimiento():
+    """Crea los índices de las rutas críticas tanto en SQLite como PostgreSQL."""
+    sentencias = (
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_fecha "
+        "ON cotizaciones(codigo_casillero, fecha_creacion DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_confirmada "
+        "ON cotizaciones(codigo_casillero, confirmada, fecha_confirmacion)",
+        "CREATE INDEX IF NOT EXISTS idx_paquetes_casillero "
+        "ON paquetes(codigo_casillero, fecha_actualizacion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
+        "ON direcciones_entrega(codigo_casillero, activa, id)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_dni ON usuarios(dni)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_correo_normalizado "
+        "ON usuarios(LOWER(TRIM(correo_principal)))",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_rol_nombre "
+        "ON usuarios(rol, nombre_completo)",
+        "CREATE INDEX IF NOT EXISTS idx_carrito_casillero_sku "
+        "ON carrito_catalogo(codigo_casillero, sku)",
+    )
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            for sentencia in sentencias:
+                cursor.execute(sentencia)
+            conn.commit()
+        return True
+    except Exception as exc:
+        print(f"[CCM rendimiento] No se pudieron crear todos los índices: {exc}", flush=True)
+        return False
 
 
 @st.cache_resource(show_spinner=False)
@@ -4066,6 +4247,7 @@ def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
     init_db()
     asegurar_esquema_direcciones()
+    asegurar_indices_rendimiento()
     return True
 
 
@@ -4494,11 +4676,7 @@ if not st.session_state.get("_ccm_arranque_db_realizado"):
         abrir_permisos_todos_los_usuarios()
         restaurar_datos_operativos_cliente()
     st.session_state["_ccm_arranque_db_realizado"] = True
-marca_purga = float(st.session_state.get("_ccm_ultima_purga") or 0)
-ahora_purga = datetime.now().timestamp()
-if not USA_SUPABASE and ahora_purga - marca_purga >= 60:
-    purgar_cotizaciones_no_confirmadas_vencidas()
-    st.session_state["_ccm_ultima_purga"] = ahora_purga
+purgar_cotizaciones_si_corresponde()
 
 
 def generar_clave_provisional():
@@ -4858,6 +5036,7 @@ def _valor_numerico_producto(valor, unidad, destino):
     return numero
 
 
+@st.cache_data(ttl=300, max_entries=128, show_spinner=False)
 def consultar_producto_enlace_eeuu(enlace):
     """Obtiene metadatos públicos de cualquier tienda que permita su lectura.
 
@@ -4876,11 +5055,21 @@ def consultar_producto_enlace_eeuu(enlace):
                 "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             },
-            timeout=12,
+            timeout=(3.05, 8),
             allow_redirects=True,
+            stream=True,
         )
         respuesta.raise_for_status()
-        pagina = respuesta.text
+        contenido = bytearray()
+        for bloque in respuesta.iter_content(chunk_size=65536):
+            contenido.extend(bloque)
+            if len(contenido) > 2_500_000:
+                respuesta.close()
+                return {"error": "La página es demasiado grande para procesarla automáticamente."}
+        codificacion = respuesta.encoding or "utf-8"
+        url_final = respuesta.url
+        respuesta.close()
+        pagina = contenido.decode(codificacion, errors="replace")
     except requests.RequestException as exc:
         return {"error": f"No se pudo consultar el enlace: {exc}"}
 
@@ -4903,7 +5092,7 @@ def consultar_producto_enlace_eeuu(enlace):
         "precio_usd": None,
         "moneda": meta("product:price:currency") or meta("og:price:currency") or "USD",
         "peso_lb": None, "ancho_in": None, "alto_in": None, "largo_in": None,
-        "url_final": respuesta.url,
+        "url_final": url_final,
     }
     precio_meta = meta("product:price:amount") or meta("og:price:amount")
     if precio_meta:
@@ -4990,13 +5179,14 @@ def consultar_producto_enlace_eeuu(enlace):
             except ValueError:
                 pass
     titulo_limpio = str(resultado.get("titulo") or "").strip()
-    host = urllib.parse.urlparse(respuesta.url).netloc.lower().removeprefix("www.")
+    host = urllib.parse.urlparse(url_final).netloc.lower().removeprefix("www.")
     if titulo_limpio.lower() in {host, host.replace(".com", ""), "amazon.com", "walmart.com", "ebay.com"}:
         resultado["titulo"] = ""
     resultado["descripcion"] = str(resultado.get("descripcion") or "").strip()[:900]
     return resultado
 
 
+@st.cache_data(ttl=600, max_entries=128, show_spinner=False)
 def descargar_imagen_producto(url):
     """Descarga la imagen al servidor para evitar bloqueos de hotlink en el navegador."""
     if not str(url or "").startswith(("https://", "http://")):
@@ -5005,11 +5195,20 @@ def descargar_imagen_producto(url):
         respuesta = requests.get(
             url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
-            timeout=10,
+            timeout=(3.05, 6),
+            stream=True,
         )
         tipo = respuesta.headers.get("content-type", "").lower()
-        if respuesta.ok and tipo.startswith("image/") and len(respuesta.content) <= 5_000_000:
-            return respuesta.content
+        if respuesta.ok and tipo.startswith("image/"):
+            contenido = bytearray()
+            for bloque in respuesta.iter_content(chunk_size=65536):
+                contenido.extend(bloque)
+                if len(contenido) > 5_000_000:
+                    respuesta.close()
+                    return None
+            respuesta.close()
+            return bytes(contenido)
+        respuesta.close()
     except requests.RequestException:
         pass
     return None
@@ -8372,12 +8571,8 @@ elif st.session_state["rol"] == "cliente":
     ahora_hn = obtener_tiempo_honduras()
     # La purga ya se ejecutó al arrancar y se limita a intervalos para que
     # navegar o pulsar botones no dispare una operación completa en la BD.
-    marca_purga_cliente = float(st.session_state.get("_ccm_ultima_purga") or 0)
-    if not USA_SUPABASE and datetime.now().timestamp() - marca_purga_cliente >= 60:
-        purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
-        st.session_state["_ccm_ultima_purga"] = datetime.now().timestamp()
+    purgar_cotizaciones_si_corresponde(ahora_hn)
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
-    hidratar_cotizaciones_sesion(casillero)
     nombre_completo = str(st.session_state.get("nombre") or "Cliente")
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
@@ -8403,10 +8598,10 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
-    lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
+    lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = direcciones_sesion(casillero)
-    opciones_modalidad = opciones_entrega_desde_sesion(casillero)
+    opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
     crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
     mod_actual = st.session_state.get("modalidad_envio_seleccionada")
     previa_destino = st.session_state.get("destino_entrega_activo")
@@ -8582,7 +8777,7 @@ elif st.session_state["rol"] == "cliente":
                 for cot in cotizaciones_render:
                     id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                     consolidada = es_cotizacion_confirmada(conf_c)
-                    fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot_item, casillero)
+                    fecha_confirmacion = confirmaciones_cotizaciones.get(int(id_cot_item))
                     estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn, fecha_confirmacion)
                     color_estado = "#1d4ed8" if consolidada else "#166534"
                     icono_estado = "✅" if consolidada else "⏳"
@@ -9119,7 +9314,7 @@ elif st.session_state["rol"] == "cliente":
                     )
                     fecha_confirmacion = (
                         d_pdf.get("fecha_confirmacion")
-                        or fecha_confirmacion_cotizacion(id_c, casillero)
+                        or confirmaciones_cotizaciones.get(int(id_c))
                     )
                     tarifa_sigue_visible = (
                         cotizacion_confirmada_vigente(
@@ -9298,7 +9493,7 @@ elif st.session_state["rol"] == "cliente":
                         desplazar_a_ancla("cotizacion-envio-foco")
                     id_ancla_env = f'id="cotizacion-env-{id_e}"'
                     estado_envio = texto_estado_cotizacion(
-                        fec_e, conf_e, ahora_hn, fecha_confirmacion_cotizacion(id_e, casillero)
+                        fec_e, conf_e, ahora_hn, confirmaciones_cotizaciones.get(int(id_e))
                     )
                     aviso_seguimiento = (
                         '<div style="margin:10px 0 8px;padding:8px 10px;border-radius:8px;'
@@ -9465,11 +9660,15 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
 
-    tab_u, tab_p, tab_t, tab_s = st.tabs(
-        ["👥 Usuarios y permisos", "📦 Paquetes", "⚙️ Tarifas y fórmulas", "🗄️ Sistema"]
+    admin_seccion = st.segmented_control(
+        "Sección administrativa",
+        options=["Usuarios", "Paquetes", "Tarifas", "Sistema"],
+        default="Usuarios",
+        label_visibility="collapsed",
+        key="admin_seccion",
     )
 
-    with tab_u:
+    if admin_seccion == "Usuarios":
         with get_db() as conn:
             c = conn.cursor()
             if root:
@@ -9478,6 +9677,7 @@ elif es_rol_admin():
                     SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
                            departamento, ciudad, direccion_exacta, rol, activo
                     FROM usuarios ORDER BY rol DESC, nombre_completo
+                    LIMIT 500
                     """
                 )
             else:
@@ -9486,6 +9686,7 @@ elif es_rol_admin():
                     SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
                            departamento, ciudad, direccion_exacta, rol, activo
                     FROM usuarios WHERE rol = 'cliente' ORDER BY nombre_completo
+                    LIMIT 500
                     """
                 )
             filas = c.fetchall()
@@ -9653,7 +9854,7 @@ elif es_rol_admin():
                     except sqlite3.IntegrityError:
                         st.error("Ya existe un casillero o correo con esos datos.")
 
-    with tab_p:
+    if admin_seccion == "Paquetes":
         t_in = st.text_input("Tracking de China")
         c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-15011985 o DNI del cliente")
         d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
@@ -9691,7 +9892,7 @@ elif es_rol_admin():
             else:
                 st.warning("Ingrese tracking y casillero.")
 
-    with tab_t:
+    if admin_seccion == "Tarifas":
         st.markdown("#### Tarifas y constantes del cotizador")
         n_lb = st.number_input("Tarifa por libra China (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
@@ -9712,7 +9913,7 @@ elif es_rol_admin():
             set_config_sistema("COMISION_CCM_PORCENTAJE", n_com, "Comisión CCM sobre FOB")
             st.success("Parámetros globales actualizados.")
 
-    with tab_s:
+    if admin_seccion == "Sistema":
         st.markdown("#### Mantenimiento de base de datos")
         with get_db() as conn:
             c = conn.cursor()
