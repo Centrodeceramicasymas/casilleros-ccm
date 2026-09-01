@@ -19,6 +19,9 @@ import html
 import re
 import queue
 import threading
+import secrets
+import ipaddress
+import socket
 
 import requests
 
@@ -946,8 +949,18 @@ class PoolPostgresSimple:
         for _ in range(min(max(0, int(min_size)), self.max_size)):
             self._disponibles.put(self._nueva_conexion())
 
+    def _abrir_conexion(self):
+        return psycopg.connect(
+            self.dsn,
+            connect_timeout=self.timeout,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        )
+
     def _nueva_conexion(self):
-        conexion = psycopg.connect(self.dsn, connect_timeout=self.timeout)
+        conexion = self._abrir_conexion()
         with self._lock:
             self._creadas += 1
         return conexion
@@ -962,7 +975,7 @@ class PoolPostgresSimple:
                     self._creadas += 1
             if puede_crear:
                 try:
-                    conexion = psycopg.connect(self.dsn, connect_timeout=self.timeout)
+                    conexion = self._abrir_conexion()
                 except Exception:
                     with self._lock:
                         self._creadas = max(0, self._creadas - 1)
@@ -1577,6 +1590,15 @@ def registrar_error_direcciones(exc, contexto):
         pass
 
 
+def registrar_error_datos(exc, contexto):
+    """Registra detalles en servidor y deja un aviso no sensible para la interfaz."""
+    print(f"[CCM datos] {contexto}: {exc}", flush=True)
+    try:
+        st.session_state["_ccm_error_datos"] = True
+    except Exception:
+        pass
+
+
 def invalidar_cache_direcciones():
     """Si la carga llega a cachearse, fuerza relectura inmediata tras escribir."""
     clear = getattr(cargar_direcciones_db, "clear", None)
@@ -1631,7 +1653,7 @@ def cargar_cotizaciones_db(casillero):
         cur.execute(
             f"""
             SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
-                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
+                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0), fecha_confirmacion
             FROM cotizaciones
             WHERE codigo_casillero IN ({marcadores})
             ORDER BY fecha_creacion DESC, id DESC
@@ -1644,23 +1666,15 @@ def cargar_cotizaciones_db(casillero):
 
 @st.cache_data(ttl=20, show_spinner=False)
 def cargar_confirmaciones_db(casillero):
-    """Carga todas las fechas de confirmación en una consulta y evita el patrón N+1."""
+    """Reutiliza el snapshot limitado de cotizaciones; no abre otra conexión."""
     cas = formatear_casillero(casillero or "")
-    variantes = coincidencias_casillero(cas)
-    if not variantes:
+    if not cas:
         return {}
-    marcadores = ",".join("?" * len(variantes))
-    with get_db() as conn:
-        filas = conn.execute(
-            f"""
-            SELECT id, fecha_confirmacion
-            FROM cotizaciones
-            WHERE codigo_casillero IN ({marcadores})
-              AND fecha_confirmacion IS NOT NULL
-            """,
-            variantes,
-        ).fetchall()
-    return {int(cid): fecha for cid, fecha in filas if fecha}
+    return {
+        int(fila[0]): fila[9]
+        for fila in cargar_cotizaciones_db(cas)
+        if len(fila) > 9 and fila[9]
+    }
 
 
 @st.cache_data(ttl=15, show_spinner=False)
@@ -1690,7 +1704,11 @@ def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
         if filas_db is None:
             filas_db = cargar_cotizaciones_db(cas)
         if confirmaciones is None:
-            confirmaciones = cargar_confirmaciones_db(cas)
+            confirmaciones = {
+                int(fila[0]): fila[9]
+                for fila in filas_db
+                if len(fila) > 9 and fila[9]
+            }
         for fila in filas_db:
             cid = int(fila[0])
             if cid in conocidos:
@@ -1712,8 +1730,8 @@ def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
                 }
             )
             conocidos.add(cid)
-    except Exception:
-        pass
+    except Exception as exc:
+        registrar_error_datos(exc, "Hidratación de cotizaciones")
 
 
 def filas_cotizaciones_casillero(casillero, ahora=None):
@@ -1721,14 +1739,19 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
     ahora = ahora or obtener_tiempo_honduras()
     try:
         filas_db = cargar_cotizaciones_db(cas)
-        confirmaciones_db = cargar_confirmaciones_db(cas)
-    except Exception:
+        confirmaciones_db = {
+            int(fila[0]): fila[9]
+            for fila in filas_db
+            if len(fila) > 9 and fila[9]
+        }
+    except Exception as exc:
+        registrar_error_datos(exc, "Carga del historial de cotizaciones")
         filas_db = []
         confirmaciones_db = {}
     hidratar_cotizaciones_sesion(cas, filas_db=filas_db, confirmaciones=confirmaciones_db)
     by_id = {}
     for fila in filas_db:
-        by_id[int(fila[0])] = fila
+        by_id[int(fila[0])] = fila[:9]
     _, lista = bolsa_cotizaciones_sesion(cas)
     ids_db = {int(fila[0]) for fila in filas_db}
     lista[:] = [
@@ -2013,6 +2036,42 @@ def emitir_tarifa_desde_snapshot():
 
 def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
     ahora = ahora or obtener_tiempo_honduras()
+    if USA_SUPABASE:
+        limite_pendiente = (ahora - VIGENCIA_COTIZACION).strftime("%Y-%m-%d %H:%M:%S")
+        limite_confirmada = (ahora - VIGENCIA_COTIZACION_CONFIRMADA).strftime("%Y-%m-%d %H:%M:%S")
+        expresion_pendiente = "COALESCE(NULLIF(fecha_creacion::text, ''), fecha::text)"
+        expresion_confirmada = (
+            "COALESCE(NULLIF(fecha_confirmacion::text, ''), "
+            "NULLIF(fecha_creacion::text, ''), fecha::text)"
+        )
+        patron_iso = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT pg_try_advisory_xact_lock(?)", (74219031,))
+            bloqueo = cur.fetchone()
+            if not bloqueo or not bloqueo[0]:
+                return 0
+            cur.execute(
+                f"""
+                DELETE FROM cotizaciones
+                WHERE (
+                    COALESCE(confirmada, FALSE) = FALSE
+                    AND {expresion_pendiente} ~ ?
+                    AND {expresion_pendiente} < ?
+                ) OR (
+                    COALESCE(confirmada, FALSE) = TRUE
+                    AND {expresion_confirmada} ~ ?
+                    AND {expresion_confirmada} < ?
+                )
+                """,
+                (patron_iso, limite_pendiente, patron_iso, limite_confirmada),
+            )
+            eliminadas = max(0, int(cur.rowcount or 0))
+            conn.commit()
+        if eliminadas:
+            cargar_cotizaciones_db.clear()
+            cargar_confirmaciones_db.clear()
+        return eliminadas
     with get_db() as conn:
         cur = conn.cursor()
         try:
@@ -2042,9 +2101,7 @@ def estado_mantenimiento_db():
 
 
 def purgar_cotizaciones_si_corresponde(ahora=None, intervalo_s=300):
-    """Ejecuta el barrido SQLite una vez por proceso, no una vez por sesión."""
-    if USA_SUPABASE:
-        return 0
+    """Ejecuta mantenimiento una vez por proceso; PostgreSQL añade un bloqueo global."""
     estado = estado_mantenimiento_db()
     marca = datetime.now().timestamp()
     if marca - float(estado.get("ultima_purga") or 0) < intervalo_s:
@@ -3181,363 +3238,6 @@ def anclar_barra_inferior():
     # En algunos navegadores podía ocultar la vista completa, dejando una
     # pantalla blanca. Las reglas CSS de la aplicación ya fijan esta barra.
     return
-    with st.container(key="bottom_nav_pin"):
-        components.html(
-            """
-            <script>
-            (function () {
-              const doc = window.parent.document;
-              const win = window.parent;
-              const nodoNav = () =>
-                doc.querySelector('[class~="st-key-bottom_nav"]') ||
-                doc.querySelector(".st-key-bottom_nav");
-              const anclar = () => {
-                const nav = nodoNav();
-                if (nav) {
-                  nav.style.setProperty("position", "fixed", "important");
-                  nav.style.setProperty("bottom", "20px", "important");
-                  nav.style.setProperty("left", "50%", "important");
-                  nav.style.setProperty("right", "auto", "important");
-                  nav.style.setProperty("margin", "0", "important");
-                  nav.style.setProperty("transform", "translateX(-50%)", "important");
-                  nav.style.setProperty("z-index", "9999", "important");
-                  nav.style.setProperty("width", "min(96vw, 520px)", "important");
-                  nav.style.setProperty("max-width", "520px", "important");
-                  const cajaNav = nav.closest('[data-testid="stElementContainer"]') || nav.parentElement;
-                  if (cajaNav && cajaNav !== doc.body) {
-                    cajaNav.style.setProperty("height", "0", "important");
-                    cajaNav.style.setProperty("min-height", "0", "important");
-                    cajaNav.style.setProperty("margin", "0", "important");
-                    cajaNav.style.setProperty("padding", "0", "important");
-                    cajaNav.style.setProperty("overflow", "visible", "important");
-                    cajaNav.style.setProperty("border", "0", "important");
-                  }
-                }
-                const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
-                const inicio = doc.querySelector('[class~="st-key-vista_inicio"]') || doc.querySelector(".st-key-vista_inicio");
-                const catalogo = doc.querySelector('[class~="st-key-vista_catalogo"]') || doc.querySelector(".st-key-vista_catalogo");
-                const cotizador = doc.querySelector('[class~="st-key-vista_cotizador"]') || doc.querySelector(".st-key-vista_cotizador");
-                const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
-                  doc.querySelector(".st-key-btn_logout_cliente") ||
-                  Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
-                const accion = doc.querySelector('[class~="st-key-btn_confirmar_tarifa"]') ||
-                  doc.querySelector(".st-key-btn_confirmar_tarifa");
-                const vistaModulo = catalogo || cotizador;
-                const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                const envios = doc.querySelector('[class~="st-key-vista_envios"]') || doc.querySelector(".st-key-vista_envios");
-                let hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
-                if (mas || vistaModulo || inicio || envios) hueco = "0px";
-                else if (historial) hueco = "calc(var(--ccm-nav-clearance, 109px) + 16px)";
-                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
-                  el.style.setProperty("padding-bottom", hueco, "important");
-                });
-                if (inicio) {
-                  inicio.style.setProperty("padding-bottom", "180px", "important");
-                  inicio.style.setProperty("box-sizing", "border-box", "important");
-                }
-                const GAP_OBJETIVO = 12;
-                const esVistaMas = (nodo) =>
-                  !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
-                if (vistaModulo || mas) {
-                  doc.querySelectorAll("[data-testid='stBottomBlockContainer']").forEach((el) => {
-                    el.style.setProperty("min-height", "0px", "important");
-                    el.style.setProperty("padding-top", "0px", "important");
-                    el.style.setProperty("padding-bottom", "0px", "important");
-                    el.style.setProperty("margin-top", "0px", "important");
-                    el.style.setProperty("margin-bottom", "0px", "important");
-                  });
-                }
-                const dockVista = (caja, ancla) => {
-                  if (!caja || !nav) return;
-                  const navCaja = nav.getBoundingClientRect();
-                  const app = doc.querySelector(".stApp") || doc.documentElement;
-                  const isMas = esVistaMas(caja);
-                  if (isMas) {
-                    const sesion = caja.querySelector('[class~="st-key-mas_sesion"]') || caja.querySelector(".st-key-mas_sesion");
-                    const safeMas = caja.querySelector('[class~="st-key-safe_mas"]') || caja.querySelector(".st-key-safe_mas");
-                    let sesionHost = sesion;
-                    if (sesionHost) {
-                      while (sesionHost.parentElement && sesionHost.parentElement !== caja) {
-                        sesionHost = sesionHost.parentElement;
-                      }
-                    }
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    const tieneModulos = !!(caja.querySelector('[class~="st-key-mas_modulos"]') || caja.querySelector(".st-key-mas_modulos"));
-                    if (tieneModulos) {
-                      // Valor fijo: no depende del scroll, evitando ciclos de medición y vibración.
-                      caja.style.setProperty("display", "block", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "calc(140px + env(safe-area-inset-bottom, 0px))", "important");
-                      if (sesionHost) {
-                        sesionHost.style.setProperty("margin-top", "0px", "important");
-                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
-                      }
-                    } else {
-                      // Sin módulos, la cuenta y la sesión se presentan como un bloque compacto.
-                      caja.style.setProperty("display", "block", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "112px", "important");
-                      if (sesionHost) {
-                        sesionHost.style.setProperty("margin-top", "48px", "important");
-                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
-                        sesionHost.style.setProperty("padding-bottom", "0px", "important");
-                      }
-                    }
-                    if (safeMas) {
-                      safeMas.style.setProperty("height", "0px", "important");
-                      safeMas.style.setProperty("min-height", "0px", "important");
-                      safeMas.style.setProperty("margin", "0px", "important");
-                      safeMas.style.setProperty("padding", "0px", "important");
-                      safeMas.style.setProperty("overflow", "hidden", "important");
-                    }
-                    return;
-                  }
-                  const formDir = caja.querySelector('[class~="st-key-formulario_direcciones"]') || caja.querySelector(".st-key-formulario_direcciones");
-                  if (formDir) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    caja.style.setProperty("height", "auto", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "0px", "important");
-                    formDir.style.setProperty("display", "flex", "important");
-                    formDir.style.setProperty("flex-direction", "column", "important");
-                    formDir.style.setProperty("height", "auto", "important");
-                    formDir.style.setProperty("min-height", "0", "important");
-                    formDir.style.setProperty("padding-bottom", "220px", "important");
-                    return;
-                  }
-                  const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
-                  const host = form || caja;
-                  const posteriores = [];
-                  let nodoRef = form || (ancla && ancla.parentElement);
-                  while (nodoRef && nodoRef !== caja) {
-                    let sig = nodoRef.nextElementSibling;
-                    while (sig) {
-                      posteriores.push(sig);
-                      sig = sig.nextElementSibling;
-                    }
-                    nodoRef = nodoRef.parentElement;
-                  }
-                  const hayMas = posteriores.some((ch) =>
-                    ch.querySelector("button, a, img, [data-testid='stDownloadButton']")
-                  );
-                  const esCatalogo = !!(caja && ((caja.className || "").indexOf("st-key-vista_catalogo") >= 0));
-                  if (esCatalogo) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    if (form) {
-                      form.style.setProperty("display", "flex", "important");
-                      form.style.setProperty("flex-direction", "column", "important");
-                      form.style.setProperty("width", "100%", "important");
-                      form.style.setProperty("flex", "0 0 auto", "important");
-                      form.style.setProperty("min-height", "0", "important");
-                    }
-                    const itemCat = ancla ? Array.from((form || caja).children).find((ch) => ch.contains(ancla)) : null;
-                    if (itemCat) itemCat.style.setProperty("margin-top", "0", "important");
-                    if (hayMas) {
-                      caja.style.setProperty("justify-content", "flex-start", "important");
-                      caja.style.setProperty("padding-bottom", "180px", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                    } else {
-                      caja.style.setProperty("justify-content", "center", "important");
-                      caja.style.setProperty("padding-top", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                      const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                      const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                      caja.style.setProperty("min-height", minH + "px", "important");
-                    }
-                    return;
-                  }
-                  if (form) {
-                    form.style.setProperty("display", "flex", "important");
-                    form.style.setProperty("flex-direction", "column", "important");
-                    form.style.setProperty("width", "100%", "important");
-                    form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                    form.style.setProperty("min-height", hayMas ? "0" : "100%", "important");
-                  }
-                  if (!hayMas && form) {
-                    const cadena = [];
-                    let p = form.parentElement;
-                    while (p && p !== caja) {
-                      cadena.push(p);
-                      p = p.parentElement;
-                    }
-                    cadena.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                  }
-                  const hijosHost = Array.from(host.children);
-                  const item = ancla ? hijosHost.find((ch) => ch.contains(ancla)) : null;
-                  if (form) form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                  if (item) {
-                    if (hayMas) item.style.setProperty("margin-top", "0", "important");
-                    else item.style.setProperty("margin-top", "auto", "important");
-                  }
-                  caja.style.setProperty("box-sizing", "border-box", "important");
-                  const emitAcciones = caja.querySelector('[class~="st-key-acciones_emit_cotizador"]') ||
-                    caja.querySelector(".st-key-acciones_emit_cotizador");
-                  if (emitAcciones) {
-                    caja.style.setProperty("display", "flex", "important");
-                    caja.style.setProperty("flex-direction", "column", "important");
-                    caja.style.setProperty("justify-content", "flex-start", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                    const cajaTopEmit = Math.max(0, caja.getBoundingClientRect().top);
-                    caja.style.setProperty("min-height", Math.max(0, Math.round(win.innerHeight - cajaTopEmit)) + "px", "important");
-                    emitAcciones.style.setProperty("margin-top", "auto", "important");
-                    emitAcciones.style.setProperty("margin-bottom", "0px", "important");
-                    const cadenaEmit = [];
-                    let pEmit = emitAcciones.parentElement;
-                    while (pEmit && pEmit !== caja) {
-                      cadenaEmit.push(pEmit);
-                      pEmit = pEmit.parentElement;
-                    }
-                    cadenaEmit.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                    if (item) item.style.setProperty("margin-top", "0", "important");
-                    return;
-                  }
-                  if (hayMas) {
-                    caja.style.setProperty("padding-bottom", "200px", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    return;
-                  }
-                  const scrollTop = app.scrollTop || 0;
-                  const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
-                  const vistaLarga = maxScroll > 80;
-                  if (scrollTop < 4 || !vistaLarga) {
-                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                    const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                    caja.style.setProperty("min-height", minH + "px", "important");
-                  } else {
-                    caja.style.setProperty("min-height", "0px", "important");
-                  }
-                  if (!ancla) return;
-                  const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
-                  const anclaNow = ancla.getBoundingClientRect().bottom;
-                  const anclaAtMax = anclaNow + scrollTop - maxScroll;
-                  const objetivo = navCaja.top - GAP_OBJETIVO;
-                  const enPantalla = anclaNow <= win.innerHeight + 8 && anclaNow >= 40;
-                  const referencia = (!vistaLarga || (scrollTop < 4 && enPantalla)) ? anclaNow : anclaAtMax;
-                  let nextPad = Math.round(currentPad + (referencia - objetivo));
-                  nextPad = Math.max(0, Math.min(160, nextPad));
-                  caja.style.setProperty("padding-bottom", nextPad + "px", "important");
-                };
-                if (mas) {
-                  doc.querySelectorAll("[data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'], .stMainBlockContainer > [data-testid='stVerticalBlock']").forEach((col) => {
-                    col.style.setProperty("gap", "0px", "important");
-                    col.style.setProperty("row-gap", "0px", "important");
-                  });
-                }
-                if (mas && nav) dockVista(mas, logout);
-                if (!mas && vistaModulo && nav) dockVista(vistaModulo, accion);
-                const chromeCss =
-                  '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
-                  '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
-                  '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
-                  '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
-                  '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
-                  '[data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stMainMenu"],' +
-                  '[data-testid="stHeader"] [data-testid="stBaseButton-header"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],' +
-                  '[data-testid="stHeader"] button[title="Deploy"], #recordMenuPopoverButton,' +
-                  'iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i],' +
-                  'a[href*="share.streamlit.io"], a[href*="streamlit.io/cloud"]' +
-                  ' { display:none !important; visibility:hidden !important;' +
-                  ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
-                const inyectarCss = (rootDoc) => {
-                  if (!rootDoc || !rootDoc.documentElement) return;
-                  let tag = rootDoc.getElementById("ccm-hide-chrome");
-                  if (!tag) {
-                    tag = rootDoc.createElement("style");
-                    tag.id = "ccm-hide-chrome";
-                    rootDoc.documentElement.appendChild(tag);
-                  }
-                  tag.textContent = chromeCss;
-                };
-                const docs = [doc];
-                try {
-                  if (win.parent && win.parent.document && win.parent.document !== doc) {
-                    docs.push(win.parent.document);
-                  }
-                } catch (e) {}
-                try {
-                  if (win.top && win.top.document && win.top.document !== doc) {
-                    docs.push(win.top.document);
-                  }
-                } catch (e) {}
-                docs.forEach((rootDoc) => {
-                  inyectarCss(rootDoc);
-                  rootDoc.querySelectorAll(
-                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], #recordMenuPopoverButton, iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i]'
-                  ).forEach((el) => {
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    el.style.setProperty("display", "none", "important");
-                    el.style.setProperty("visibility", "hidden", "important");
-                    el.style.setProperty("pointer-events", "none", "important");
-                    el.style.setProperty("opacity", "0", "important");
-                  });
-                  const vista = rootDoc.defaultView || win;
-                  rootDoc.querySelectorAll("button, a, iframe").forEach((el) => {
-                    if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    const etiqueta = ((el.innerText || el.getAttribute("aria-label") || el.title || "") + "").replace(/\\s+/g, " ").trim();
-                    if (/^(Manage app|Deploy this app|Deploy|Stop|Record a screencast|Record)$/i.test(etiqueta)) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                      return;
-                    }
-                    const stilo = vista.getComputedStyle(el);
-                    if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
-                    const r = el.getBoundingClientRect();
-                    if (r.width === 0 || r.height === 0 || r.width > 280 || r.height > 140) return;
-                    if (r.right > vista.innerWidth - 180 && r.bottom > vista.innerHeight - 180) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                    }
-                  });
-                });
-              };
-              anclar();
-              setTimeout(anclar, 80);
-              setTimeout(anclar, 280);
-              setTimeout(anclar, 800);
-              if (!win.__ccmBottomNavBound) {
-                win.__ccmBottomNavBound = true;
-                win.addEventListener("resize", anclar, { passive: true });
-                win.addEventListener("orientationchange", anclar, { passive: true });
-                const appScroll = doc.querySelector(".stApp");
-                if (appScroll) {
-                  appScroll.addEventListener("scroll", () => {
-                    if (win.__ccmDockScrollTO) win.cancelAnimationFrame(win.__ccmDockScrollTO);
-                    win.__ccmDockScrollTO = win.requestAnimationFrame(anclar);
-                  }, { passive: true });
-                }
-                try {
-                  let espera;
-                  const anclarSuave = () => {
-                    clearTimeout(espera);
-                    espera = setTimeout(anclar, 60);
-                  };
-                  const raizObservada = doc.querySelector("[data-testid='stAppViewContainer']") || doc.body;
-                  new MutationObserver(anclarSuave).observe(raizObservada, { childList: true, subtree: true });
-                } catch (e) {}
-              }
-            })();
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -3818,14 +3518,16 @@ def generar_pdf_etiqueta_proveedor(
 (================================================================) Tj
 /F1 11 Tf
 0 -18 Td
-(SHIP TO / WAREHOUSE IN CHINA [CHILAT]:) Tj
+(SHIP TO / WAREHOUSE IN SHANGHAI, CHINA:) Tj
 /F1 9 Tf
 0 -14 Td
 (ATTN / RECEIVER : CHILAT / {casillero}) Tj
 0 -12 Td
-(ADDRESS : CHILAT Logistics Warehouse, District B, Port Area, Guangzhou) Tj
+(ADDRESS : No. 1333 Renmintang Road, Heqing Town) Tj
 0 -12 Td
-(WAREHOUSE TEL : +86 138 0000 0000) Tj
+(          Pudong New Area, Shanghai, China) Tj
+0 -12 Td
+(NOTIFY 3 DAYS BEFORE SHIPPING: WHATSAPP +504 9577-1099) Tj
 0 -22 Td
 (================================================================) Tj
 /F1 10 Tf
@@ -3933,14 +3635,16 @@ def generar_pdf_confirmacion_cotizacion(
 (================================================================) Tj
 /F1 10 Tf
 0 -16 Td
-(DIRECCION DE BODEGA EN GUANGZHOU, CHINA:) Tj
+(DIRECCION DE BODEGA EN SHANGHAI, CHINA:) Tj
 /F1 8 Tf
 0 -13 Td
 (ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
 0 -11 Td
-(DIRECCION EN GUANGZHOU: CHILAT Logistics Warehouse, District B, Port Area) Tj
+(DIRECCION: No. 1333 Renmintang Road, Heqing Town) Tj
 0 -11 Td
-(TELEFONO EN CHINA    : +86 138 0000 0000) Tj
+(           Pudong New Area, Shanghai, China) Tj
+0 -11 Td
+(NOTIFICAR 3 DIAS ANTES: WHATSAPP +504 9577-1099) Tj
 0 -18 Td
 (================================================================) Tj
 /F1 8 Tf
@@ -3979,6 +3683,55 @@ def verificar_pwd(password, almacenada):
     # Compatibilidad de una sola vez con cuentas creadas antes de esta mejora.
     anterior = hashlib.sha256(str(password).encode("utf-8")).hexdigest()
     return hmac.compare_digest(anterior, valor)
+
+
+@st.cache_resource(show_spinner=False)
+def estado_intentos_acceso():
+    return {"lock": threading.Lock(), "fallos": {}}
+
+
+def clave_intento_acceso(identificador):
+    normalizado = normalizar_correo(identificador)
+    return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
+
+
+def comprobar_limite_acceso(identificador, max_intentos=5, ventana_s=600, bloqueo_s=300):
+    estado = estado_intentos_acceso()
+    clave = clave_intento_acceso(identificador)
+    ahora = datetime.now().timestamp()
+    with estado["lock"]:
+        fallos = [t for t in estado["fallos"].get(clave, []) if ahora - t < ventana_s]
+        estado["fallos"][clave] = fallos
+        if len(fallos) < max_intentos:
+            return True, 0
+        restante = max(0, int(bloqueo_s - (ahora - fallos[-1])))
+        if restante <= 0:
+            estado["fallos"].pop(clave, None)
+            return True, 0
+        return False, restante
+
+
+def registrar_fallo_acceso(identificador, ventana_s=600):
+    estado = estado_intentos_acceso()
+    clave = clave_intento_acceso(identificador)
+    ahora = datetime.now().timestamp()
+    with estado["lock"]:
+        fallos = [t for t in estado["fallos"].get(clave, []) if ahora - t < ventana_s]
+        fallos.append(ahora)
+        estado["fallos"][clave] = fallos[-10:]
+        if len(estado["fallos"]) > 5000:
+            limite = ahora - ventana_s
+            estado["fallos"] = {
+                k: [t for t in valores if t >= limite]
+                for k, valores in estado["fallos"].items()
+                if any(t >= limite for t in valores)
+            }
+
+
+def limpiar_fallos_acceso(identificador):
+    estado = estado_intentos_acceso()
+    with estado["lock"]:
+        estado["fallos"].pop(clave_intento_acceso(identificador), None)
 
 
 @st.cache_resource(show_spinner=False)
@@ -4318,6 +4071,29 @@ def get_config_sistema(clave, valor_default=""):
         return valor_default
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def obtener_conteos_tablas():
+    """Evita recalcular conteos completos en cada interacción administrativa."""
+    with get_db() as conn:
+        c = conn.cursor()
+        if USA_SUPABASE:
+            c.execute(
+                """
+                SELECT relname, GREATEST(n_live_tup, 0)::BIGINT
+                FROM pg_stat_user_tables
+                ORDER BY relname
+                """
+            )
+            return {str(tabla): int(conteo or 0) for tabla, conteo in c.fetchall()}
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tablas = [r[0] for r in c.fetchall()]
+        conteos = {}
+        for tabla in tablas:
+            c.execute(f'SELECT COUNT(*) FROM "{tabla}"')
+            conteos[tabla] = int(c.fetchone()[0])
+        return conteos
+
+
 def set_config_sistema(clave, valor, descripcion=""):
     with get_db() as conn:
         c = conn.cursor()
@@ -4407,6 +4183,20 @@ def permisos_default(rol="cliente"):
     }
 
 
+def permisos_denegados():
+    """Estado seguro cuando no es posible demostrar los permisos del usuario."""
+    return {
+        "hub_china": 0,
+        "hub_eeuu": 0,
+        "hub_honduras": 0,
+        "mod_cotizador": 0,
+        "mod_catalogo": 0,
+        "mod_cotizaciones": 0,
+        "mod_envios": 0,
+        "mod_fichas": 0,
+    }
+
+
 def asegurar_permisos_casillero(casillero, rol="cliente"):
     cas = formatear_casillero(casillero)
     if not cas:
@@ -4460,7 +4250,7 @@ def abrir_permisos_todos_los_usuarios():
 
 def permisos_de(casillero=None):
     cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
-    base = permisos_default(st.session_state.get("rol", "cliente"))
+    base = permisos_denegados()
     if not cas:
         return base
     clave_cache = f"_ccm_permisos_{cas}"
@@ -4497,7 +4287,9 @@ def permisos_de(casillero=None):
         permisos = dict(zip(claves, [int(v or 0) for v in row]))
         st.session_state[clave_cache] = permisos
         return permisos
-    except Exception:
+    except Exception as exc:
+        print(f"[CCM permisos] No se pudieron validar permisos para {cas}: {exc}", flush=True)
+        st.session_state["_ccm_error_permisos"] = True
         return base
 
 
@@ -4706,7 +4498,7 @@ purgar_cotizaciones_si_corresponde()
 
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
-    return "".join(random.choice(caracteres) for _ in range(8))
+    return "".join(secrets.choice(caracteres) for _ in range(12))
 
 
 def normalizar_correo(correo):
@@ -5061,6 +4853,54 @@ def _valor_numerico_producto(valor, unidad, destino):
     return numero
 
 
+def validar_url_publica(url):
+    """Rechaza destinos locales, privados o reservados antes de una petición saliente."""
+    texto = str(url or "").strip()
+    parsed = urllib.parse.urlparse(texto)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("El enlace debe usar HTTP o HTTPS y contener un dominio válido.")
+    if parsed.username or parsed.password:
+        raise ValueError("El enlace no puede incluir credenciales.")
+    puerto = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        destinos = socket.getaddrinfo(parsed.hostname, puerto, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError("No se pudo resolver el dominio del enlace.") from exc
+    direcciones = {registro[4][0].split("%", 1)[0] for registro in destinos}
+    if not direcciones:
+        raise ValueError("El dominio no devolvió una dirección válida.")
+    for direccion in direcciones:
+        try:
+            ip = ipaddress.ip_address(direccion)
+        except ValueError as exc:
+            raise ValueError("El dominio devolvió una dirección no válida.") from exc
+        if not ip.is_global:
+            raise ValueError("No se permiten enlaces a redes privadas, locales o reservadas.")
+    return texto
+
+
+def abrir_url_publica(url, headers, timeout, max_redirecciones=3):
+    """Abre una URL pública y revalida cada salto de redirección."""
+    actual = validar_url_publica(url)
+    for _ in range(max_redirecciones + 1):
+        respuesta = requests.get(
+            actual,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=False,
+            stream=True,
+        )
+        if respuesta.status_code in (301, 302, 303, 307, 308):
+            destino = respuesta.headers.get("location")
+            respuesta.close()
+            if not destino:
+                raise requests.TooManyRedirects("Redirección sin destino.")
+            actual = validar_url_publica(urllib.parse.urljoin(actual, destino))
+            continue
+        return respuesta
+    raise requests.TooManyRedirects("El enlace superó el máximo de redirecciones permitido.")
+
+
 @st.cache_data(ttl=300, max_entries=128, show_spinner=False)
 def consultar_producto_enlace_eeuu(enlace):
     """Obtiene metadatos públicos de cualquier tienda que permita su lectura.
@@ -5070,10 +4910,8 @@ def consultar_producto_enlace_eeuu(enlace):
     completar la ficha manualmente.
     """
     url = str(enlace or "").strip()
-    if not url.startswith(("https://", "http://")):
-        return {"error": "Pegue un enlace completo que comience con https://."}
     try:
-        respuesta = requests.get(
+        respuesta = abrir_url_publica(
             url,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -5081,8 +4919,6 @@ def consultar_producto_enlace_eeuu(enlace):
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             },
             timeout=(3.05, 8),
-            allow_redirects=True,
-            stream=True,
         )
         respuesta.raise_for_status()
         contenido = bytearray()
@@ -5095,7 +4931,7 @@ def consultar_producto_enlace_eeuu(enlace):
         url_final = respuesta.url
         respuesta.close()
         pagina = contenido.decode(codificacion, errors="replace")
-    except requests.RequestException as exc:
+    except (requests.RequestException, ValueError) as exc:
         return {"error": f"No se pudo consultar el enlace: {exc}"}
 
     pagina_baja = pagina.lower()
@@ -5214,14 +5050,11 @@ def consultar_producto_enlace_eeuu(enlace):
 @st.cache_data(ttl=600, max_entries=128, show_spinner=False)
 def descargar_imagen_producto(url):
     """Descarga la imagen al servidor para evitar bloqueos de hotlink en el navegador."""
-    if not str(url or "").startswith(("https://", "http://")):
-        return None
     try:
-        respuesta = requests.get(
+        respuesta = abrir_url_publica(
             url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
             timeout=(3.05, 6),
-            stream=True,
         )
         tipo = respuesta.headers.get("content-type", "").lower()
         if respuesta.ok and tipo.startswith("image/"):
@@ -5234,7 +5067,7 @@ def descargar_imagen_producto(url):
             respuesta.close()
             return bytes(contenido)
         respuesta.close()
-    except requests.RequestException:
+    except (requests.RequestException, ValueError):
         pass
     return None
 
@@ -5512,78 +5345,6 @@ def restaurar_sesion_persistente():
     """
     return bool(st.session_state.get("autenticado", False))
 
-    try:
-        params = st.query_params
-        cas_param = params.get("casillero", "")
-        if isinstance(cas_param, list):
-            cas_param = cas_param[0] if cas_param else ""
-        cas_param = str(cas_param).strip()
-
-        if not cas_param:
-            return False
-
-        claves = coincidencias_casillero(cas_param)
-        placeholders = ",".join("?" * len(claves))
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute(
-                f"""
-                SELECT id, codigo_casillero, nombre_completo, correo_principal,
-                       rol, activo, telefono_principal, ciudad
-                FROM usuarios
-                WHERE codigo_casillero IN ({placeholders}) AND activo = 1
-                """,
-                claves,
-            )
-            user_rec = c.fetchone()
-
-        if not user_rec:
-            return False
-
-        st.session_state["autenticado"] = True
-        st.session_state["rol"] = normalizar_rol(user_rec[4])
-        perfil_rest = cargar_perfil_usuario(user_rec[1])
-        if perfil_rest:
-            aplicar_perfil_en_sesion(perfil_rest)
-        else:
-            st.session_state["casillero"] = formatear_casillero(user_rec[1])
-            st.session_state["nombre"] = user_rec[2]
-            st.session_state["usuario"] = user_rec[3]
-            st.session_state["telefono"] = user_rec[6]
-            st.session_state["ciudad"] = user_rec[7]
-
-        vista_url = params.get("vista", "")
-        if isinstance(vista_url, list):
-            vista_url = vista_url[0] if vista_url else ""
-        hub_url = params.get("hub", "")
-        if isinstance(hub_url, list):
-            hub_url = hub_url[0] if hub_url else ""
-
-        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración", "Más", "Actividad", "Fichas"} | VISTAS_MODULO
-        if vista_url in ALIAS_VISTA:
-            vista_url = ALIAS_VISTA[vista_url]
-        if vista_url in vistas_validas:
-            st.session_state["sub_tab_inicio"] = vista_url
-            st.session_state["vista_activa"] = vista_url
-        if hub_url in HUBS:
-            st.session_state["hub"] = hub_url
-        elif vista_url in MODULOS_POR_ID:
-            st.session_state["hub"] = MODULOS_POR_ID[vista_url]
-        elif vista_url == "Inicio":
-            # Inicio sin parámetro hub significa que se deseleccionó el país de origen.
-            st.session_state["hub"] = None
-        elif vista_url == "China":
-            st.session_state["hub"] = "china"
-        elif vista_url == "EE. UU.":
-            st.session_state["hub"] = "eeuu"
-        elif vista_url == "Honduras":
-            st.session_state["hub"] = "honduras"
-
-        return True
-
-    except Exception:
-        return False
-
 
 restaurar_sesion_persistente()
 
@@ -5677,8 +5438,6 @@ def logout():
 st.markdown(
     """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@700&display=swap');
-
     :root {
         --app-max-width: 520px;
         --app-pad: 0.7rem;
@@ -5730,7 +5489,7 @@ st.markdown(
     }
 
     .stApp {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
         overflow-x: hidden !important;
         overflow-y: auto !important;
         height: 100% !important;
@@ -6976,7 +6735,7 @@ st.markdown(
     .st-key-vista_actividad {
         display: block !important;
         min-height: 0 !important;
-        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        padding-bottom: 0 !important;
         overflow: visible !important;
         box-sizing: border-box !important;
     }
@@ -8032,7 +7791,7 @@ st.markdown(
         border: 2px dashed #0052cc;
         border-radius: 12px;
         padding: 1.2rem;
-        font-family: 'Space Mono', monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         font-size: 0.82rem;
         color: #ffffff;
     }
@@ -8552,6 +8311,10 @@ if not st.session_state["autenticado"]:
             u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
             u_pass = st.session_state.get("log_pwd") or u_pass or ""
             if u_ident and u_pass:
+                permitido, espera_s = comprobar_limite_acceso(u_ident)
+                if not permitido:
+                    st.error(f"Demasiados intentos fallidos. Espere {max(1, math.ceil(espera_s / 60))} minuto(s).")
+                    st.stop()
                 u_correo = normalizar_correo(u_ident)
                 claves = coincidencias_casillero(u_ident)
                 placeholders = ",".join("?" * len(claves))
@@ -8568,6 +8331,7 @@ if not st.session_state["autenticado"]:
                     user = c.fetchone()
 
                 if user and verificar_pwd(u_pass, user[8]):
+                    limpiar_fallos_acceso(u_ident)
                     # Al entrar correctamente se actualiza de forma transparente
                     # cualquier hash SHA-256 legado a scrypt con sal.
                     if not str(user[8] or "").startswith("scrypt$"):
@@ -8597,6 +8361,7 @@ if not st.session_state["autenticado"]:
                         st.query_params["vista"] = "Inicio"
                         st.rerun()
                 else:
+                    registrar_fallo_acceso(u_ident)
                     st.error("❌ Credenciales inválidas.")
             else:
                 st.warning("Complete todos los campos.")
@@ -8818,25 +8583,25 @@ if not st.session_state["autenticado"]:
             st.rerun()
 
     elif st.session_state["vista_actual"] == "recuperar":
-        st.markdown("### 🔄 Restablecer Contraseña")
-        r_mail = st.text_input("Correo Registrado")
-        r_dni = st.text_input("o Número de Identidad (DNI)")
-        if st.button("Generar Nueva Contraseña", type="primary"):
-            with get_db() as conn:
-                c = conn.cursor()
-                c.execute(
-                    "SELECT id FROM usuarios WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ?",
-                    (normalizar_correo(r_mail), str(r_dni or "").strip()),
-                )
-                u = c.fetchone()
-            if u:
-                nueva_p = generar_clave_provisional()
-                with get_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(nueva_p), u[0]))
-                st.success(f"✅ Nueva clave: **{nueva_p}**")
-            else:
-                st.error("No se encontró una cuenta con ese correo o DNI.")
+        st.markdown("### 🔄 Recuperar acceso")
+        st.info(
+            "Por seguridad, una contraseña no puede cambiarse únicamente con un correo o DNI. "
+            "Solicite la verificación de identidad con soporte."
+        )
+        r_identidad = st.text_input(
+            "Correo o número de identidad registrado",
+            key="recuperar_identidad",
+        )
+        msg_recuperacion = urllib.parse.quote(
+            "Hola Centro de Cerámicas y Más. Solicito recuperar el acceso a mi casillero. "
+            f"Mi correo o identidad registrada es: {str(r_identidad or '').strip() or '[indicar dato]'}. "
+            "Entiendo que debo completar la verificación de identidad antes del restablecimiento."
+        )
+        st.link_button(
+            "💬 Solicitar verificación por WhatsApp",
+            f"https://wa.me/50495771099?text={msg_recuperacion}",
+            use_container_width=True,
+        )
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
@@ -8900,6 +8665,13 @@ elif st.session_state["rol"] == "cliente":
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = direcciones_sesion(casillero)
     opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
+    if st.session_state.pop("_ccm_error_permisos", False):
+        st.error(
+            "No fue posible validar los permisos de la cuenta. "
+            "Los módulos permanecerán bloqueados hasta recuperar la conexión."
+        )
+    if st.session_state.pop("_ccm_error_datos", False):
+        st.warning("No fue posible actualizar todos los datos. Intente nuevamente en unos segundos.")
     crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
     mod_actual = st.session_state.get("modalidad_envio_seleccionada")
     previa_destino = st.session_state.get("destino_entrega_activo")
@@ -8913,10 +8685,12 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
 
     with st.container(key="sticky_top_header"):
+        nombre_header = html.escape(nombre_display)
+        casillero_header = html.escape(casillero)
         st.markdown(
             html_encabezado_institucional(
-                f'<div class="app-greeting-title">{saludo_horario}, {nombre_display}</div>'
-                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
+                f'<div class="app-greeting-title">{saludo_horario}, {nombre_header}</div>'
+                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero_header}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
                 f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
             ),
             unsafe_allow_html=True,
@@ -9949,10 +9723,12 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
     titulo = "Panel de Superadministrador" if root else "Panel Administrativo"
+    admin_nombre = html.escape(str(st.session_state.get("nombre") or ""))
+    admin_usuario = html.escape(str(st.session_state.get("usuario") or ""))
     st.markdown(
         html_encabezado_institucional(
             f'<div class="app-greeting-title">{titulo}</div>'
-            f'<div class="app-greeting-sub">{st.session_state.get("nombre", "")} • {st.session_state.get("usuario", "")}</div>',
+            f'<div class="app-greeting-sub">{admin_nombre} • {admin_usuario}</div>',
             extra_style="margin-bottom:12px;",
         ),
         unsafe_allow_html=True,
@@ -10213,22 +9989,12 @@ elif es_rol_admin():
 
     if admin_seccion == "Sistema":
         st.markdown("#### Mantenimiento de base de datos")
-        with get_db() as conn:
-            c = conn.cursor()
-            if USA_SUPABASE:
-                c.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' ORDER BY table_name"
-                )
-            else:
-                c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-            tablas = [r[0] for r in c.fetchall()]
-            conteos = {}
-            for t in tablas:
-                c.execute(f"SELECT COUNT(*) FROM {t}")
-                conteos[t] = c.fetchone()[0]
+        conteos = obtener_conteos_tablas()
         st.dataframe(
-            {"Tabla": list(conteos.keys()), "Registros": list(conteos.values())},
+            {
+                "Tabla": list(conteos.keys()),
+                "Registros estimados" if USA_SUPABASE else "Registros": list(conteos.values()),
+            },
             use_container_width=True,
             hide_index=True,
         )
@@ -10237,7 +10003,7 @@ elif es_rol_admin():
         env_keys = sorted(k for k in os.environ if k.startswith(("STREAMLIT_", "CCM_")) or k in ("PORT", "HOSTNAME", "HOME"))
         if env_keys:
             st.dataframe(
-                {"Variable": env_keys, "Valor": [os.environ.get(k, "") for k in env_keys]},
+                {"Variable": env_keys, "Estado": ["Configurada" for _ in env_keys]},
                 use_container_width=True,
                 hide_index=True,
             )
