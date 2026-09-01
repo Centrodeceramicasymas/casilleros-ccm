@@ -9889,6 +9889,106 @@ elif es_rol_admin():
         <style>
             :root { --app-max-width: 920px; }
             .block-container { max-width: 920px !important; }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] {
+                background: #f1f5f9;
+                border: 1px solid #dbe3ee;
+                border-radius: 10px;
+                padding: 5px;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button {
+                min-height: 42px;
+                font-weight: 750;
+            }
+            .admin-section-heading {
+                margin: 20px 0 4px;
+                color: #0f172a;
+                font-size: 1.12rem;
+                font-weight: 850;
+            }
+            .admin-section-copy {
+                margin: 0 0 14px;
+                color: #64748b;
+                font-size: .86rem;
+            }
+            .admin-account-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin: 6px 0 16px;
+                padding: 14px 16px;
+                background: #f8fafc;
+                border: 1px solid #dbe3ee;
+                border-left: 4px solid #0f9f6e;
+                border-radius: 8px;
+            }
+            .admin-account-name { color: #0f172a; font-weight: 850; line-height: 1.3; }
+            .admin-account-meta { color: #64748b; font-size: .8rem; margin-top: 3px; }
+            .admin-account-badge {
+                flex: 0 0 auto;
+                padding: 5px 9px;
+                color: #075e45;
+                background: #dff7ed;
+                border: 1px solid #9ee4ca;
+                border-radius: 999px;
+                font-size: .72rem;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .st-key-admin_user_workspace {
+                margin-top: 14px;
+                padding: 16px 18px 18px;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 8px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+            }
+            .st-key-admin_user_workspace [data-baseweb="tab-list"] {
+                gap: 6px;
+                padding: 4px;
+                background: #f1f5f9;
+                border-radius: 8px;
+            }
+            .st-key-admin_user_workspace [data-baseweb="tab"] {
+                min-height: 40px;
+                border-radius: 6px;
+                font-weight: 750;
+            }
+            .st-key-admin_perm_hubs,
+            .st-key-admin_perm_modules,
+            .st-key-admin_security_box {
+                height: 100%;
+                padding: 14px 15px 10px;
+                background: #f8fafc;
+                border-color: #dbe3ee !important;
+                border-radius: 8px !important;
+            }
+            .st-key-admin_perm_hubs [data-testid="stCheckbox"],
+            .st-key-admin_perm_modules [data-testid="stCheckbox"] {
+                padding: 3px 0;
+            }
+            .st-key-adm_save_user button {
+                min-height: 46px;
+                margin-top: 14px;
+                font-weight: 850;
+            }
+            .st-key-admin_delete_zone {
+                margin-top: 18px;
+                padding: 13px 15px;
+                background: #fff7f7;
+                border: 1px solid #fecaca;
+                border-radius: 8px;
+            }
+            .st-key-admin_delete_zone button:not(:disabled) {
+                color: #b42318;
+                border-color: #f0a3a0;
+                background: #ffffff;
+            }
+            @media (max-width: 640px) {
+                .st-key-admin_user_workspace { padding: 12px; }
+                .admin-account-head { align-items: flex-start; }
+                .admin-account-badge { white-space: nowrap; }
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -9905,15 +10005,21 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
 
-    admin_seccion = st.segmented_control(
-        "Sección administrativa",
-        options=["Usuarios", "Paquetes", "Tarifas", "Sistema"],
-        default="Usuarios",
-        label_visibility="collapsed",
-        key="admin_seccion",
-    )
+    with st.container(key="admin_nav"):
+        admin_seccion = st.segmented_control(
+            "Sección administrativa",
+            options=["Usuarios", "Paquetes", "Tarifas", "Sistema"],
+            default="Usuarios",
+            label_visibility="collapsed",
+            key="admin_seccion",
+        )
 
     if admin_seccion == "Usuarios":
+        st.markdown(
+            '<div class="admin-section-heading">Usuarios y permisos</div>'
+            '<div class="admin-section-copy">Administre perfiles, accesos, credenciales y estado de las cuentas.</div>',
+            unsafe_allow_html=True,
+        )
         with get_db() as conn:
             c = conn.cursor()
             if root:
@@ -9937,6 +10043,13 @@ elif es_rol_admin():
             filas = c.fetchall()
 
         if filas:
+            total_cuentas = len(filas)
+            total_activas = sum(1 for r in filas if bool(r[10]))
+            total_gestores = sum(1 for r in filas if str(r[9] or "").lower() in ("admin", "superadmin"))
+            m_total, m_activas, m_gestores = st.columns(3, gap="medium")
+            m_total.metric("Cuentas", total_cuentas)
+            m_activas.metric("Activas", total_activas)
+            m_gestores.metric("Administradores", total_gestores)
             st.dataframe(
                 {
                     "Casillero": [formatear_casillero(r[1]) for r in filas],
@@ -9955,113 +10068,208 @@ elif es_rol_admin():
 
         etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
         if etiquetas:
-            elegido = st.selectbox("Cuenta a gestionar", etiquetas, key="admin_sel_user")
+            elegido = st.selectbox(
+                "Cuenta a gestionar",
+                etiquetas,
+                key="admin_sel_user",
+                help="Seleccione una cuenta para editar su perfil, permisos o credenciales.",
+            )
             idx = etiquetas.index(elegido)
             u = filas[idx]
             uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = u
             perm = permisos_de(cas_u)
+            estado_cuenta = "Activa" if bool(act_u) else "Inactiva"
+            rol_visible = html.escape(str(rol_u or "cliente"))
+            with st.container(key="admin_user_workspace"):
+                st.markdown(
+                    '<div class="admin-account-head">'
+                    '<div>'
+                    f'<div class="admin-account-name">{html.escape(str(nom_u or "Sin nombre"))}</div>'
+                    f'<div class="admin-account-meta">{html.escape(formatear_casillero(cas_u))} · {html.escape(str(cor_u or "Sin correo"))}</div>'
+                    '</div>'
+                    f'<span class="admin-account-badge">{rol_visible} · {estado_cuenta}</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
 
-            st.markdown("#### Perfil y casillero")
-            n_nom = st.text_input("Nombre completo", value=nom_u, key=f"adm_nom_{cas_u}")
-            n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
-            n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
-            n_tel = st.text_input("Teléfono", value=tel_u, key=f"adm_tel_{cas_u}")
-            n_dep = st.selectbox(
-                "Departamento",
-                list(MUNICIPIOS_HONDURAS.keys()),
-                index=list(MUNICIPIOS_HONDURAS.keys()).index(dep_u) if dep_u in MUNICIPIOS_HONDURAS else 0,
-                key=f"adm_dep_{cas_u}",
-            )
-            munis = MUNICIPIOS_HONDURAS[n_dep]
-            n_ciu = st.selectbox(
-                "Ciudad",
-                munis,
-                index=munis.index(ciu_u) if ciu_u in munis else 0,
-                key=f"adm_ciu_{cas_u}",
-            )
-            n_dir = st.text_area("Dirección", value=dir_u or "", key=f"adm_dir_{cas_u}")
-            n_cas = st.text_input("Casillero", value=formatear_casillero(cas_u), key=f"adm_cas_{cas_u}")
-            n_act = st.checkbox("Cuenta activa", value=bool(act_u), key=f"adm_act_{cas_u}")
-            roles_disp = ["cliente", "admin"]
-            if root:
-                roles_disp = ["cliente", "admin", "superadmin"]
-            n_rol = st.selectbox(
-                "Rol",
-                roles_disp,
-                index=roles_disp.index(rol_u) if rol_u in roles_disp else 0,
-                key=f"adm_rol_{cas_u}",
-                disabled=(rol_u == "superadmin" and not root),
-            )
+                tab_perfil, tab_permisos, tab_seguridad = st.tabs(
+                    ["👤 Perfil", "🔐 Permisos", "🛡️ Seguridad"]
+                )
 
-            st.markdown("#### Hubs y módulos (impacto inmediato en el cliente)")
-            p_china = st.checkbox("Hub China", value=bool(perm.get("hub_china")), key=f"adm_h_cn_{cas_u}")
-            p_eeuu = st.checkbox("Hub EE. UU.", value=bool(perm.get("hub_eeuu")), key=f"adm_h_us_{cas_u}")
-            p_hn = st.checkbox("Hub Honduras", value=bool(perm.get("hub_honduras")), key=f"adm_h_hn_{cas_u}")
-            p_cot = st.checkbox("Módulo Cotizador", value=bool(perm.get("mod_cotizador")), key=f"adm_m_cot_{cas_u}")
-            p_cat = st.checkbox("Módulo Catálogo", value=bool(perm.get("mod_catalogo")), key=f"adm_m_cat_{cas_u}")
-            p_hist = st.checkbox("Módulo Mis Cotizaciones", value=bool(perm.get("mod_cotizaciones")), key=f"adm_m_hist_{cas_u}")
-            p_env = st.checkbox("Módulo Envíos", value=bool(perm.get("mod_envios")), key=f"adm_m_env_{cas_u}")
-            p_fic = st.checkbox("Módulo Fichas", value=bool(perm.get("mod_fichas")), key=f"adm_m_fic_{cas_u}")
-
-            if st.button("Guardar perfil y permisos", type="primary", key="adm_save_user"):
-                nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
-                if rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
-                    st.error("Solo el superadministrador puede alterar la cuenta raíz.")
-                else:
-                    with get_db() as conn:
-                        cur = conn.cursor()
-                        if nuevo_cas != formatear_casillero(cas_u):
-                            _migrar_casillero_tablas(conn, cas_u, nuevo_cas)
-                        cur.execute(
-                            """
-                            UPDATE usuarios SET nombre_completo=?, dni=?, correo_principal=?, telefono_principal=?,
-                                departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
-                            WHERE id=?
-                            """,
-                            (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, bool(n_act), uid),
+                with tab_perfil:
+                    st.caption("Información de identidad, contacto y clasificación de la cuenta.")
+                    f1, f2 = st.columns(2, gap="medium")
+                    with f1:
+                        n_nom = st.text_input("Nombre completo", value=nom_u, key=f"adm_nom_{cas_u}")
+                    with f2:
+                        n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
+                    f3, f4 = st.columns(2, gap="medium")
+                    with f3:
+                        n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
+                    with f4:
+                        n_tel = st.text_input("Teléfono", value=tel_u, key=f"adm_tel_{cas_u}")
+                    f5, f6 = st.columns(2, gap="medium")
+                    with f5:
+                        n_dep = st.selectbox(
+                            "Departamento",
+                            list(MUNICIPIOS_HONDURAS.keys()),
+                            index=list(MUNICIPIOS_HONDURAS.keys()).index(dep_u) if dep_u in MUNICIPIOS_HONDURAS else 0,
+                            key=f"adm_dep_{cas_u}",
                         )
-                    guardar_permisos(
-                        nuevo_cas,
-                        {
-                            "hub_china": p_china,
-                            "hub_eeuu": p_eeuu,
-                            "hub_honduras": p_hn,
-                            "mod_cotizador": p_cot,
-                            "mod_catalogo": p_cat,
-                            "mod_cotizaciones": p_hist,
-                            "mod_envios": p_env,
-                            "mod_fichas": p_fic,
-                        },
+                    munis = MUNICIPIOS_HONDURAS[n_dep]
+                    with f6:
+                        n_ciu = st.selectbox(
+                            "Ciudad",
+                            munis,
+                            index=munis.index(ciu_u) if ciu_u in munis else 0,
+                            key=f"adm_ciu_{cas_u}",
+                        )
+                    n_dir = st.text_area("Dirección", value=dir_u or "", key=f"adm_dir_{cas_u}")
+                    f7, f8 = st.columns(2, gap="medium")
+                    with f7:
+                        n_cas = st.text_input(
+                            "Código de casillero",
+                            value=formatear_casillero(cas_u),
+                            key=f"adm_cas_{cas_u}",
+                        )
+                    roles_disp = ["cliente", "admin"]
+                    if root:
+                        roles_disp = ["cliente", "admin", "superadmin"]
+                    with f8:
+                        n_rol = st.selectbox(
+                            "Rol",
+                            roles_disp,
+                            index=roles_disp.index(rol_u) if rol_u in roles_disp else 0,
+                            key=f"adm_rol_{cas_u}",
+                            disabled=(rol_u == "superadmin" and not root),
+                        )
+                    n_act = st.toggle(
+                        "Cuenta habilitada para iniciar sesión",
+                        value=bool(act_u),
+                        key=f"adm_act_{cas_u}",
                     )
-                    st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
-                    st.rerun()
 
-            nueva_clave = st.text_input("Nueva contraseña (opcional)", type="password", key=f"adm_new_pwd_{cas_u}")
-            if st.button("Restablecer credenciales", key="adm_reset_pwd"):
-                clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
-                with get_db() as conn:
-                    conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(clave), uid))
-                st.success(f"Contraseña actualizada con almacenamiento seguro. Clave temporal: **{clave}**")
+                with tab_permisos:
+                    st.caption("Los cambios modifican de inmediato lo que el cliente puede ver y utilizar.")
+                    col_hubs, col_modulos = st.columns(2, gap="medium")
+                    with col_hubs:
+                        with st.container(border=True, key="admin_perm_hubs"):
+                            st.markdown("##### Acceso por país")
+                            st.caption("Habilita las áreas principales del portal.")
+                            p_china = st.toggle("🇨🇳 China", value=bool(perm.get("hub_china")), key=f"adm_h_cn_{cas_u}")
+                            p_eeuu = st.toggle("🇺🇸 Estados Unidos", value=bool(perm.get("hub_eeuu")), key=f"adm_h_us_{cas_u}")
+                            p_hn = st.toggle("🇭🇳 Honduras", value=bool(perm.get("hub_honduras")), key=f"adm_h_hn_{cas_u}")
+                    with col_modulos:
+                        with st.container(border=True, key="admin_perm_modules"):
+                            st.markdown("##### Herramientas habilitadas")
+                            st.caption("Control individual de cada módulo operativo.")
+                            p_cot = st.toggle("📐 Cotizador", value=bool(perm.get("mod_cotizador")), key=f"adm_m_cot_{cas_u}")
+                            p_cat = st.toggle("🛍️ Catálogo", value=bool(perm.get("mod_catalogo")), key=f"adm_m_cat_{cas_u}")
+                            p_hist = st.toggle("📄 Mis cotizaciones", value=bool(perm.get("mod_cotizaciones")), key=f"adm_m_hist_{cas_u}")
+                            p_env = st.toggle("📦 Envíos", value=bool(perm.get("mod_envios")), key=f"adm_m_env_{cas_u}")
+                            p_fic = st.toggle("🏷️ Fichas", value=bool(perm.get("mod_fichas")), key=f"adm_m_fic_{cas_u}")
 
-            if rol_u != "superadmin" and st.button("Eliminar cuenta", key="adm_del_user"):
-                with get_db() as conn:
-                    cur = conn.cursor()
-                    for tabla in ("permisos_usuario", "direcciones_entrega", "carrito_catalogo", "cotizaciones", "paquetes"):
-                        cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
-                    cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
-                st.success("Cuenta eliminada.")
-                st.rerun()
+                with tab_seguridad:
+                    st.caption("Cambie las credenciales o retire una cuenta del sistema.")
+                    with st.container(border=True, key="admin_security_box"):
+                        st.markdown("##### Restablecer contraseña")
+                        st.caption("Puede escribir una clave o dejar el campo vacío para generar una temporal.")
+                        nueva_clave = st.text_input(
+                            "Nueva contraseña",
+                            type="password",
+                            key=f"adm_new_pwd_{cas_u}",
+                            placeholder="Dejar vacío para generar automáticamente",
+                        )
+                        if st.button("🔑 Restablecer credenciales", key=f"adm_reset_pwd_{uid}"):
+                            clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
+                            with get_db() as conn:
+                                conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(clave), uid))
+                            st.success("Contraseña actualizada con almacenamiento seguro.")
+                            st.caption("Copie esta clave ahora; se muestra únicamente en esta ejecución.")
+                            st.code(clave, language="text")
 
-        with st.expander("➕ Crear cuenta"):
-            c_nom = st.text_input("Nombre *", key="new_nom")
-            c_dni = st.text_input("DNI *", key="new_dni")
-            c_cor = st.text_input("Correo *", key="new_cor")
-            c_tel = st.text_input("Teléfono *", key="new_tel")
-            c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
-            c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
+                    if rol_u != "superadmin":
+                        with st.container(key="admin_delete_zone"):
+                            st.markdown("##### Eliminar cuenta")
+                            st.caption("Esta acción también elimina permisos y registros asociados al casillero.")
+                            confirmar_borrado = st.checkbox(
+                                "Confirmo que deseo eliminar esta cuenta",
+                                key=f"adm_del_confirm_{uid}",
+                            )
+                            if st.button(
+                                "Eliminar cuenta definitivamente",
+                                key=f"adm_del_user_{uid}",
+                                disabled=not confirmar_borrado,
+                            ):
+                                with get_db() as conn:
+                                    cur = conn.cursor()
+                                    for tabla in ("permisos_usuario", "direcciones_entrega", "carrito_catalogo", "cotizaciones", "paquetes"):
+                                        cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
+                                    cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
+                                st.success("Cuenta eliminada.")
+                                st.rerun()
+
+                if st.button(
+                    "💾 Guardar perfil y permisos",
+                    type="primary",
+                    key="adm_save_user",
+                    use_container_width=True,
+                ):
+                    nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
+                    if rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
+                        st.error("Solo el superadministrador puede alterar la cuenta raíz.")
+                    else:
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            if nuevo_cas != formatear_casillero(cas_u):
+                                _migrar_casillero_tablas(conn, cas_u, nuevo_cas)
+                            cur.execute(
+                                """
+                                UPDATE usuarios SET nombre_completo=?, dni=?, correo_principal=?, telefono_principal=?,
+                                    departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
+                                WHERE id=?
+                                """,
+                                (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, bool(n_act), uid),
+                            )
+                        guardar_permisos(
+                            nuevo_cas,
+                            {
+                                "hub_china": p_china,
+                                "hub_eeuu": p_eeuu,
+                                "hub_honduras": p_hn,
+                                "mod_cotizador": p_cot,
+                                "mod_catalogo": p_cat,
+                                "mod_cotizaciones": p_hist,
+                                "mod_envios": p_env,
+                                "mod_fichas": p_fic,
+                            },
+                        )
+                        st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
+                        st.rerun()
+
+        with st.expander("➕ Crear una cuenta nueva"):
+            st.caption("Registre al usuario y asigne su rol inicial. Los permisos podrán ajustarse después.")
+            c1, c2 = st.columns(2, gap="medium")
+            with c1:
+                c_nom = st.text_input("Nombre completo *", key="new_nom")
+            with c2:
+                c_dni = st.text_input("DNI *", key="new_dni")
+            c3, c4 = st.columns(2, gap="medium")
+            with c3:
+                c_cor = st.text_input("Correo *", key="new_cor")
+            with c4:
+                c_tel = st.text_input("Teléfono *", key="new_tel")
+            c5, c6 = st.columns(2, gap="medium")
+            with c5:
+                c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
+            with c6:
+                c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
             c_dir = st.text_input("Dirección", key="new_dir")
-            c_pwd = st.text_input("Contraseña inicial", type="password", key="new_pwd")
-            c_rol = st.selectbox("Rol", ["cliente", "admin"] if root else ["cliente"], key="new_rol")
+            c7, c8 = st.columns(2, gap="medium")
+            with c7:
+                c_pwd = st.text_input("Contraseña inicial", type="password", key="new_pwd")
+            with c8:
+                c_rol = st.selectbox("Rol", ["cliente", "admin"] if root else ["cliente"], key="new_rol")
             if st.button("Crear usuario", type="primary", key="adm_create_user"):
                 if not (c_nom and c_dni and c_cor and c_tel):
                     st.warning("Complete los campos obligatorios.")
