@@ -1006,17 +1006,6 @@ def ordenar_cotizaciones_desc(filas, idx_fecha=7, idx_id=0):
     return sorted(filas, key=lambda r: clave_orden_cotizacion(r[idx_fecha], r[idx_id]))
 
 
-def pagina_registros(filas, clave, cantidad=10):
-    """Limita widgets renderizados; el usuario puede ampliar de diez en diez."""
-    total = len(filas)
-    limite = max(cantidad, int(st.session_state.get(clave, cantidad) or cantidad))
-    return list(filas[:limite]), total, limite
-
-
-def aumentar_limite_registros(clave, paso=10):
-    st.session_state[clave] = int(st.session_state.get(clave, paso) or paso) + paso
-
-
 def parsear_fecha_cotizacion(fecha_raw):
     if fecha_raw is None:
         return None
@@ -1437,11 +1426,6 @@ def fecha_confirmacion_cotizacion(id_cot, casillero=None):
     except (TypeError, ValueError):
         return None
     cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
-    if cas:
-        try:
-            return cargar_confirmaciones_db(cas).get(cid)
-        except Exception:
-            pass
     variantes = coincidencias_casillero(cas)
     try:
         with get_db() as conn:
@@ -1500,9 +1484,8 @@ def invalidar_cache_direcciones():
         clear()
 
 
-@st.cache_data(ttl=15, show_spinner=False)
 def cargar_direcciones_db(casillero):
-    """Lee direcciones con una caché breve; las escrituras la invalidan de inmediato.
+    """Lee SIEMPRE del archivo SQLite (sin @st.cache_data): F5, cambio de vista y re-login ven las filas reales.
 
     Busca con coincidencias_casillero: una fila guardada como 15011985 también aparece
     al consultar CCM-15011985 (y viceversa).
@@ -1557,52 +1540,12 @@ def cargar_cotizaciones_db(casillero):
         return cur.fetchall()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
-def cargar_confirmaciones_db(casillero):
-    """Carga todas las fechas de confirmación en una consulta y evita el patrón N+1."""
-    cas = formatear_casillero(casillero or "")
-    variantes = coincidencias_casillero(cas)
-    if not variantes:
-        return {}
-    marcadores = ",".join("?" * len(variantes))
-    with get_db() as conn:
-        filas = conn.execute(
-            f"""
-            SELECT id, fecha_confirmacion
-            FROM cotizaciones
-            WHERE codigo_casillero IN ({marcadores})
-              AND fecha_confirmacion IS NOT NULL
-            """,
-            variantes,
-        ).fetchall()
-    return {int(cid): fecha for cid, fecha in filas if fecha}
-
-
-@st.cache_data(ttl=15, show_spinner=False)
-def cargar_paquetes_db(casillero):
-    """Snapshot breve de paquetes para que la navegación no abra otra conexión."""
-    cas = formatear_casillero(casillero or "")
-    if not cas:
-        return []
-    with get_db() as conn:
-        return conn.execute(
-            """
-            SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion
-            FROM paquetes
-            WHERE codigo_casillero = ?
-            ORDER BY fecha_actualizacion DESC
-            """,
-            (cas,),
-        ).fetchall()
-
-
 def hidratar_cotizaciones_sesion(casillero):
     cas, lista = bolsa_cotizaciones_sesion(casillero)
     if not cas:
         return
     conocidos = {int(r.get("id") or 0) for r in lista}
     try:
-        confirmaciones = cargar_confirmaciones_db(cas)
         for fila in cargar_cotizaciones_db(cas):
             cid = int(fila[0])
             if cid in conocidos:
@@ -1620,7 +1563,7 @@ def hidratar_cotizaciones_sesion(casillero):
                     "fecha": fila[7],
                     "fecha_creacion": fila[7],
                     "confirmada": int(fila[8] or 0),
-                    "fecha_confirmacion": confirmaciones.get(cid),
+                    "fecha_confirmacion": fecha_confirmacion_cotizacion(cid, cas),
                 }
             )
             conocidos.add(cid)
@@ -1645,7 +1588,6 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
         except (TypeError, ValueError):
             continue
     todas = ordenar_cotizaciones_desc([f for f in by_id.values() if f and f[0]])
-    confirmaciones_db = cargar_confirmaciones_db(cas)
     confirmaciones_sesion = {
         int(reg.get("id") or 0): reg.get("fecha_confirmacion")
         for reg in lista
@@ -1655,7 +1597,7 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
         f for f in todas
         if cotizacion_visible_historial(
             f[7], f[8], ahora,
-            confirmaciones_sesion.get(int(f[0])) or confirmaciones_db.get(int(f[0])),
+            confirmaciones_sesion.get(int(f[0])) or fecha_confirmacion_cotizacion(f[0], cas),
         )
     ]
     return todas, visibles
@@ -1682,6 +1624,15 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     cas = formatear_casillero(casillero or "")
     if not cas:
         st.session_state["ultimo_error_confirmacion"] = "Casillero inválido."
+        return False
+    # Garantiza que una base desplegada con el esquema anterior reciba las
+    # columnas de confirmación antes de ejecutar el UPDATE.
+    try:
+        init_db()
+    except sqlite3.Error as exc:
+        detalle = f"No se pudo preparar el esquema de cotizaciones: {exc}"
+        print(detalle)
+        st.session_state["ultimo_error_confirmacion"] = detalle
         return False
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
@@ -1749,7 +1700,6 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
-        cargar_confirmaciones_db.clear()
     if actualizado:
         st.session_state.pop("ultimo_error_confirmacion", None)
         marcar_cotizacion_sesion_confirmada(cid, cas, fecha_confirmacion or ahora)
@@ -1854,7 +1804,6 @@ def emitir_tarifa_desde_snapshot():
             id_generado = cur.lastrowid
             conn.commit()
         cargar_cotizaciones_db.clear()
-        cargar_confirmaciones_db.clear()
     except Exception as exc:
         id_generado = None
         st.session_state["_ccm_emit_error"] = str(exc)
@@ -2332,33 +2281,6 @@ def ir_a(vista, hub="_omit"):
         st.query_params["hub"] = hub_actual
     elif "hub" in st.query_params:
         del st.query_params["hub"]
-
-
-def pintar_guias_informativas(guias):
-    """Muestra reglas de contexto como información estática, no como controles."""
-    paleta = {
-        "azul": ("#eff6ff", "#bfdbfe", "#1e3a8a"),
-        "verde": ("#f0fdf4", "#bbf7d0", "#166534"),
-        "naranja": ("#fff7ed", "#fed7aa", "#9a3412"),
-    }
-    tarjetas = []
-    for icono, titulo, descripcion, color in guias:
-        fondo, borde, texto = paleta[color]
-        tarjetas.append(
-            f'<div style="background:{fondo};border:1px solid {borde};border-radius:12px;'
-            f'padding:11px 12px;color:{texto};">'
-            f'<b>{html.escape(icono)} {html.escape(titulo)}</b><br>'
-            f'<span style="font-size:.86rem;">{descripcion}</span></div>'
-        )
-    st.markdown(
-        '<div role="note" aria-label="Información importante" '
-        'style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));'
-        'gap:10px;margin:12px 0 14px;">'
-        + "".join(tarjetas)
-        + "</div>",
-        unsafe_allow_html=True,
-    )
-    ir_a("Mis Cotizaciones", hub="china")
 
 
 def ir_a_inicio():
@@ -3069,7 +2991,11 @@ def anclar_barra_inferior():
                   doc.querySelector(".st-key-btn_logout_cliente") ||
                   Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
                 const accion = doc.querySelector('[class~="st-key-btn_confirmar_tarifa"]') ||
-                  doc.querySelector(".st-key-btn_confirmar_tarifa");
+                  doc.querySelector(".st-key-btn_confirmar_tarifa") ||
+                  doc.querySelector('[class~="st-key-btn_buscar_china"]') ||
+                  doc.querySelector(".st-key-btn_buscar_china") ||
+                  doc.querySelector('[class~="st-key-btn_escanear_catalogo"]') ||
+                  doc.querySelector(".st-key-btn_escanear_catalogo");
                 const vistaModulo = catalogo || cotizador;
                 const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
                 const envios = doc.querySelector('[class~="st-key-vista_envios"]') || doc.querySelector(".st-key-vista_envios");
@@ -3618,7 +3544,6 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 
-@st.cache_data(show_spinner=False, max_entries=256)
 def generar_pdf_etiqueta_proveedor(
     casillero,
     nombre,
@@ -3700,7 +3625,6 @@ ET"""
     return compilar_pdf_simple(stream)
 
 
-@st.cache_data(show_spinner=False, max_entries=256)
 def generar_pdf_confirmacion_cotizacion(
     casillero,
     nombre,
@@ -3867,10 +3791,6 @@ def init_db():
         return
     with get_db() as conn:
         c = conn.cursor()
-        # WAL permite lecturas mientras se realiza una escritura y NORMAL evita
-        # sincronizaciones de disco excesivas sin comprometer la integridad.
-        c.execute("PRAGMA journal_mode = WAL")
-        c.execute("PRAGMA synchronous = NORMAL")
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -4038,38 +3958,13 @@ def init_db():
             "INSERT OR IGNORE INTO config_sistema (clave, valor, descripcion) VALUES ('COMISION_CCM_PORCENTAJE', '0.10', 'Comisión CCM sobre FOB')"
         )
 
-        # Índices de las rutas más consultadas por cada rerun de Streamlit.
-        c.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_fecha "
-            "ON cotizaciones(codigo_casillero, fecha_creacion DESC, id DESC)"
-        )
-        c.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_confirmada "
-            "ON cotizaciones(codigo_casillero, confirmada, fecha_confirmacion)"
-        )
-        c.execute(
-            "CREATE INDEX IF NOT EXISTS idx_paquetes_casillero "
-            "ON paquetes(codigo_casillero, fecha_actualizacion DESC)"
-        )
-        c.execute(
-            "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
-            "ON direcciones_entrega(codigo_casillero, activa, id)"
-        )
-
         # No se crean usuarios, contraseñas ni datos de demostración en un
         # arranque de producción. Las cuentas se gestionan desde el panel
         # administrativo o mediante el bootstrap protegido por Secrets.
 
 
-@st.cache_resource(show_spinner=False)
-def inicializar_persistencia():
-    """Prepara esquema e índices una vez por proceso, no una vez por botón."""
-    init_db()
-    asegurar_esquema_direcciones()
-    return True
-
-
-inicializar_persistencia()
+init_db()
+asegurar_esquema_direcciones()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -4099,7 +3994,6 @@ def set_tarifa(clave, valor):
     get_tarifa.clear()
 
 
-@st.cache_data(ttl=120, show_spinner=False)
 def get_config_sistema(clave, valor_default=""):
     try:
         with get_db() as conn:
@@ -4121,8 +4015,6 @@ def set_config_sistema(clave, valor, descripcion=""):
             """,
             (clave, str(valor), descripcion),
         )
-        conn.commit()
-    get_config_sistema.clear()
 
 
 PREFIJO_CASILLERO = "CCM-"
@@ -6434,8 +6326,20 @@ st.markdown(
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
+    .st-key-btn_buscar_china,
+    .st-key-btn_escanear_catalogo {
+        width: 100% !important;
+        max-width: 100% !important;
+        display: block !important;
+        scroll-margin-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        margin-bottom: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
     .st-key-guia_foco_tarifa div.stButton,
-    .st-key-btn_confirmar_tarifa div.stButton {
+    .st-key-btn_confirmar_tarifa div.stButton,
+    .st-key-btn_buscar_china div.stButton,
+    .st-key-btn_escanear_catalogo div.stButton {
         width: 100% !important;
     }
     .st-key-guia_foco_tarifa div.stButton > button,
@@ -6455,6 +6359,18 @@ st.markdown(
         margin-bottom: 0 !important;
         margin-top: 0 !important;
     }
+    .st-key-btn_buscar_china div.stButton > button,
+    .st-key-btn_escanear_catalogo div.stButton > button,
+    .st-key-btn_buscar_china [data-testid^="stBaseButton"],
+    .st-key-btn_escanear_catalogo [data-testid^="stBaseButton"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 48px !important;
+        height: 48px !important;
+        max-height: none !important;
+        box-sizing: border-box !important;
+    }
+
     .mas-seccion {
         font-size: 0.75rem;
         font-weight: 800;
@@ -8544,15 +8460,17 @@ elif st.session_state["rol"] == "cliente":
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-            pintar_guias_informativas(
-                [
-                    ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
-                    ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
-                    ("📦", "Seguimiento y documentos", "El seguimiento y los PDFs están disponibles en <b>Mis Envíos</b>.", "verde"),
-                ]
+            st.markdown(
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
+                '<b>⏳ Tarifa pendiente</b><br><span style="font-size:.86rem;">Confírmela en <b>1 hora</b> antes de que venza.</span></div>'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
+                '<b>🛡️ Tarifa confirmada</b><br><span style="font-size:.86rem;">Permanece disponible durante <b>48 horas</b>.</span></div>'
+                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
+                '<b>📦 Seguimiento y documentos</b><br><span style="font-size:.86rem;">Consulte y descargue sus PDFs desde Mis Envíos.</span></div>'
+                '</div>',
+                unsafe_allow_html=True,
             )
-            # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
-            st.session_state.pop("filtro_historial_cotizaciones", None)
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
             error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
             if confirmada_flash:
@@ -8580,11 +8498,8 @@ elif st.session_state["rol"] == "cliente":
                             *clave_orden_cotizacion(r[7], r[0]),
                         ),
                     )
-                cotizaciones_render, total_historial, limite_historial = pagina_registros(
-                    lista_mis_cotizaciones, "limite_historial_cotizaciones"
-                )
                 scroll_pendiente_hecho = False
-                for cot in cotizaciones_render:
+                for cot in lista_mis_cotizaciones:
                     id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                     consolidada = es_cotizacion_confirmada(conf_c)
                     fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot_item, casillero)
@@ -8688,14 +8603,6 @@ elif st.session_state["rol"] == "cliente":
                         if pendiente_foco and not scroll_pendiente_hecho:
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
-                if limite_historial < total_historial:
-                    st.button(
-                        f"Mostrar 10 cotizaciones más ({limite_historial} de {total_historial})",
-                        key="btn_mas_historial",
-                        use_container_width=True,
-                        on_click=aumentar_limite_registros,
-                        args=("limite_historial_cotizaciones",),
-                    )
             else:
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
@@ -8830,16 +8737,68 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         with st.container(key="vista_catalogo"):
-            st.markdown(
-                """
-                <div role="status" style="margin:42px 0;padding:38px 20px;text-align:center;
-                background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;color:#1e3a8a;">
-                    <div style="font-size:2.5rem;line-height:1;margin-bottom:14px;">🛍️</div>
-                    <div style="font-size:1.35rem;font-weight:800;">Catálogo próximamente disponible</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(key="catalogo_formulario"):
+                st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
+
+                modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
+
+                resultados_1688 = []
+                if modo_busq == "🔎 Por Nombre / Palabras":
+                    kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
+                    if st.button(
+                        "Buscar Productos en China ➔",
+                        type="primary",
+                        key="btn_buscar_china",
+                        use_container_width=True,
+                    ) and kw:
+                        with st.spinner("Consultando catálogo de 1688..."):
+                            resultados_1688 = buscar_productos_1688_texto(kw)
+                else:
+                    img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
+                    if img_up and st.button(
+                        "Escanear Coincidencia Visual ➔",
+                        type="primary",
+                        key="btn_escanear_catalogo",
+                        use_container_width=True,
+                    ):
+                        with st.spinner("Buscando por reconocimiento visual..."):
+                            resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
+
+            if resultados_1688:
+                st.markdown("---")
+                for prod in resultados_1688:
+                    calc = calcular_costo_puesto_honduras(
+                        prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
+                    )
+
+                    c_img, c_det = st.columns([1, 1.8])
+                    with c_img:
+                        st.image(prod["imagen_url"], use_container_width=True)
+                    with c_det:
+                        st.markdown(f"**{prod['nombre']}**")
+                        st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
+                        st.markdown(
+                            f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
+                        )
+                        st.success(
+                            f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {destino_para_documentos()})*"
+                        )
+
+                        msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {destino_para_documentos()}. Enlace: {prod['url_proveedor']}"
+                        url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
+
+                        c_b1, c_b2 = st.columns(2)
+                        with c_b1:
+                            st.markdown(
+                                f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                        with c_b2:
+                            st.markdown(
+                                f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
             espaciador_barra_inferior("safe_catalogo")
 
     elif (
@@ -9247,14 +9206,24 @@ elif st.session_state["rol"] == "cliente":
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
             pintar_banner_promocional_china(casillero)
-            pintar_guias_informativas(
-                [
-                    ("🛡️", "Vigencia confirmada", "Cada cotización confirmada se conserva por <b>48 horas</b>.", "azul"),
-                    ("📦", "Seguimiento activo", "Consulte aquí el estado de sus paquetes en tránsito.", "verde"),
-                    ("📄", "Documentos oficiales", "La Ficha y el PDF Tarifa están debajo de cada envío.", "naranja"),
-                ]
+            st.markdown(
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
+                '<b>🛡️ Vigencia confirmada</b><br><span style="font-size:.86rem;">Cada cotización confirmada se conserva por <b>48 horas</b>.</span></div>'
+                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
+                '<b>📦 Seguimiento activo</b><br><span style="font-size:.86rem;">Consulte aquí el estado de sus paquetes en tránsito.</span></div>'
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
+                '<b>📄 Documentos oficiales</b><br><span style="font-size:.86rem;">La Ficha y el PDF Tarifa están debajo de cada envío.</span></div>'
+                '</div>',
+                unsafe_allow_html=True,
             )
-            paquetes = cargar_paquetes_db(casillero)
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute(
+                    "SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?",
+                    (casillero,),
+                )
+                paquetes = c.fetchall()
 
             if paquetes:
                 st.markdown("#### 📦 Mis Paquetes en Tránsito")
@@ -9290,10 +9259,7 @@ elif st.session_state["rol"] == "cliente":
                     if extra_foco:
                         cotizaciones_despacho = [extra_foco] + list(cotizaciones_despacho)
             if cotizaciones_despacho:
-                envios_render, total_envios, limite_envios = pagina_registros(
-                    cotizaciones_despacho, "limite_documentos_envios"
-                )
-                for cot_env in envios_render:
+                for cot_env in cotizaciones_despacho:
                     id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
                     es_foco = foco_envios and int(id_e) == foco_envios
                     borde = "#004ac1" if es_foco else "#e2e8f0"
@@ -9374,14 +9340,6 @@ elif st.session_state["rol"] == "cliente":
                             key=f"dl_tarifa_env_{id_e}",
                             use_container_width=True,
                         )
-                if limite_envios < total_envios:
-                    st.button(
-                        f"Mostrar 10 documentos más ({limite_envios} de {total_envios})",
-                        key="btn_mas_documentos_envios",
-                        use_container_width=True,
-                        on_click=aumentar_limite_registros,
-                        args=("limite_documentos_envios",),
-                    )
             else:
                 st.info("Confirme una cotización para consultar y descargar la Ficha y el PDF Tarifa en este módulo.")
             espaciador_barra_inferior("safe_envios")
@@ -9395,10 +9353,7 @@ elif st.session_state["rol"] == "cliente":
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
             if cotizaciones_ficha:
-                fichas_render, total_fichas, limite_fichas = pagina_registros(
-                    cotizaciones_ficha, "limite_fichas"
-                )
-                for cot_f in fichas_render:
+                for cot_f in cotizaciones_ficha:
                     id_f, al_f, an_f, la_f, pe_f, vol_f, tot_f, fec_f, conf_f = cot_f
                     st.markdown(
                         f"""
@@ -9432,14 +9387,6 @@ elif st.session_state["rol"] == "cliente":
                         use_container_width=True,
                     )
                     st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
-                if limite_fichas < total_fichas:
-                    st.button(
-                        f"Mostrar 10 fichas más ({limite_fichas} de {total_fichas})",
-                        key="btn_mas_fichas",
-                        use_container_width=True,
-                        on_click=aumentar_limite_registros,
-                        args=("limite_fichas",),
-                    )
             else:
                 st.info("Confirme una cotización para descargar su ficha de bodega.")
             espaciador_barra_inferior("safe_fichas")
@@ -9691,8 +9638,8 @@ elif es_rol_admin():
                         """,
                         (t_in, formatear_casillero(c_in), d_in, cont_in, e_in, f_act),
                     )
-                cargar_paquetes_db.clear()
                 st.success("Paquete actualizado.")
+                st.rerun()
             else:
                 st.warning("Ingrese tracking y casillero.")
 
