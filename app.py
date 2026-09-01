@@ -3122,6 +3122,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
             unsafe_allow_html=True,
         )
         st.markdown(
+            f'<div class="actividad-formato-gap" aria-hidden="true"></div>'
             f'<section class="actividad-formato" aria-label="Formato Excel de información del producto">'
             f'<div class="actividad-formato-head"><span class="actividad-formato-icon" aria-hidden="true">XLS</span>'
             f'<div><small>PLANTILLA PARA EL FABRICANTE</small><b>Formato Excel de información del producto</b>'
@@ -6866,7 +6867,7 @@ st.markdown(
     }
 
     .actividad-formato {
-        margin-top: 10px;
+        margin-top: 0;
         padding: 16px;
         background: #eef8f2;
         border: 1px solid #b9dec7;
@@ -6874,6 +6875,13 @@ st.markdown(
         border-radius: 6px;
         color: #20352a;
         box-sizing: border-box;
+        box-shadow: 0 7px 16px rgba(33, 115, 70, .08);
+    }
+    .actividad-formato-gap {
+        display: block;
+        width: 100%;
+        height: 20px;
+        min-height: 20px;
     }
     .actividad-formato-head {
         display: flex;
@@ -6997,6 +7005,7 @@ st.markdown(
         outline-offset: 3px;
     }
     @media (max-width: 640px) {
+        .actividad-formato-gap { height: 16px; min-height: 16px; }
         .actividad-formato { padding: 14px 12px; }
         .actividad-formato-pasos { grid-template-columns: 1fr; gap: 7px; }
         .actividad-formato-acciones { grid-template-columns: 1fr; }
