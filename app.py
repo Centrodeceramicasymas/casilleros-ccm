@@ -2822,21 +2822,30 @@ def pintar_banner_promocional_china(casillero):
     url_wa = f"https://wa.me/50495771099?text={msg}"
     st.markdown(
         f'<div class="promo-ad-card">'
-        f'<div class="promo-ad-glow" aria-hidden="true">🏭</div>'
-        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> AVISO OBLIGATORIO · ALMACÉN EN CHINA</div>'
-        f'<div class="promo-ad-title">📦 Notifique su carga antes de enviarla</div>'
-        f'<div class="promo-ad-subtitle">La notificación debe realizarse con 3 días de anticipación</div>'
-        f'<div class="promo-ad-body">Toda carga enviada a nuestro almacén en China debe ser notificada por WhatsApp al '
-        f'<b>+504 9577-1099</b> con un mínimo de <b>tres días de anticipación</b>. '
-        f'<strong class="promo-ad-warning">De lo contrario, la carga no será recibida.</strong></div>'
-        f'<div class="promo-ad-account"><span>👤</span><div><small>CASILLERO QUE DEBE INFORMAR AL PROVEEDOR</small><b>{html.escape(cas_txt)}</b></div></div>'
+        f'<div class="promo-ad-top">'
+        f'<div class="promo-ad-heading">'
+        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> RECEPCIÓN DE CARGA · CHINA</div>'
+        f'<div class="promo-ad-title">Avísanos antes de despachar</div>'
+        f'<div class="promo-ad-subtitle">Una notificación a tiempo asegura la recepción de su mercancía.</div>'
+        f'</div>'
+        f'<div class="promo-ad-deadline" aria-label="Notificar con tres días de anticipación"><strong>3</strong><span>DÍAS</span><small>de anticipación</small></div>'
+        f'</div>'
+        f'<div class="promo-ad-alert"><span aria-hidden="true">!</span><div><b>Notificación obligatoria</b>'
+        f'<p>Toda carga debe notificarse por WhatsApp antes de enviarse. <strong>Sin aviso previo, la carga no será recibida.</strong></p></div></div>'
+        f'<div class="promo-ad-meta">'
+        f'<div><small>SU CASILLERO</small><b>{html.escape(cas_txt)}</b></div>'
+        f'<div><small>WHATSAPP DE RECEPCIÓN</small><b>+504 9577-1099</b></div>'
+        f'</div>'
         f'<div class="promo-ad-addresses" aria-label="Dirección oficial del almacén en China">'
-        f'<div class="promo-ad-address"><small>中文地址 · DIRECCIÓN EN CHINO</small><b lang="zh">上海市浦东新区合庆镇人民塘路1333号</b></div>'
-        f'<div class="promo-ad-address"><small>DIRECCIÓN EN ESPAÑOL</small><b>N.º 1333, calle Renmintang, pueblo de Heqing, distrito nuevo de Pudong, Shanghái, China.</b></div>'
-        f'<div class="promo-ad-address"><small>ADDRESS IN ENGLISH</small><b lang="en">No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China.</b></div>'
+        f'<div class="promo-ad-address-head"><span aria-hidden="true">⌖</span><div><small>ALMACÉN EN SHANGHÁI</small><b>Dirección oficial de recepción</b></div></div>'
+        f'<div class="promo-ad-address promo-ad-address-primary"><small>中文地址 · CHINO</small><b lang="zh">上海市浦东新区合庆镇人民塘路1333号</b></div>'
+        f'<div class="promo-ad-translations">'
+        f'<div class="promo-ad-address"><small>ESPAÑOL</small><b>N.º 1333, calle Renmintang, pueblo de Heqing, distrito nuevo de Pudong, Shanghái, China.</b></div>'
+        f'<div class="promo-ad-address"><small>ENGLISH</small><b lang="en">No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China.</b></div>'
+        f'</div>'
         f'</div>'
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
-        f"💬 Notificar envío por WhatsApp</a>"
+        f'<span class="promo-ad-cta-icon" aria-hidden="true">💬</span><span><b>Notificar envío por WhatsApp</b><small>Complete los datos y envíe el aviso</small></span><span class="promo-ad-cta-arrow" aria-hidden="true">→</span></a>'
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -6949,130 +6958,217 @@ st.markdown(
         position: relative;
         z-index: 1;
         overflow: hidden;
-        background:
-            radial-gradient(circle at 95% 4%, rgba(251, 191, 36, 0.30) 0%, transparent 29%),
-            radial-gradient(circle at 4% 98%, rgba(56, 189, 248, 0.28) 0%, transparent 35%),
-            linear-gradient(135deg, #062c76 0%, #004ac1 55%, #1558d6 100%);
-        border: 1px solid rgba(191, 219, 254, 0.42);
-        border-radius: 20px;
-        padding: 22px 20px 19px 20px;
+        background: #0b2341;
+        border: 1px solid #173c64;
+        border-radius: 8px;
+        padding: 0;
         color: #ffffff;
         margin: 16px 0 22px 0;
-        box-shadow: 0 18px 38px rgba(0, 58, 145, 0.30);
+        box-shadow: 0 16px 34px rgba(11, 35, 65, 0.22);
         box-sizing: border-box;
         scroll-margin-top: calc(var(--header-offset, 208px) + 12px);
+        animation: promo-ad-enter 360ms ease-out both;
     }
-    .promo-ad-glow {
-        position: absolute;
-        right: -12px;
-        top: 9px;
-        font-size: 5rem;
-        opacity: 0.16;
-        transform: rotate(-9deg);
-        pointer-events: none;
+    .promo-ad-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 24px 24px 20px;
+        border-top: 4px solid #f2b84b;
     }
+    .promo-ad-heading { min-width: 0; }
     .promo-ad-kicker {
         display: flex;
         align-items: center;
         gap: 7px;
-        font-size: 0.68rem;
+        font-size: 0.66rem;
         font-weight: 800;
-        letter-spacing: 0.08em;
+        letter-spacing: 0;
         text-transform: uppercase;
-        color: #dbeafe;
-        margin: 0 0 8px 0;
+        color: #a9c4df;
+        margin: 0 0 7px;
     }
-    .promo-ad-live { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 4px rgba(74,222,128,.16); }
+    .promo-ad-live {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-radius: 50%;
+        background: #4ade80;
+        box-shadow: 0 0 0 4px rgba(74, 222, 128, .13);
+        animation: promo-ad-pulse 2.2s ease-in-out infinite;
+    }
     .promo-ad-title {
-        font-size: clamp(1.36rem, 4vw, 1.72rem);
+        font-size: 1.52rem;
         font-weight: 900;
-        line-height: 1.25;
-        margin: 0 0 3px 0;
+        line-height: 1.16;
+        margin: 0 0 6px;
         color: #ffffff;
-        letter-spacing: -0.02em;
+        letter-spacing: 0;
     }
-    .promo-ad-subtitle { font-size: 0.90rem; color: #fef3c7; margin: 0 0 13px 0; }
-    .promo-ad-body {
-        font-size: 0.88rem;
-        font-weight: 500;
-        line-height: 1.45;
-        color: #e2e8f0;
-        margin: 0 0 14px 0;
+    .promo-ad-subtitle {
+        max-width: 430px;
+        font-size: .84rem;
+        line-height: 1.4;
+        color: #cbd9e8;
+        margin: 0;
     }
-    .promo-ad-warning {
-        display: block;
-        margin-top: 7px;
-        color: #fef3c7;
+    .promo-ad-deadline {
+        display: grid;
+        width: 108px;
+        min-width: 108px;
+        padding: 11px 8px 10px;
+        text-align: center;
+        background: #f2b84b;
+        color: #17212b;
+        border-radius: 6px;
+        box-sizing: border-box;
+    }
+    .promo-ad-deadline strong { font-size: 2.25rem; line-height: .9; font-weight: 900; }
+    .promo-ad-deadline span { margin-top: 4px; font-size: .78rem; font-weight: 900; }
+    .promo-ad-deadline small { margin-top: 2px; font-size: .59rem; font-weight: 700; }
+    .promo-ad-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        margin: 0 24px 18px;
+        padding: 12px 14px;
+        background: #fff6df;
+        color: #3f2b0b;
+        border-left: 4px solid #e7a72e;
+        border-radius: 4px;
+    }
+    .promo-ad-alert > span {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        background: #e7a72e;
+        color: #17212b;
+        border-radius: 50%;
+        font-size: .78rem;
         font-weight: 900;
     }
-    .promo-ad-account {
+    .promo-ad-alert b { display: block; font-size: .80rem; }
+    .promo-ad-alert p { margin: 3px 0 0; font-size: .74rem; line-height: 1.42; }
+    .promo-ad-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        margin: 0 24px 18px;
+        border-top: 1px solid #31506f;
+        border-bottom: 1px solid #31506f;
+    }
+    .promo-ad-meta > div { padding: 10px 0; }
+    .promo-ad-meta > div + div { padding-left: 18px; border-left: 1px solid #31506f; }
+    .promo-ad-meta small,
+    .promo-ad-address small,
+    .promo-ad-address-head small {
+        display: block;
+        color: #7894af;
+        font-size: .58rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        line-height: 1.25;
+    }
+    .promo-ad-meta b { display: block; margin-top: 3px; color: #fff; font-size: .76rem; }
+    .promo-ad-addresses {
+        margin: 0 24px 18px;
+        padding: 16px;
+        background: #f7f9fc;
+        color: #14283d;
+        border-radius: 6px;
+    }
+    .promo-ad-address-head {
         display: flex;
         align-items: center;
         gap: 9px;
-        padding: 10px 11px;
-        margin: 0 0 10px 0;
-        background: rgba(245, 158, 11, .20);
-        border: 1px solid rgba(253, 230, 138, .42);
-        border-radius: 12px;
+        padding-bottom: 11px;
+        border-bottom: 1px solid #d8e0e9;
     }
-    .promo-ad-account > span { font-size: 1.15rem; }
-    .promo-ad-account small,
-    .promo-ad-address small {
-        display: block;
-        color: #bfdbfe;
-        font-size: .61rem;
-        font-weight: 800;
-        letter-spacing: .055em;
-        line-height: 1.25;
-    }
-    .promo-ad-account b {
-        display: block;
-        margin-top: 2px;
-        color: #fff;
-        font-size: .78rem;
-    }
-    .promo-ad-addresses {
+    .promo-ad-address-head > span { color: #d9961d; font-size: 1.30rem; line-height: 1; }
+    .promo-ad-address-head b { display: block; margin-top: 2px; color: #14283d; font-size: .86rem; }
+    .promo-ad-address-primary { padding: 12px 0; border-bottom: 1px solid #d8e0e9; }
+    .promo-ad-address-primary b { font-size: .95rem !important; color: #0d3155 !important; }
+    .promo-ad-translations {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 8px;
-        margin: 0 0 16px 0;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        padding-top: 12px;
     }
     .promo-ad-address {
-        padding: 10px 11px;
-        background: rgba(255,255,255,.12);
-        border: 1px solid rgba(255,255,255,.20);
-        border-radius: 12px;
+        min-width: 0;
     }
     .promo-ad-address b {
         display: block;
         margin-top: 4px;
-        color: #fff;
-        font-size: .78rem;
-        font-weight: 700;
-        line-height: 1.38;
+        color: #31465b;
+        font-size: .72rem;
+        font-weight: 650;
+        line-height: 1.42;
         overflow-wrap: anywhere;
     }
     .promo-ad-cta {
-        display: block;
-        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        width: auto;
         box-sizing: border-box;
-        text-align: center;
-        background: linear-gradient(135deg, #fef3c7, #fbbf24);
-        color: #713f12;
-        font-weight: 800;
-        font-size: 0.95rem;
+        margin: 0 24px 24px;
+        background: #16a34a;
+        color: #ffffff;
         text-decoration: none;
-        border-radius: 12px;
+        border-radius: 6px;
         padding: 12px 14px;
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+        box-shadow: 0 7px 16px rgba(22, 163, 74, .20);
+        transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
     }
-    .promo-ad-cta:hover { filter: brightness(1.04); color: #713f12; text-decoration: none; }
+    .promo-ad-cta-icon { font-size: 1.05rem; }
+    .promo-ad-cta > span:nth-child(2) { display: grid; min-width: 0; }
+    .promo-ad-cta b { font-size: .84rem; line-height: 1.2; }
+    .promo-ad-cta small { margin-top: 2px; color: #dcfce7; font-size: .63rem; line-height: 1.2; }
+    .promo-ad-cta-arrow { margin-left: auto; font-size: 1.10rem; font-weight: 800; }
+    .promo-ad-cta:hover {
+        transform: translateY(-2px);
+        background: #15803d;
+        color: #ffffff;
+        text-decoration: none;
+        box-shadow: 0 10px 20px rgba(22, 163, 74, .26);
+    }
+    @keyframes promo-ad-enter {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes promo-ad-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .55; }
+    }
     @media (max-width: 640px) {
-        .promo-ad-card { padding: 18px 15px 16px 15px; border-radius: 17px; }
-        .promo-ad-title { font-size: 1.22rem; padding-right: 32px; }
-        .promo-ad-body { font-size: .82rem; line-height: 1.43; }
-        .promo-ad-address { padding: 9px 10px; }
-        .promo-ad-address b { font-size: .75rem; }
+        .promo-ad-card { border-radius: 8px; }
+        .promo-ad-top { align-items: flex-start; gap: 12px; padding: 18px 15px 15px; }
+        .promo-ad-title { font-size: 1.24rem; }
+        .promo-ad-subtitle { font-size: .76rem; }
+        .promo-ad-deadline { width: 82px; min-width: 82px; padding: 9px 5px 8px; }
+        .promo-ad-deadline strong { font-size: 1.78rem; }
+        .promo-ad-deadline span { font-size: .69rem; }
+        .promo-ad-alert,
+        .promo-ad-meta,
+        .promo-ad-addresses,
+        .promo-ad-cta { margin-left: 15px; margin-right: 15px; }
+        .promo-ad-alert { padding: 11px 10px; }
+        .promo-ad-meta { grid-template-columns: 1fr; }
+        .promo-ad-meta > div + div { padding-left: 0; border-left: 0; border-top: 1px solid #31506f; }
+        .promo-ad-translations { grid-template-columns: 1fr; gap: 12px; }
+        .promo-ad-addresses { padding: 14px 12px; }
+        .promo-ad-address-primary b { font-size: .84rem !important; }
+        .promo-ad-address b { font-size: .70rem; }
+        .promo-ad-cta { margin-bottom: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .promo-ad-card,
+        .promo-ad-live { animation: none; }
+        .promo-ad-cta { transition: none; }
     }
 
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
