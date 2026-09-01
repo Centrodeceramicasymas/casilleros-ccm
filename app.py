@@ -3055,6 +3055,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
             f'<span>Consultar políticas</span><span aria-hidden="true">→</span></a></section>',
             unsafe_allow_html=True,
         )
+        espaciador_barra_inferior("safe_actividad")
 
 
 def pintar_vista_mas():
@@ -6971,6 +6972,32 @@ st.markdown(
         border-radius: 6px;
         color: #243447;
         box-sizing: border-box;
+    }
+    .st-key-vista_actividad {
+        display: block !important;
+        min-height: 0 !important;
+        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+    }
+    .st-key-safe_actividad {
+        display: block !important;
+        width: 100% !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    [data-testid="stElementContainer"]:has(> .st-key-safe_actividad),
+    [data-testid="stElementContainer"]:has(> [class~="st-key-safe_actividad"]),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_actividad) {
+        height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
     }
     .actividad-politicas-copy {
         display: flex;
