@@ -17,6 +17,11 @@ import hmac
 import json
 import html
 import re
+import queue
+import threading
+import secrets
+import ipaddress
+import socket
 
 import requests
 
@@ -33,6 +38,12 @@ GATEWAY_DEFAULT = "https://api-sg.aliexpress.com/sync"
 TIMEOUT_S = 25
 PAGE_SIZE = 20
 TZ_CN = timezone(timedelta(hours=8))
+ENLACE_POLITICAS_ENVIO = (
+    "https://drive.google.com/file/d/1OevqlVTqsWSWb_R95QBTAOJq5h_F7kiK/view?usp=sharing"
+)
+ENLACE_FORMATO_PRODUCTOS = (
+    "https://drive.google.com/drive/folders/1afzW8GMWePgIQq1aad6SfR7AkG3rNAVT?usp=sharing"
+)
 
 ORDEN_API = {
     "Más vendidos": "LAST_VOLUME_DESC",
@@ -711,6 +722,7 @@ def _llamar_con_reintentos(method, biz_params, image_bytes=None):
     raise ultimo or AliExpressError("No se pudo firmar la consulta a AliExpress.")
 
 
+@st.cache_data(ttl=60, max_entries=128, show_spinner=False)
 def buscar_aliexpress_texto(keyword, min_usd=0, max_usd=0, orden="Más vendidos"):
     kw = (keyword or "").strip()
     if not kw:
@@ -750,6 +762,7 @@ def buscar_aliexpress_texto(keyword, min_usd=0, max_usd=0, orden="Más vendidos"
     return _resultado(productos, fuente="api", metodo="aliexpress.affiliate.product.query")
 
 
+@st.cache_data(ttl=60, max_entries=64, show_spinner=False)
 def buscar_aliexpress_imagen(image_bytes, min_usd=0, max_usd=0, orden="Más vendidos"):
     if not image_bytes:
         return _resultado([], error="Cargue una imagen JPG o PNG del producto.", fuente="none")
@@ -895,16 +908,20 @@ class CursorPostgresCompatible:
 
     def execute(self, sql, params=None):
         sql_original = str(sql)
-        self._cursor.execute(traducir_sql_postgres(sql_original), params or ())
+        sql_pg = traducir_sql_postgres(sql_original)
+        tabla_con_id = re.match(
+            r"^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+(cotizaciones|direcciones_entrega)\b",
+            sql_original,
+            flags=re.I,
+        )
+        if tabla_con_id and "RETURNING" not in sql_pg.upper():
+            sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+        self._cursor.execute(sql_pg, params or ())
         self.rowcount = self._cursor.rowcount
         self.lastrowid = None
-        if re.match(r"^\s*INSERT\b", sql_original, flags=re.I) and self.rowcount:
-            try:
-                self._cursor.execute("SELECT LASTVAL()")
-                fila = self._cursor.fetchone()
-                self.lastrowid = int(fila[0]) if fila else None
-            except Exception:
-                self.lastrowid = None
+        if tabla_con_id and self.rowcount:
+            fila = self._cursor.fetchone()
+            self.lastrowid = int(fila[0]) if fila else None
         return self
 
     def executemany(self, sql, params_seq):
@@ -922,9 +939,78 @@ class CursorPostgresCompatible:
         return getattr(self._cursor, nombre)
 
 
+class PoolPostgresSimple:
+    """Pool acotado y seguro para hilos, sin dependencias adicionales."""
+
+    def __init__(self, dsn, min_size=1, max_size=8, timeout=20):
+        self.dsn = dsn
+        self.max_size = max(1, int(max_size))
+        self.timeout = max(1, int(timeout))
+        self._disponibles = queue.LifoQueue(maxsize=self.max_size)
+        self._creadas = 0
+        self._lock = threading.Lock()
+        for _ in range(min(max(0, int(min_size)), self.max_size)):
+            self._disponibles.put(self._nueva_conexion())
+
+    def _abrir_conexion(self):
+        return psycopg.connect(
+            self.dsn,
+            connect_timeout=self.timeout,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        )
+
+    def _nueva_conexion(self):
+        conexion = self._abrir_conexion()
+        with self._lock:
+            self._creadas += 1
+        return conexion
+
+    def obtener(self):
+        try:
+            conexion = self._disponibles.get_nowait()
+        except queue.Empty:
+            with self._lock:
+                puede_crear = self._creadas < self.max_size
+                if puede_crear:
+                    self._creadas += 1
+            if puede_crear:
+                try:
+                    conexion = self._abrir_conexion()
+                except Exception:
+                    with self._lock:
+                        self._creadas = max(0, self._creadas - 1)
+                    raise
+            else:
+                conexion = self._disponibles.get(timeout=self.timeout)
+        if getattr(conexion, "closed", False) or getattr(conexion, "broken", False):
+            with self._lock:
+                self._creadas = max(0, self._creadas - 1)
+            conexion = self._nueva_conexion()
+        return conexion
+
+    def devolver(self, conexion, descartar=False):
+        if descartar or getattr(conexion, "closed", False) or getattr(conexion, "broken", False):
+            try:
+                conexion.close()
+            finally:
+                with self._lock:
+                    self._creadas = max(0, self._creadas - 1)
+            return
+        try:
+            self._disponibles.put_nowait(conexion)
+        except queue.Full:
+            conexion.close()
+            with self._lock:
+                self._creadas = max(0, self._creadas - 1)
+
+
 class ConexionPostgresCompatible:
-    def __init__(self, conexion):
+    def __init__(self, conexion, pool=None):
         self._conexion = conexion
+        self._pool = pool
 
     def cursor(self):
         return CursorPostgresCompatible(self._conexion.cursor())
@@ -942,13 +1028,29 @@ class ConexionPostgresCompatible:
         return self
 
     def __exit__(self, tipo_error, valor_error, traza):
+        descartar = False
         try:
             if tipo_error is None:
-                self.commit()
+                try:
+                    self.commit()
+                except Exception:
+                    descartar = True
+                    try:
+                        self.rollback()
+                    except Exception:
+                        pass
+                    raise
             else:
-                self.rollback()
+                try:
+                    self.rollback()
+                except Exception:
+                    descartar = True
+                descartar = descartar or bool(getattr(self._conexion, "broken", False))
         finally:
-            self._conexion.close()
+            if self._pool is None:
+                self._conexion.close()
+            else:
+                self._pool.devolver(self._conexion, descartar=descartar)
         return False
 LOGO_FILENAME = "logo_ccm_print.jpg"
 RUTAS_LOGO = (
@@ -962,6 +1064,7 @@ VIGENCIA_COTIZACION_HORAS = 1
 VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
 VIGENCIA_COTIZACION_CONFIRMADA_HORAS = 48
 VIGENCIA_COTIZACION_CONFIRMADA = timedelta(hours=VIGENCIA_COTIZACION_CONFIRMADA_HORAS)
+HISTORIAL_COTIZACIONES_MAX = 500
 FORMATOS_FECHA_COTIZACION = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S.%f",
@@ -1004,6 +1107,17 @@ def clave_orden_cotizacion(fecha_raw, id_cot=0):
 def ordenar_cotizaciones_desc(filas, idx_fecha=7, idx_id=0):
     """LIFO: la cotización más reciente (fecha Honduras) queda primero."""
     return sorted(filas, key=lambda r: clave_orden_cotizacion(r[idx_fecha], r[idx_id]))
+
+
+def pagina_registros(filas, clave, cantidad=10):
+    """Limita widgets renderizados; el usuario puede ampliar de diez en diez."""
+    total = len(filas)
+    limite = max(cantidad, int(st.session_state.get(clave, cantidad) or cantidad))
+    return list(filas[:limite]), total, limite
+
+
+def aumentar_limite_registros(clave, paso=10):
+    st.session_state[clave] = int(st.session_state.get(clave, paso) or paso) + paso
 
 
 def parsear_fecha_cotizacion(fecha_raw):
@@ -1089,15 +1203,12 @@ def texto_vigencia_cotizacion_confirmada(fecha_confirmacion, ahora=None):
 
 def leer_config_moneda(clave, valor_default):
     try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT valor FROM config_sistema WHERE clave = ?", (clave,))
-            row = cur.fetchone()
-            if row and row[0] not in (None, ""):
-                try:
-                    return float(row[0])
-                except ValueError:
-                    return row[0]
+        valor = get_config_sistema(clave, "")
+        if valor not in (None, ""):
+            try:
+                return float(valor)
+            except (TypeError, ValueError):
+                return valor
     except Exception:
         pass
     try:
@@ -1426,6 +1537,11 @@ def fecha_confirmacion_cotizacion(id_cot, casillero=None):
     except (TypeError, ValueError):
         return None
     cas = formatear_casillero(casillero or st.session_state.get("casillero", "") or "")
+    if cas:
+        try:
+            return cargar_confirmaciones_db(cas).get(cid)
+        except Exception:
+            pass
     variantes = coincidencias_casillero(cas)
     try:
         with get_db() as conn:
@@ -1477,6 +1593,15 @@ def registrar_error_direcciones(exc, contexto):
         pass
 
 
+def registrar_error_datos(exc, contexto):
+    """Registra detalles en servidor y deja un aviso no sensible para la interfaz."""
+    print(f"[CCM datos] {contexto}: {exc}", flush=True)
+    try:
+        st.session_state["_ccm_error_datos"] = True
+    except Exception:
+        pass
+
+
 def invalidar_cache_direcciones():
     """Si la carga llega a cachearse, fuerza relectura inmediata tras escribir."""
     clear = getattr(cargar_direcciones_db, "clear", None)
@@ -1484,8 +1609,9 @@ def invalidar_cache_direcciones():
         clear()
 
 
+@st.cache_data(ttl=15, show_spinner=False)
 def cargar_direcciones_db(casillero):
-    """Lee SIEMPRE del archivo SQLite (sin @st.cache_data): F5, cambio de vista y re-login ven las filas reales.
+    """Lee direcciones con una caché breve; las escrituras la invalidan de inmediato.
 
     Busca con coincidencias_casillero: una fila guardada como 15011985 también aparece
     al consultar CCM-15011985 (y viceversa).
@@ -1530,23 +1656,63 @@ def cargar_cotizaciones_db(casillero):
         cur.execute(
             f"""
             SELECT id, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, total_usd,
-                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0)
+                   COALESCE(fecha_creacion, fecha), IFNULL(confirmada, 0), fecha_confirmacion
             FROM cotizaciones
             WHERE codigo_casillero IN ({marcadores})
             ORDER BY fecha_creacion DESC, id DESC
+            LIMIT ?
             """,
-            variantes,
+            (*variantes, HISTORIAL_COTIZACIONES_MAX),
         )
         return cur.fetchall()
 
 
-def hidratar_cotizaciones_sesion(casillero):
+@st.cache_data(ttl=20, show_spinner=False)
+def cargar_confirmaciones_db(casillero):
+    """Reutiliza el snapshot limitado de cotizaciones; no abre otra conexión."""
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return {}
+    return {
+        int(fila[0]): fila[9]
+        for fila in cargar_cotizaciones_db(cas)
+        if len(fila) > 9 and fila[9]
+    }
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cargar_paquetes_db(casillero):
+    """Snapshot breve de paquetes para que la navegación no abra otra conexión."""
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion
+            FROM paquetes
+            WHERE codigo_casillero = ?
+            ORDER BY fecha_actualizacion DESC
+            """,
+            (cas,),
+        ).fetchall()
+
+
+def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
     cas, lista = bolsa_cotizaciones_sesion(casillero)
     if not cas:
         return
     conocidos = {int(r.get("id") or 0) for r in lista}
     try:
-        for fila in cargar_cotizaciones_db(cas):
+        if filas_db is None:
+            filas_db = cargar_cotizaciones_db(cas)
+        if confirmaciones is None:
+            confirmaciones = {
+                int(fila[0]): fila[9]
+                for fila in filas_db
+                if len(fila) > 9 and fila[9]
+            }
+        for fila in filas_db:
             cid = int(fila[0])
             if cid in conocidos:
                 continue
@@ -1563,25 +1729,44 @@ def hidratar_cotizaciones_sesion(casillero):
                     "fecha": fila[7],
                     "fecha_creacion": fila[7],
                     "confirmada": int(fila[8] or 0),
-                    "fecha_confirmacion": fecha_confirmacion_cotizacion(cid, cas),
+                    "fecha_confirmacion": confirmaciones.get(cid),
                 }
             )
             conocidos.add(cid)
-    except Exception:
-        pass
+    except Exception as exc:
+        registrar_error_datos(exc, "Hidratación de cotizaciones")
 
 
 def filas_cotizaciones_casillero(casillero, ahora=None):
     cas = formatear_casillero(casillero or "")
     ahora = ahora or obtener_tiempo_honduras()
-    hidratar_cotizaciones_sesion(cas)
-    by_id = {}
     try:
-        for fila in cargar_cotizaciones_db(cas):
-            by_id[int(fila[0])] = fila
-    except Exception:
-        pass
+        filas_db = cargar_cotizaciones_db(cas)
+        confirmaciones_db = {
+            int(fila[0]): fila[9]
+            for fila in filas_db
+            if len(fila) > 9 and fila[9]
+        }
+    except Exception as exc:
+        registrar_error_datos(exc, "Carga del historial de cotizaciones")
+        filas_db = []
+        confirmaciones_db = {}
+    hidratar_cotizaciones_sesion(cas, filas_db=filas_db, confirmaciones=confirmaciones_db)
+    by_id = {}
+    for fila in filas_db:
+        by_id[int(fila[0])] = fila[:9]
     _, lista = bolsa_cotizaciones_sesion(cas)
+    ids_db = {int(fila[0]) for fila in filas_db}
+    lista[:] = [
+        reg for reg in lista
+        if int(reg.get("id") or 0) in ids_db
+        or cotizacion_visible_historial(
+            reg.get("fecha_creacion") or reg.get("fecha"),
+            reg.get("confirmada"),
+            ahora,
+            reg.get("fecha_confirmacion"),
+        )
+    ]
     for reg in lista:
         try:
             by_id[int(reg.get("id") or 0)] = registro_sesion_a_fila(reg)
@@ -1597,10 +1782,12 @@ def filas_cotizaciones_casillero(casillero, ahora=None):
         f for f in todas
         if cotizacion_visible_historial(
             f[7], f[8], ahora,
-            confirmaciones_sesion.get(int(f[0])) or fecha_confirmacion_cotizacion(f[0], cas),
+            confirmaciones_sesion.get(int(f[0])) or confirmaciones_db.get(int(f[0])),
         )
     ]
-    return todas, visibles
+    confirmaciones = dict(confirmaciones_db)
+    confirmaciones.update(confirmaciones_sesion)
+    return todas, visibles, confirmaciones
 
 
 def marcar_cotizacion_sesion_confirmada(id_cot, casillero, fecha_confirmacion=None):
@@ -1624,15 +1811,6 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     cas = formatear_casillero(casillero or "")
     if not cas:
         st.session_state["ultimo_error_confirmacion"] = "Casillero inválido."
-        return False
-    # Garantiza que una base desplegada con el esquema anterior reciba las
-    # columnas de confirmación antes de ejecutar el UPDATE.
-    try:
-        init_db()
-    except sqlite3.Error as exc:
-        detalle = f"No se pudo preparar el esquema de cotizaciones: {exc}"
-        print(detalle)
-        st.session_state["ultimo_error_confirmacion"] = detalle
         return False
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
@@ -1700,6 +1878,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
+        cargar_confirmaciones_db.clear()
     if actualizado:
         st.session_state.pop("ultimo_error_confirmacion", None)
         marcar_cotizacion_sesion_confirmada(cid, cas, fecha_confirmacion or ahora)
@@ -1804,6 +1983,7 @@ def emitir_tarifa_desde_snapshot():
             id_generado = cur.lastrowid
             conn.commit()
         cargar_cotizaciones_db.clear()
+        cargar_confirmaciones_db.clear()
     except Exception as exc:
         id_generado = None
         st.session_state["_ccm_emit_error"] = str(exc)
@@ -1859,6 +2039,42 @@ def emitir_tarifa_desde_snapshot():
 
 def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
     ahora = ahora or obtener_tiempo_honduras()
+    if USA_SUPABASE:
+        limite_pendiente = (ahora - VIGENCIA_COTIZACION).strftime("%Y-%m-%d %H:%M:%S")
+        limite_confirmada = (ahora - VIGENCIA_COTIZACION_CONFIRMADA).strftime("%Y-%m-%d %H:%M:%S")
+        expresion_pendiente = "COALESCE(NULLIF(fecha_creacion::text, ''), fecha::text)"
+        expresion_confirmada = (
+            "COALESCE(NULLIF(fecha_confirmacion::text, ''), "
+            "NULLIF(fecha_creacion::text, ''), fecha::text)"
+        )
+        patron_iso = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT pg_try_advisory_xact_lock(?)", (74219031,))
+            bloqueo = cur.fetchone()
+            if not bloqueo or not bloqueo[0]:
+                return 0
+            cur.execute(
+                f"""
+                DELETE FROM cotizaciones
+                WHERE (
+                    COALESCE(confirmada, FALSE) = FALSE
+                    AND {expresion_pendiente} ~ ?
+                    AND {expresion_pendiente} < ?
+                ) OR (
+                    COALESCE(confirmada, FALSE) = TRUE
+                    AND {expresion_confirmada} ~ ?
+                    AND {expresion_confirmada} < ?
+                )
+                """,
+                (patron_iso, limite_pendiente, patron_iso, limite_confirmada),
+            )
+            eliminadas = max(0, int(cur.rowcount or 0))
+            conn.commit()
+        if eliminadas:
+            cargar_cotizaciones_db.clear()
+            cargar_confirmaciones_db.clear()
+        return eliminadas
     with get_db() as conn:
         cur = conn.cursor()
         try:
@@ -1880,6 +2096,26 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
         cur.executemany("DELETE FROM cotizaciones WHERE id = ?", [(cid,) for cid in ids_borrar])
         conn.commit()
         return len(ids_borrar)
+
+
+@st.cache_resource(show_spinner=False)
+def estado_mantenimiento_db():
+    return {"lock": threading.Lock(), "ultima_purga": 0.0}
+
+
+def purgar_cotizaciones_si_corresponde(ahora=None, intervalo_s=300):
+    """Ejecuta mantenimiento una vez por proceso; PostgreSQL añade un bloqueo global."""
+    estado = estado_mantenimiento_db()
+    marca = datetime.now().timestamp()
+    if marca - float(estado.get("ultima_purga") or 0) < intervalo_s:
+        return 0
+    with estado["lock"]:
+        marca = datetime.now().timestamp()
+        if marca - float(estado.get("ultima_purga") or 0) < intervalo_s:
+            return 0
+        eliminadas = purgar_cotizaciones_no_confirmadas_vencidas(ahora)
+        estado["ultima_purga"] = marca
+        return eliminadas
 
 
 def vista_muestra_envios_fichas():
@@ -2031,16 +2267,21 @@ def direcciones_sesion(casillero):
     return combinadas
 
 
-def opciones_entrega_desde_sesion(casillero):
+def opciones_entrega_desde_sesion(casillero, direcciones=None):
     """Reconstruye el desplegable desde SQLite en cada run: almacén → direcciones activas → Crear Nueva."""
     opciones = [OPCION_PREDETERMINADA]
-    try:
-        filas = cargar_direcciones_db(casillero)
-    except Exception as exc:
-        registrar_error_direcciones(exc, "Consulta directa para selector de entrega")
-        filas = []
-    for _, etiqueta, _, ciudad, _ in filas:
-        opciones.append(f"📍 {etiqueta} - {ciudad}")
+    if direcciones is None:
+        try:
+            filas = cargar_direcciones_db(casillero)
+            direcciones = [
+                {"etiqueta": fila[1], "ciudad": fila[3]}
+                for fila in filas
+            ]
+        except Exception as exc:
+            registrar_error_direcciones(exc, "Consulta directa para selector de entrega")
+            direcciones = []
+    for direccion in direcciones:
+        opciones.append(f"📍 {direccion.get('etiqueta', '')} - {direccion.get('ciudad', '')}")
     opciones.append("➕ Crear Nueva Dirección de Envío")
     return opciones
 
@@ -2281,6 +2522,33 @@ def ir_a(vista, hub="_omit"):
         st.query_params["hub"] = hub_actual
     elif "hub" in st.query_params:
         del st.query_params["hub"]
+
+
+def pintar_guias_informativas(guias):
+    """Muestra reglas de contexto como información estática, no como controles."""
+    paleta = {
+        "azul": ("#eff6ff", "#bfdbfe", "#1e3a8a"),
+        "verde": ("#f0fdf4", "#bbf7d0", "#166534"),
+        "naranja": ("#fff7ed", "#fed7aa", "#9a3412"),
+    }
+    tarjetas = []
+    for icono, titulo, descripcion, color in guias:
+        fondo, borde, texto = paleta[color]
+        tarjetas.append(
+            f'<div style="background:{fondo};border:1px solid {borde};border-radius:12px;'
+            f'padding:11px 12px;color:{texto};">'
+            f'<b>{html.escape(icono)} {html.escape(titulo)}</b><br>'
+            f'<span style="font-size:.86rem;">{descripcion}</span></div>'
+        )
+    st.markdown(
+        '<div role="note" aria-label="Información importante" '
+        'style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));'
+        'gap:10px;margin:12px 0 14px;">'
+        + "".join(tarjetas)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+    ir_a("Mis Cotizaciones", hub="china")
 
 
 def ir_a_inicio():
@@ -2601,31 +2869,43 @@ def proximo_cierre_contenedor(ahora=None):
 
 @st.fragment
 def pintar_banner_promocional_china(casillero):
-    """Tarjeta publicitaria en Inicio / China (el acceso a módulos vive en la barra inferior)."""
+    """Aviso de recepción y dirección oficial del almacén en China."""
     cas_txt = formatear_casillero(casillero) or "su casillero"
-    cierre = proximo_cierre_contenedor()
     msg = urllib.parse.quote(
         f"Hola Centro de Cerámicas y Más, soy del casillero {cas_txt}. "
-        "Quiero consultar la promoción de consolidación marítima China → Honduras "
-        f"y el cierre de contenedor del {cierre}."
+        "Notifico con al menos 3 días de anticipación el envío de una carga a su almacén en China.\n\n"
+        "Fecha estimada de llegada:\n"
+        "Proveedor/remitente:\n"
+        "Cantidad de bultos:\n"
+        "Número de seguimiento:"
     )
     url_wa = f"https://wa.me/50495771099?text={msg}"
     st.markdown(
         f'<div class="promo-ad-card">'
-        f'<div class="promo-ad-glow" aria-hidden="true">🚢</div>'
-        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> SALIDA PROGRAMADA · CONTENEDOR 40′ HC</div>'
-        f'<div class="promo-ad-title">📦 Importación Consolidada Marítima | China ➔ Honduras</div>'
-        f'<div class="promo-ad-subtitle">Reserve su espacio con salida programada</div>'
-        f'<div class="promo-ad-body">Reserve su espacio en nuestro <b>Contenedor 40′ HC</b> con salida programada. '
-        f'Ofrecemos soluciones integrales para carga comercial variada, cerámicas, acabados y mercancía general. '
-        f'Modalidad flexible en paquetería por libra o carga consolidada por CBM con asesoría de casillero incluida.</div>'
-        f'<div class="promo-ad-badges">'
-        f'<div class="promo-ad-badge promo-ad-badge-close"><span>🚀</span><div><small>PRÓXIMO CIERRE DE CONTENEDOR</small><b>{cierre}</b></div></div>'
-        f'<div class="promo-ad-badge"><span>🏢</span><div><small>CASILLERO AUTORIZADO</small><b>{cas_txt}</b></div></div>'
-        f'<div class="promo-ad-badge"><span>✨</span><div><small>CARGA MIXTA</small><b>Variedad de productos</b></div></div>'
+        f'<div class="promo-ad-top">'
+        f'<div class="promo-ad-heading">'
+        f'<div class="promo-ad-kicker"><span class="promo-ad-live"></span> RECEPCIÓN DE CARGA · CHINA</div>'
+        f'<div class="promo-ad-title">Avísanos antes de despachar</div>'
+        f'<div class="promo-ad-subtitle">Una notificación a tiempo asegura la recepción de su mercancía.</div>'
+        f'</div>'
+        f'<div class="promo-ad-deadline" aria-label="Notificar con tres días de anticipación"><strong>3</strong><span>DÍAS</span><small>de anticipación</small></div>'
+        f'</div>'
+        f'<div class="promo-ad-alert"><span aria-hidden="true">!</span><div><b>Notificación obligatoria</b>'
+        f'<p>Toda carga debe notificarse por WhatsApp antes de enviarse. <strong>Sin aviso previo, la carga no será recibida.</strong></p></div></div>'
+        f'<div class="promo-ad-meta">'
+        f'<div><small>SU CASILLERO</small><b>{html.escape(cas_txt)}</b></div>'
+        f'<div><small>WHATSAPP DE RECEPCIÓN</small><b>+504 9577-1099</b></div>'
+        f'</div>'
+        f'<div class="promo-ad-addresses" aria-label="Dirección oficial del almacén en China">'
+        f'<div class="promo-ad-address-head"><span aria-hidden="true">⌖</span><div><small>ALMACÉN EN SHANGHÁI</small><b>Dirección oficial de recepción</b></div></div>'
+        f'<div class="promo-ad-address promo-ad-address-primary"><small>中文地址 · CHINO</small><b lang="zh">上海市浦东新区合庆镇人民塘路1333号</b></div>'
+        f'<div class="promo-ad-translations">'
+        f'<div class="promo-ad-address"><small>ESPAÑOL</small><b>N.º 1333, calle Renmintang, pueblo de Heqing, distrito nuevo de Pudong, Shanghái, China.</b></div>'
+        f'<div class="promo-ad-address"><small>ENGLISH</small><b lang="en">No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China.</b></div>'
+        f'</div>'
         f'</div>'
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
-        f"💬 Reservar cupo y consultar</a>"
+        f'<span class="promo-ad-cta-icon" aria-hidden="true">WA</span><span class="promo-ad-cta-copy"><b>Notificar carga por WhatsApp</b><small>+504 9577-1099 · mensaje preparado para completar</small></span><span class="promo-ad-cta-arrow" aria-hidden="true">→</span></a>'
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -2800,6 +3080,12 @@ def abrir_dialogo_editar_perfil():
 
 def pintar_vista_actividad(total_cotizaciones=0):
     """Panel de actividad: concentra documentos y seguimiento sin recargar la navegación."""
+    cas_formato = formatear_casillero(st.session_state.get("casillero", "")) or "mi casillero"
+    mensaje_formato = urllib.parse.quote(
+        f"Hola Centro de Cerámicas y Más, soy del casillero {cas_formato}. "
+        "Adjunto el formato Excel de información del producto completado por mi fabricante para su revisión."
+    )
+    url_whatsapp_formato = f"https://wa.me/50495771099?text={mensaje_formato}"
     with st.container(key="vista_actividad"):
         st.markdown("#### 📌 Actividad")
         st.caption("Consulte sus tarifas, seguimiento y documentos desde un solo lugar.")
@@ -2826,6 +3112,33 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
+        st.markdown(
+            f'<section class="actividad-politicas" aria-label="Políticas de envío y productos restringidos">'
+            f'<div class="actividad-politicas-copy"><span class="actividad-politicas-icon" aria-hidden="true">!</span>'
+            f'<div><small>ANTES DE COMPRAR O ENVIAR</small><b>Políticas de envío y productos restringidos</b>'
+            f'<p>Revise los requisitos de recepción, embalaje y transporte, además de los productos que no pueden enviarse o requieren autorización.</p></div></div>'
+            f'<a class="actividad-politicas-cta" href="{html.escape(ENLACE_POLITICAS_ENVIO)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Consultar políticas</span><span aria-hidden="true">→</span></a></section>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="actividad-formato-gap" aria-hidden="true"></div>'
+            f'<section class="actividad-formato" aria-label="Formato Excel de información del producto">'
+            f'<div class="actividad-formato-head"><span class="actividad-formato-icon" aria-hidden="true">XLS</span>'
+            f'<div><small>PLANTILLA PARA EL FABRICANTE</small><b>Formato Excel de información del producto</b>'
+            f'<p>Descargue la plantilla y envíela a su fabricante para que complete todos los datos solicitados del producto. '
+            f'Cuando esté llena, remítala a nuestro WhatsApp para revisión.</p></div></div>'
+            f'<ol class="actividad-formato-pasos"><li><span>1</span>Descargar el Excel</li>'
+            f'<li><span>2</span>Completar con el fabricante</li><li><span>3</span>Enviar el archivo a CCM</li></ol>'
+            f'<div class="actividad-formato-acciones">'
+            f'<a class="actividad-formato-descarga" href="{html.escape(ENLACE_FORMATO_PRODUCTOS)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Abrir carpeta y descargar Excel</span><span aria-hidden="true">↓</span></a>'
+            f'<a class="actividad-formato-whatsapp" href="{html.escape(url_whatsapp_formato)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Enviar formato por WhatsApp</span><span aria-hidden="true">→</span></a>'
+            f'</div></section>',
+            unsafe_allow_html=True,
+        )
+        espaciador_barra_inferior("safe_actividad")
 
 
 def pintar_vista_mas():
@@ -2951,366 +3264,6 @@ def anclar_barra_inferior():
     # En algunos navegadores podía ocultar la vista completa, dejando una
     # pantalla blanca. Las reglas CSS de la aplicación ya fijan esta barra.
     return
-    with st.container(key="bottom_nav_pin"):
-        components.html(
-            """
-            <script>
-            (function () {
-              const doc = window.parent.document;
-              const win = window.parent;
-              const nodoNav = () =>
-                doc.querySelector('[class~="st-key-bottom_nav"]') ||
-                doc.querySelector(".st-key-bottom_nav");
-              const anclar = () => {
-                const nav = nodoNav();
-                if (nav) {
-                  nav.style.setProperty("position", "fixed", "important");
-                  nav.style.setProperty("bottom", "20px", "important");
-                  nav.style.setProperty("left", "50%", "important");
-                  nav.style.setProperty("right", "auto", "important");
-                  nav.style.setProperty("margin", "0", "important");
-                  nav.style.setProperty("transform", "translateX(-50%)", "important");
-                  nav.style.setProperty("z-index", "9999", "important");
-                  nav.style.setProperty("width", "min(96vw, 520px)", "important");
-                  nav.style.setProperty("max-width", "520px", "important");
-                  const cajaNav = nav.closest('[data-testid="stElementContainer"]') || nav.parentElement;
-                  if (cajaNav && cajaNav !== doc.body) {
-                    cajaNav.style.setProperty("height", "0", "important");
-                    cajaNav.style.setProperty("min-height", "0", "important");
-                    cajaNav.style.setProperty("margin", "0", "important");
-                    cajaNav.style.setProperty("padding", "0", "important");
-                    cajaNav.style.setProperty("overflow", "visible", "important");
-                    cajaNav.style.setProperty("border", "0", "important");
-                  }
-                }
-                const mas = doc.querySelector('[class~="st-key-vista_mas"]') || doc.querySelector(".st-key-vista_mas");
-                const inicio = doc.querySelector('[class~="st-key-vista_inicio"]') || doc.querySelector(".st-key-vista_inicio");
-                const catalogo = doc.querySelector('[class~="st-key-vista_catalogo"]') || doc.querySelector(".st-key-vista_catalogo");
-                const cotizador = doc.querySelector('[class~="st-key-vista_cotizador"]') || doc.querySelector(".st-key-vista_cotizador");
-                const logout = doc.querySelector('[class~="st-key-btn_logout_cliente"]') ||
-                  doc.querySelector(".st-key-btn_logout_cliente") ||
-                  Array.from(doc.querySelectorAll("button")).find((b) => (b.textContent || "").indexOf("Cerrar sesión") >= 0);
-                const accion = doc.querySelector('[class~="st-key-btn_confirmar_tarifa"]') ||
-                  doc.querySelector(".st-key-btn_confirmar_tarifa") ||
-                  doc.querySelector('[class~="st-key-btn_buscar_china"]') ||
-                  doc.querySelector(".st-key-btn_buscar_china") ||
-                  doc.querySelector('[class~="st-key-btn_escanear_catalogo"]') ||
-                  doc.querySelector(".st-key-btn_escanear_catalogo");
-                const vistaModulo = catalogo || cotizador;
-                const historial = doc.querySelector('[class~="st-key-vista_historial"]') || doc.querySelector(".st-key-vista_historial");
-                const envios = doc.querySelector('[class~="st-key-vista_envios"]') || doc.querySelector(".st-key-vista_envios");
-                let hueco = "calc(200px + env(safe-area-inset-bottom, 0px))";
-                if (mas || vistaModulo || inicio || envios) hueco = "0px";
-                else if (historial) hueco = "calc(var(--ccm-nav-clearance, 109px) + 16px)";
-                doc.querySelectorAll(".block-container, [data-testid='stMainBlockContainer'], .stMainBlockContainer, [data-testid='stAppViewBlockContainer']").forEach((el) => {
-                  el.style.setProperty("padding-bottom", hueco, "important");
-                });
-                if (inicio) {
-                  inicio.style.setProperty("padding-bottom", "180px", "important");
-                  inicio.style.setProperty("box-sizing", "border-box", "important");
-                }
-                const GAP_OBJETIVO = 12;
-                const esVistaMas = (nodo) =>
-                  !!(nodo && ((nodo.className || "").indexOf("st-key-vista_mas") >= 0));
-                if (vistaModulo || mas) {
-                  doc.querySelectorAll("[data-testid='stBottomBlockContainer']").forEach((el) => {
-                    el.style.setProperty("min-height", "0px", "important");
-                    el.style.setProperty("padding-top", "0px", "important");
-                    el.style.setProperty("padding-bottom", "0px", "important");
-                    el.style.setProperty("margin-top", "0px", "important");
-                    el.style.setProperty("margin-bottom", "0px", "important");
-                  });
-                }
-                const dockVista = (caja, ancla) => {
-                  if (!caja || !nav) return;
-                  const navCaja = nav.getBoundingClientRect();
-                  const app = doc.querySelector(".stApp") || doc.documentElement;
-                  const isMas = esVistaMas(caja);
-                  if (isMas) {
-                    const sesion = caja.querySelector('[class~="st-key-mas_sesion"]') || caja.querySelector(".st-key-mas_sesion");
-                    const safeMas = caja.querySelector('[class~="st-key-safe_mas"]') || caja.querySelector(".st-key-safe_mas");
-                    let sesionHost = sesion;
-                    if (sesionHost) {
-                      while (sesionHost.parentElement && sesionHost.parentElement !== caja) {
-                        sesionHost = sesionHost.parentElement;
-                      }
-                    }
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    const tieneModulos = !!(caja.querySelector('[class~="st-key-mas_modulos"]') || caja.querySelector(".st-key-mas_modulos"));
-                    if (tieneModulos) {
-                      // Valor fijo: no depende del scroll, evitando ciclos de medición y vibración.
-                      caja.style.setProperty("display", "block", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "calc(140px + env(safe-area-inset-bottom, 0px))", "important");
-                      if (sesionHost) {
-                        sesionHost.style.setProperty("margin-top", "0px", "important");
-                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
-                      }
-                    } else {
-                      // Sin módulos, la cuenta y la sesión se presentan como un bloque compacto.
-                      caja.style.setProperty("display", "block", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "112px", "important");
-                      if (sesionHost) {
-                        sesionHost.style.setProperty("margin-top", "48px", "important");
-                        sesionHost.style.setProperty("margin-bottom", "0px", "important");
-                        sesionHost.style.setProperty("padding-bottom", "0px", "important");
-                      }
-                    }
-                    if (safeMas) {
-                      safeMas.style.setProperty("height", "0px", "important");
-                      safeMas.style.setProperty("min-height", "0px", "important");
-                      safeMas.style.setProperty("margin", "0px", "important");
-                      safeMas.style.setProperty("padding", "0px", "important");
-                      safeMas.style.setProperty("overflow", "hidden", "important");
-                    }
-                    return;
-                  }
-                  const formDir = caja.querySelector('[class~="st-key-formulario_direcciones"]') || caja.querySelector(".st-key-formulario_direcciones");
-                  if (formDir) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    caja.style.setProperty("height", "auto", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "0px", "important");
-                    formDir.style.setProperty("display", "flex", "important");
-                    formDir.style.setProperty("flex-direction", "column", "important");
-                    formDir.style.setProperty("height", "auto", "important");
-                    formDir.style.setProperty("min-height", "0", "important");
-                    formDir.style.setProperty("padding-bottom", "220px", "important");
-                    return;
-                  }
-                  const form = caja.querySelector('[class~="st-key-catalogo_formulario"]') || caja.querySelector(".st-key-catalogo_formulario");
-                  const host = form || caja;
-                  const posteriores = [];
-                  let nodoRef = form || (ancla && ancla.parentElement);
-                  while (nodoRef && nodoRef !== caja) {
-                    let sig = nodoRef.nextElementSibling;
-                    while (sig) {
-                      posteriores.push(sig);
-                      sig = sig.nextElementSibling;
-                    }
-                    nodoRef = nodoRef.parentElement;
-                  }
-                  const hayMas = posteriores.some((ch) =>
-                    ch.querySelector("button, a, img, [data-testid='stDownloadButton']")
-                  );
-                  const esCatalogo = !!(caja && ((caja.className || "").indexOf("st-key-vista_catalogo") >= 0));
-                  if (esCatalogo) {
-                    caja.style.setProperty("box-sizing", "border-box", "important");
-                    if (form) {
-                      form.style.setProperty("display", "flex", "important");
-                      form.style.setProperty("flex-direction", "column", "important");
-                      form.style.setProperty("width", "100%", "important");
-                      form.style.setProperty("flex", "0 0 auto", "important");
-                      form.style.setProperty("min-height", "0", "important");
-                    }
-                    const itemCat = ancla ? Array.from((form || caja).children).find((ch) => ch.contains(ancla)) : null;
-                    if (itemCat) itemCat.style.setProperty("margin-top", "0", "important");
-                    if (hayMas) {
-                      caja.style.setProperty("justify-content", "flex-start", "important");
-                      caja.style.setProperty("padding-bottom", "180px", "important");
-                      caja.style.setProperty("min-height", "0px", "important");
-                    } else {
-                      caja.style.setProperty("justify-content", "center", "important");
-                      caja.style.setProperty("padding-top", "0px", "important");
-                      caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                      const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                      const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                      caja.style.setProperty("min-height", minH + "px", "important");
-                    }
-                    return;
-                  }
-                  if (form) {
-                    form.style.setProperty("display", "flex", "important");
-                    form.style.setProperty("flex-direction", "column", "important");
-                    form.style.setProperty("width", "100%", "important");
-                    form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                    form.style.setProperty("min-height", hayMas ? "0" : "100%", "important");
-                  }
-                  if (!hayMas && form) {
-                    const cadena = [];
-                    let p = form.parentElement;
-                    while (p && p !== caja) {
-                      cadena.push(p);
-                      p = p.parentElement;
-                    }
-                    cadena.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                  }
-                  const hijosHost = Array.from(host.children);
-                  const item = ancla ? hijosHost.find((ch) => ch.contains(ancla)) : null;
-                  if (form) form.style.setProperty("flex", hayMas ? "0 0 auto" : "1 1 auto", "important");
-                  if (item) {
-                    if (hayMas) item.style.setProperty("margin-top", "0", "important");
-                    else item.style.setProperty("margin-top", "auto", "important");
-                  }
-                  caja.style.setProperty("box-sizing", "border-box", "important");
-                  const emitAcciones = caja.querySelector('[class~="st-key-acciones_emit_cotizador"]') ||
-                    caja.querySelector(".st-key-acciones_emit_cotizador");
-                  if (emitAcciones) {
-                    caja.style.setProperty("display", "flex", "important");
-                    caja.style.setProperty("flex-direction", "column", "important");
-                    caja.style.setProperty("justify-content", "flex-start", "important");
-                    caja.style.setProperty("padding-top", "16px", "important");
-                    caja.style.setProperty("padding-bottom", "calc(var(--ccm-nav-clearance, 109px) + 16px)", "important");
-                    const cajaTopEmit = Math.max(0, caja.getBoundingClientRect().top);
-                    caja.style.setProperty("min-height", Math.max(0, Math.round(win.innerHeight - cajaTopEmit)) + "px", "important");
-                    emitAcciones.style.setProperty("margin-top", "auto", "important");
-                    emitAcciones.style.setProperty("margin-bottom", "0px", "important");
-                    const cadenaEmit = [];
-                    let pEmit = emitAcciones.parentElement;
-                    while (pEmit && pEmit !== caja) {
-                      cadenaEmit.push(pEmit);
-                      pEmit = pEmit.parentElement;
-                    }
-                    cadenaEmit.forEach((nodo) => {
-                      nodo.style.setProperty("display", "flex", "important");
-                      nodo.style.setProperty("flex-direction", "column", "important");
-                      nodo.style.setProperty("flex", "1 1 auto", "important");
-                      nodo.style.setProperty("min-height", "0", "important");
-                      nodo.style.setProperty("width", "100%", "important");
-                    });
-                    if (item) item.style.setProperty("margin-top", "0", "important");
-                    return;
-                  }
-                  if (hayMas) {
-                    caja.style.setProperty("padding-bottom", "200px", "important");
-                    caja.style.setProperty("min-height", "0px", "important");
-                    return;
-                  }
-                  const scrollTop = app.scrollTop || 0;
-                  const maxScroll = Math.max(0, (app.scrollHeight || 0) - (app.clientHeight || 0));
-                  const vistaLarga = maxScroll > 80;
-                  if (scrollTop < 4 || !vistaLarga) {
-                    const cajaTop = Math.max(0, caja.getBoundingClientRect().top);
-                    const minH = Math.max(0, Math.round(win.innerHeight - cajaTop));
-                    caja.style.setProperty("min-height", minH + "px", "important");
-                  } else {
-                    caja.style.setProperty("min-height", "0px", "important");
-                  }
-                  if (!ancla) return;
-                  const currentPad = parseFloat(win.getComputedStyle(caja).paddingBottom) || 0;
-                  const anclaNow = ancla.getBoundingClientRect().bottom;
-                  const anclaAtMax = anclaNow + scrollTop - maxScroll;
-                  const objetivo = navCaja.top - GAP_OBJETIVO;
-                  const enPantalla = anclaNow <= win.innerHeight + 8 && anclaNow >= 40;
-                  const referencia = (!vistaLarga || (scrollTop < 4 && enPantalla)) ? anclaNow : anclaAtMax;
-                  let nextPad = Math.round(currentPad + (referencia - objetivo));
-                  nextPad = Math.max(0, Math.min(160, nextPad));
-                  caja.style.setProperty("padding-bottom", nextPad + "px", "important");
-                };
-                if (mas) {
-                  doc.querySelectorAll("[data-testid='stMainBlockContainer'] > [data-testid='stVerticalBlock'], .stMainBlockContainer > [data-testid='stVerticalBlock']").forEach((col) => {
-                    col.style.setProperty("gap", "0px", "important");
-                    col.style.setProperty("row-gap", "0px", "important");
-                  });
-                }
-                if (mas && nav) dockVista(mas, logout);
-                if (!mas && vistaModulo && nav) dockVista(vistaModulo, accion);
-                const chromeCss =
-                  '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"],' +
-                  '[data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget,' +
-                  '.stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"],' +
-                  '[class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stAppHeader"], .stAppHeader,' +
-                  '[data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stHostHeader"],' +
-                  '[data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stMainMenu"],' +
-                  '[data-testid="stHeader"] [data-testid="stBaseButton-header"], [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"],' +
-                  '[data-testid="stHeader"] button[title="Deploy"], #recordMenuPopoverButton,' +
-                  'iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i],' +
-                  'a[href*="share.streamlit.io"], a[href*="streamlit.io/cloud"]' +
-                  ' { display:none !important; visibility:hidden !important;' +
-                  ' pointer-events:none !important; opacity:0 !important; width:0 !important; height:0 !important; }';
-                const inyectarCss = (rootDoc) => {
-                  if (!rootDoc || !rootDoc.documentElement) return;
-                  let tag = rootDoc.getElementById("ccm-hide-chrome");
-                  if (!tag) {
-                    tag = rootDoc.createElement("style");
-                    tag.id = "ccm-hide-chrome";
-                    rootDoc.documentElement.appendChild(tag);
-                  }
-                  tag.textContent = chromeCss;
-                };
-                const docs = [doc];
-                try {
-                  if (win.parent && win.parent.document && win.parent.document !== doc) {
-                    docs.push(win.parent.document);
-                  }
-                } catch (e) {}
-                try {
-                  if (win.top && win.top.document && win.top.document !== doc) {
-                    docs.push(win.top.document);
-                  }
-                } catch (e) {}
-                docs.forEach((rootDoc) => {
-                  inyectarCss(rootDoc);
-                  rootDoc.querySelectorAll(
-                    '#MainMenu, footer, [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stStatusWidget, .stDeployButton, [data-testid="stAppDeployButton"], [class*="stAppDeployButton"], [class*="viewerBadge"], [class*="ViewerBadge"], [data-testid="stToolbarActions"], [data-testid="stHostToolbar"], [data-testid="stAppToolbar"], .stAppToolbar, [data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"], #recordMenuPopoverButton, iframe[title*="streamlit status" i], iframe[title*="streamlit cloud" i]'
-                  ).forEach((el) => {
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    el.style.setProperty("display", "none", "important");
-                    el.style.setProperty("visibility", "hidden", "important");
-                    el.style.setProperty("pointer-events", "none", "important");
-                    el.style.setProperty("opacity", "0", "important");
-                  });
-                  const vista = rootDoc.defaultView || win;
-                  rootDoc.querySelectorAll("button, a, iframe, div").forEach((el) => {
-                    if (el.closest('[class~="st-key-bottom_nav"], .st-key-bottom_nav')) return;
-                    if (el.closest('[data-testid="stDialog"], .stDialog, [data-st-overlay-root="true"]')) return;
-                    const etiqueta = ((el.innerText || el.getAttribute("aria-label") || el.title || "") + "").replace(/\\s+/g, " ").trim();
-                    if (/^(Manage app|Deploy this app|Deploy|Stop|Record a screencast|Record)$/i.test(etiqueta)) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                      return;
-                    }
-                    const stilo = vista.getComputedStyle(el);
-                    if (stilo.position !== "fixed" && stilo.position !== "sticky") return;
-                    const r = el.getBoundingClientRect();
-                    if (r.width === 0 || r.height === 0 || r.width > 280 || r.height > 140) return;
-                    if (r.right > vista.innerWidth - 180 && r.bottom > vista.innerHeight - 180) {
-                      el.style.setProperty("display", "none", "important");
-                      el.style.setProperty("visibility", "hidden", "important");
-                      el.style.setProperty("pointer-events", "none", "important");
-                    }
-                  });
-                });
-              };
-              anclar();
-              setTimeout(anclar, 80);
-              setTimeout(anclar, 280);
-              setTimeout(anclar, 800);
-              if (!win.__ccmBottomNavBound) {
-                win.__ccmBottomNavBound = true;
-                win.addEventListener("resize", anclar, { passive: true });
-                win.addEventListener("orientationchange", anclar, { passive: true });
-                const appScroll = doc.querySelector(".stApp");
-                if (appScroll) {
-                  appScroll.addEventListener("scroll", () => {
-                    if (win.__ccmDockScrollTO) win.cancelAnimationFrame(win.__ccmDockScrollTO);
-                    win.__ccmDockScrollTO = win.requestAnimationFrame(anclar);
-                  }, { passive: true });
-                }
-                try {
-                  let espera;
-                  const anclarSuave = () => {
-                    clearTimeout(espera);
-                    espera = setTimeout(anclar, 60);
-                  };
-                  new MutationObserver(anclarSuave).observe(doc.body, { childList: true, subtree: true });
-                } catch (e) {}
-              }
-            })();
-            </script>
-            """,
-            height=0,
-            scrolling=False,
-        )
 
 
 def sincronizar_altura_encabezado_fijo():
@@ -3544,6 +3497,7 @@ def compilar_pdf_simple(stream_content):
     return pdf_buffer.getvalue()
 
 
+@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
 def generar_pdf_etiqueta_proveedor(
     casillero,
     nombre,
@@ -3590,14 +3544,16 @@ def generar_pdf_etiqueta_proveedor(
 (================================================================) Tj
 /F1 11 Tf
 0 -18 Td
-(SHIP TO / WAREHOUSE IN CHINA [CHILAT]:) Tj
+(SHIP TO / WAREHOUSE IN SHANGHAI, CHINA:) Tj
 /F1 9 Tf
 0 -14 Td
 (ATTN / RECEIVER : CHILAT / {casillero}) Tj
 0 -12 Td
-(ADDRESS : CHILAT Logistics Warehouse, District B, Port Area, Guangzhou) Tj
+(ADDRESS : No. 1333 Renmintang Road, Heqing Town) Tj
 0 -12 Td
-(WAREHOUSE TEL : +86 138 0000 0000) Tj
+(          Pudong New Area, Shanghai, China) Tj
+0 -12 Td
+(NOTIFY 3 DAYS BEFORE SHIPPING: WHATSAPP +504 9577-1099) Tj
 0 -22 Td
 (================================================================) Tj
 /F1 10 Tf
@@ -3625,6 +3581,7 @@ ET"""
     return compilar_pdf_simple(stream)
 
 
+@st.cache_data(ttl=900, show_spinner=False, max_entries=64)
 def generar_pdf_confirmacion_cotizacion(
     casillero,
     nombre,
@@ -3704,14 +3661,16 @@ def generar_pdf_confirmacion_cotizacion(
 (================================================================) Tj
 /F1 10 Tf
 0 -16 Td
-(DIRECCION DE BODEGA EN GUANGZHOU, CHINA:) Tj
+(DIRECCION DE BODEGA EN SHANGHAI, CHINA:) Tj
 /F1 8 Tf
 0 -13 Td
 (ATTN / CONSIGNATARIO : CHILAT / {casillero}) Tj
 0 -11 Td
-(DIRECCION EN GUANGZHOU: CHILAT Logistics Warehouse, District B, Port Area) Tj
+(DIRECCION: No. 1333 Renmintang Road, Heqing Town) Tj
 0 -11 Td
-(TELEFONO EN CHINA    : +86 138 0000 0000) Tj
+(           Pudong New Area, Shanghai, China) Tj
+0 -11 Td
+(NOTIFICAR 3 DIAS ANTES: WHATSAPP +504 9577-1099) Tj
 0 -18 Td
 (================================================================) Tj
 /F1 8 Tf
@@ -3752,9 +3711,65 @@ def verificar_pwd(password, almacenada):
     return hmac.compare_digest(anterior, valor)
 
 
+@st.cache_resource(show_spinner=False)
+def estado_intentos_acceso():
+    return {"lock": threading.Lock(), "fallos": {}}
+
+
+def clave_intento_acceso(identificador):
+    normalizado = normalizar_correo(identificador)
+    return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
+
+
+def comprobar_limite_acceso(identificador, max_intentos=5, ventana_s=600, bloqueo_s=300):
+    estado = estado_intentos_acceso()
+    clave = clave_intento_acceso(identificador)
+    ahora = datetime.now().timestamp()
+    with estado["lock"]:
+        fallos = [t for t in estado["fallos"].get(clave, []) if ahora - t < ventana_s]
+        estado["fallos"][clave] = fallos
+        if len(fallos) < max_intentos:
+            return True, 0
+        restante = max(0, int(bloqueo_s - (ahora - fallos[-1])))
+        if restante <= 0:
+            estado["fallos"].pop(clave, None)
+            return True, 0
+        return False, restante
+
+
+def registrar_fallo_acceso(identificador, ventana_s=600):
+    estado = estado_intentos_acceso()
+    clave = clave_intento_acceso(identificador)
+    ahora = datetime.now().timestamp()
+    with estado["lock"]:
+        fallos = [t for t in estado["fallos"].get(clave, []) if ahora - t < ventana_s]
+        fallos.append(ahora)
+        estado["fallos"][clave] = fallos[-10:]
+        if len(estado["fallos"]) > 5000:
+            limite = ahora - ventana_s
+            estado["fallos"] = {
+                k: [t for t in valores if t >= limite]
+                for k, valores in estado["fallos"].items()
+                if any(t >= limite for t in valores)
+            }
+
+
+def limpiar_fallos_acceso(identificador):
+    estado = estado_intentos_acceso()
+    with estado["lock"]:
+        estado["fallos"].pop(clave_intento_acceso(identificador), None)
+
+
+@st.cache_resource(show_spinner=False)
+def obtener_pool_postgres():
+    max_size = int(os.environ.get("CCM_DB_POOL_MAX", "8") or 8)
+    return PoolPostgresSimple(DATABASE_URL, min_size=1, max_size=max_size, timeout=20)
+
+
 def get_db():
     if USA_SUPABASE:
-        return ConexionPostgresCompatible(psycopg.connect(DATABASE_URL, connect_timeout=20))
+        pool = obtener_pool_postgres()
+        return ConexionPostgresCompatible(pool.obtener(), pool=pool)
     conn = sqlite3.connect(DB_NAME, timeout=30)
     # Evita que una escritura breve de otro ciclo de Streamlit haga que el
     # botón parezca no responder; SQLite espera hasta 30 segundos por el lock.
@@ -3791,6 +3806,10 @@ def init_db():
         return
     with get_db() as conn:
         c = conn.cursor()
+        # WAL permite lecturas mientras se realiza una escritura y NORMAL evita
+        # sincronizaciones de disco excesivas sin comprometer la integridad.
+        c.execute("PRAGMA journal_mode = WAL")
+        c.execute("PRAGMA synchronous = NORMAL")
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -3958,13 +3977,85 @@ def init_db():
             "INSERT OR IGNORE INTO config_sistema (clave, valor, descripcion) VALUES ('COMISION_CCM_PORCENTAJE', '0.10', 'Comisión CCM sobre FOB')"
         )
 
+        # Índices de las rutas más consultadas por cada rerun de Streamlit.
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_fecha "
+            "ON cotizaciones(codigo_casillero, fecha_creacion DESC, id DESC)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_confirmada "
+            "ON cotizaciones(codigo_casillero, confirmada, fecha_confirmacion)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paquetes_casillero "
+            "ON paquetes(codigo_casillero, fecha_actualizacion DESC)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
+            "ON direcciones_entrega(codigo_casillero, activa, id)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_dni ON usuarios(dni)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_correo_normalizado "
+            "ON usuarios(LOWER(TRIM(correo_principal)))"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usuarios_rol_nombre "
+            "ON usuarios(rol, nombre_completo)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_carrito_casillero_sku "
+            "ON carrito_catalogo(codigo_casillero, sku)"
+        )
+
         # No se crean usuarios, contraseñas ni datos de demostración en un
         # arranque de producción. Las cuentas se gestionan desde el panel
         # administrativo o mediante el bootstrap protegido por Secrets.
 
 
-init_db()
-asegurar_esquema_direcciones()
+def asegurar_indices_rendimiento():
+    """Crea los índices de las rutas críticas tanto en SQLite como PostgreSQL."""
+    sentencias = (
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_fecha "
+        "ON cotizaciones(codigo_casillero, fecha_creacion DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_confirmada "
+        "ON cotizaciones(codigo_casillero, confirmada, fecha_confirmacion)",
+        "CREATE INDEX IF NOT EXISTS idx_paquetes_casillero "
+        "ON paquetes(codigo_casillero, fecha_actualizacion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
+        "ON direcciones_entrega(codigo_casillero, activa, id)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_dni ON usuarios(dni)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_correo_normalizado "
+        "ON usuarios(LOWER(TRIM(correo_principal)))",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_rol_nombre "
+        "ON usuarios(rol, nombre_completo)",
+        "CREATE INDEX IF NOT EXISTS idx_carrito_casillero_sku "
+        "ON carrito_catalogo(codigo_casillero, sku)",
+    )
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            for sentencia in sentencias:
+                cursor.execute(sentencia)
+            conn.commit()
+        return True
+    except Exception as exc:
+        print(f"[CCM rendimiento] No se pudieron crear todos los índices: {exc}", flush=True)
+        return False
+
+
+@st.cache_resource(show_spinner=False)
+def inicializar_persistencia():
+    """Prepara esquema e índices una vez por proceso, no una vez por botón."""
+    init_db()
+    asegurar_esquema_direcciones()
+    asegurar_indices_rendimiento()
+    return True
+
+
+inicializar_persistencia()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -3994,6 +4085,7 @@ def set_tarifa(clave, valor):
     get_tarifa.clear()
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_config_sistema(clave, valor_default=""):
     try:
         with get_db() as conn:
@@ -4003,6 +4095,29 @@ def get_config_sistema(clave, valor_default=""):
             return row[0] if row else valor_default
     except Exception:
         return valor_default
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def obtener_conteos_tablas():
+    """Evita recalcular conteos completos en cada interacción administrativa."""
+    with get_db() as conn:
+        c = conn.cursor()
+        if USA_SUPABASE:
+            c.execute(
+                """
+                SELECT relname, GREATEST(n_live_tup, 0)::BIGINT
+                FROM pg_stat_user_tables
+                ORDER BY relname
+                """
+            )
+            return {str(tabla): int(conteo or 0) for tabla, conteo in c.fetchall()}
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tablas = [r[0] for r in c.fetchall()]
+        conteos = {}
+        for tabla in tablas:
+            c.execute(f'SELECT COUNT(*) FROM "{tabla}"')
+            conteos[tabla] = int(c.fetchone()[0])
+        return conteos
 
 
 def set_config_sistema(clave, valor, descripcion=""):
@@ -4015,6 +4130,8 @@ def set_config_sistema(clave, valor, descripcion=""):
             """,
             (clave, str(valor), descripcion),
         )
+        conn.commit()
+    get_config_sistema.clear()
 
 
 PREFIJO_CASILLERO = "CCM-"
@@ -4092,6 +4209,20 @@ def permisos_default(rol="cliente"):
     }
 
 
+def permisos_denegados():
+    """Estado seguro cuando no es posible demostrar los permisos del usuario."""
+    return {
+        "hub_china": 0,
+        "hub_eeuu": 0,
+        "hub_honduras": 0,
+        "mod_cotizador": 0,
+        "mod_catalogo": 0,
+        "mod_cotizaciones": 0,
+        "mod_envios": 0,
+        "mod_fichas": 0,
+    }
+
+
 def asegurar_permisos_casillero(casillero, rol="cliente"):
     cas = formatear_casillero(casillero)
     if not cas:
@@ -4145,7 +4276,7 @@ def abrir_permisos_todos_los_usuarios():
 
 def permisos_de(casillero=None):
     cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
-    base = permisos_default(st.session_state.get("rol", "cliente"))
+    base = permisos_denegados()
     if not cas:
         return base
     clave_cache = f"_ccm_permisos_{cas}"
@@ -4182,7 +4313,9 @@ def permisos_de(casillero=None):
         permisos = dict(zip(claves, [int(v or 0) for v in row]))
         st.session_state[clave_cache] = permisos
         return permisos
-    except Exception:
+    except Exception as exc:
+        print(f"[CCM permisos] No se pudieron validar permisos para {cas}: {exc}", flush=True)
+        st.session_state["_ccm_error_permisos"] = True
         return base
 
 
@@ -4386,16 +4519,12 @@ if not st.session_state.get("_ccm_arranque_db_realizado"):
         abrir_permisos_todos_los_usuarios()
         restaurar_datos_operativos_cliente()
     st.session_state["_ccm_arranque_db_realizado"] = True
-marca_purga = float(st.session_state.get("_ccm_ultima_purga") or 0)
-ahora_purga = datetime.now().timestamp()
-if not USA_SUPABASE and ahora_purga - marca_purga >= 60:
-    purgar_cotizaciones_no_confirmadas_vencidas()
-    st.session_state["_ccm_ultima_purga"] = ahora_purga
+purgar_cotizaciones_si_corresponde()
 
 
 def generar_clave_provisional():
     caracteres = string.ascii_letters + string.digits + "@#"
-    return "".join(random.choice(caracteres) for _ in range(8))
+    return "".join(secrets.choice(caracteres) for _ in range(12))
 
 
 def normalizar_correo(correo):
@@ -4750,6 +4879,55 @@ def _valor_numerico_producto(valor, unidad, destino):
     return numero
 
 
+def validar_url_publica(url):
+    """Rechaza destinos locales, privados o reservados antes de una petición saliente."""
+    texto = str(url or "").strip()
+    parsed = urllib.parse.urlparse(texto)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("El enlace debe usar HTTP o HTTPS y contener un dominio válido.")
+    if parsed.username or parsed.password:
+        raise ValueError("El enlace no puede incluir credenciales.")
+    puerto = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        destinos = socket.getaddrinfo(parsed.hostname, puerto, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError("No se pudo resolver el dominio del enlace.") from exc
+    direcciones = {registro[4][0].split("%", 1)[0] for registro in destinos}
+    if not direcciones:
+        raise ValueError("El dominio no devolvió una dirección válida.")
+    for direccion in direcciones:
+        try:
+            ip = ipaddress.ip_address(direccion)
+        except ValueError as exc:
+            raise ValueError("El dominio devolvió una dirección no válida.") from exc
+        if not ip.is_global:
+            raise ValueError("No se permiten enlaces a redes privadas, locales o reservadas.")
+    return texto
+
+
+def abrir_url_publica(url, headers, timeout, max_redirecciones=3):
+    """Abre una URL pública y revalida cada salto de redirección."""
+    actual = validar_url_publica(url)
+    for _ in range(max_redirecciones + 1):
+        respuesta = requests.get(
+            actual,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=False,
+            stream=True,
+        )
+        if respuesta.status_code in (301, 302, 303, 307, 308):
+            destino = respuesta.headers.get("location")
+            respuesta.close()
+            if not destino:
+                raise requests.TooManyRedirects("Redirección sin destino.")
+            actual = validar_url_publica(urllib.parse.urljoin(actual, destino))
+            continue
+        return respuesta
+    raise requests.TooManyRedirects("El enlace superó el máximo de redirecciones permitido.")
+
+
+@st.cache_data(ttl=300, max_entries=128, show_spinner=False)
 def consultar_producto_enlace_eeuu(enlace):
     """Obtiene metadatos públicos de cualquier tienda que permita su lectura.
 
@@ -4758,22 +4936,28 @@ def consultar_producto_enlace_eeuu(enlace):
     completar la ficha manualmente.
     """
     url = str(enlace or "").strip()
-    if not url.startswith(("https://", "http://")):
-        return {"error": "Pegue un enlace completo que comience con https://."}
     try:
-        respuesta = requests.get(
+        respuesta = abrir_url_publica(
             url,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
                 "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             },
-            timeout=12,
-            allow_redirects=True,
+            timeout=(3.05, 8),
         )
         respuesta.raise_for_status()
-        pagina = respuesta.text
-    except requests.RequestException as exc:
+        contenido = bytearray()
+        for bloque in respuesta.iter_content(chunk_size=65536):
+            contenido.extend(bloque)
+            if len(contenido) > 2_500_000:
+                respuesta.close()
+                return {"error": "La página es demasiado grande para procesarla automáticamente."}
+        codificacion = respuesta.encoding or "utf-8"
+        url_final = respuesta.url
+        respuesta.close()
+        pagina = contenido.decode(codificacion, errors="replace")
+    except (requests.RequestException, ValueError) as exc:
         return {"error": f"No se pudo consultar el enlace: {exc}"}
 
     pagina_baja = pagina.lower()
@@ -4795,7 +4979,7 @@ def consultar_producto_enlace_eeuu(enlace):
         "precio_usd": None,
         "moneda": meta("product:price:currency") or meta("og:price:currency") or "USD",
         "peso_lb": None, "ancho_in": None, "alto_in": None, "largo_in": None,
-        "url_final": respuesta.url,
+        "url_final": url_final,
     }
     precio_meta = meta("product:price:amount") or meta("og:price:amount")
     if precio_meta:
@@ -4882,27 +5066,34 @@ def consultar_producto_enlace_eeuu(enlace):
             except ValueError:
                 pass
     titulo_limpio = str(resultado.get("titulo") or "").strip()
-    host = urllib.parse.urlparse(respuesta.url).netloc.lower().removeprefix("www.")
+    host = urllib.parse.urlparse(url_final).netloc.lower().removeprefix("www.")
     if titulo_limpio.lower() in {host, host.replace(".com", ""), "amazon.com", "walmart.com", "ebay.com"}:
         resultado["titulo"] = ""
     resultado["descripcion"] = str(resultado.get("descripcion") or "").strip()[:900]
     return resultado
 
 
+@st.cache_data(ttl=600, max_entries=128, show_spinner=False)
 def descargar_imagen_producto(url):
     """Descarga la imagen al servidor para evitar bloqueos de hotlink en el navegador."""
-    if not str(url or "").startswith(("https://", "http://")):
-        return None
     try:
-        respuesta = requests.get(
+        respuesta = abrir_url_publica(
             url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; CCM-Cotizador/1.0)"},
-            timeout=10,
+            timeout=(3.05, 6),
         )
         tipo = respuesta.headers.get("content-type", "").lower()
-        if respuesta.ok and tipo.startswith("image/") and len(respuesta.content) <= 5_000_000:
-            return respuesta.content
-    except requests.RequestException:
+        if respuesta.ok and tipo.startswith("image/"):
+            contenido = bytearray()
+            for bloque in respuesta.iter_content(chunk_size=65536):
+                contenido.extend(bloque)
+                if len(contenido) > 5_000_000:
+                    respuesta.close()
+                    return None
+            respuesta.close()
+            return bytes(contenido)
+        respuesta.close()
+    except (requests.RequestException, ValueError):
         pass
     return None
 
@@ -5180,78 +5371,6 @@ def restaurar_sesion_persistente():
     """
     return bool(st.session_state.get("autenticado", False))
 
-    try:
-        params = st.query_params
-        cas_param = params.get("casillero", "")
-        if isinstance(cas_param, list):
-            cas_param = cas_param[0] if cas_param else ""
-        cas_param = str(cas_param).strip()
-
-        if not cas_param:
-            return False
-
-        claves = coincidencias_casillero(cas_param)
-        placeholders = ",".join("?" * len(claves))
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute(
-                f"""
-                SELECT id, codigo_casillero, nombre_completo, correo_principal,
-                       rol, activo, telefono_principal, ciudad
-                FROM usuarios
-                WHERE codigo_casillero IN ({placeholders}) AND activo = 1
-                """,
-                claves,
-            )
-            user_rec = c.fetchone()
-
-        if not user_rec:
-            return False
-
-        st.session_state["autenticado"] = True
-        st.session_state["rol"] = normalizar_rol(user_rec[4])
-        perfil_rest = cargar_perfil_usuario(user_rec[1])
-        if perfil_rest:
-            aplicar_perfil_en_sesion(perfil_rest)
-        else:
-            st.session_state["casillero"] = formatear_casillero(user_rec[1])
-            st.session_state["nombre"] = user_rec[2]
-            st.session_state["usuario"] = user_rec[3]
-            st.session_state["telefono"] = user_rec[6]
-            st.session_state["ciudad"] = user_rec[7]
-
-        vista_url = params.get("vista", "")
-        if isinstance(vista_url, list):
-            vista_url = vista_url[0] if vista_url else ""
-        hub_url = params.get("hub", "")
-        if isinstance(hub_url, list):
-            hub_url = hub_url[0] if hub_url else ""
-
-        vistas_validas = {"Inicio", "China", "EE. UU.", "Honduras", "Consultas", "Configuración", "Más", "Actividad", "Fichas"} | VISTAS_MODULO
-        if vista_url in ALIAS_VISTA:
-            vista_url = ALIAS_VISTA[vista_url]
-        if vista_url in vistas_validas:
-            st.session_state["sub_tab_inicio"] = vista_url
-            st.session_state["vista_activa"] = vista_url
-        if hub_url in HUBS:
-            st.session_state["hub"] = hub_url
-        elif vista_url in MODULOS_POR_ID:
-            st.session_state["hub"] = MODULOS_POR_ID[vista_url]
-        elif vista_url == "Inicio":
-            # Inicio sin parámetro hub significa que se deseleccionó el país de origen.
-            st.session_state["hub"] = None
-        elif vista_url == "China":
-            st.session_state["hub"] = "china"
-        elif vista_url == "EE. UU.":
-            st.session_state["hub"] = "eeuu"
-        elif vista_url == "Honduras":
-            st.session_state["hub"] = "honduras"
-
-        return True
-
-    except Exception:
-        return False
-
 
 restaurar_sesion_persistente()
 
@@ -5345,8 +5464,6 @@ def logout():
 st.markdown(
     """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@700&display=swap');
-
     :root {
         --app-max-width: 520px;
         --app-pad: 0.7rem;
@@ -5398,7 +5515,7 @@ st.markdown(
     }
 
     .stApp {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
         overflow-x: hidden !important;
         overflow-y: auto !important;
         height: 100% !important;
@@ -6282,27 +6399,7 @@ st.markdown(
         min-height: 0 !important;
         height: auto !important;
         margin-top: 0 !important;
-        margin-bottom: clamp(20px, 2.2vw, 28px) !important;
-    }
-    /* Separa el panel de filtros del resumen/resultados del catalogo. */
-    .st-key-vista_catalogo [data-testid="stElementContainer"]:has(> [data-testid="stExpander"]),
-    .st-key-vista_catalogo [data-testid="stElementContainer"]:has([data-testid="stExpander"]) {
-        margin-bottom: clamp(20px, 2.2vw, 28px) !important;
-    }
-    /* Da aire a Buscar y Actualizar sin cambiar el ancho relativo de cada boton. */
-    .st-key-vista_catalogo [data-testid="stHorizontalBlock"]:has(.stButton),
-    .st-key-vista_catalogo [data-testid="stHorizontalBlock"]:has([data-testid="stButton"]) {
-        gap: 14px !important;
-        column-gap: 14px !important;
-    }
-    /* Respaldo para versiones de Streamlit que ignoran gap en st.columns. */
-    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:first-child .stButton):has(> [data-testid="stColumn"]:nth-child(2):last-child .stButton)
-        > [data-testid="stColumn"]:first-child {
-        padding-right: 8px !important;
-    }
-    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:first-child .stButton):has(> [data-testid="stColumn"]:nth-child(2):last-child .stButton)
-        > [data-testid="stColumn"]:last-child {
-        padding-left: 8px !important;
+        margin-bottom: 0 !important;
     }
     .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-guia_foco_tarifa),
     .st-key-vista_cotizador:not(:has(.st-key-guia_foco_pdf_fab)):not(:has(.st-key-acciones_emit_cotizador)) > [data-testid="stElementContainer"]:has(.st-key-btn_confirmar_tarifa),
@@ -6341,20 +6438,8 @@ st.markdown(
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
-    .st-key-btn_buscar_china,
-    .st-key-btn_escanear_catalogo {
-        width: 100% !important;
-        max-width: 100% !important;
-        display: block !important;
-        scroll-margin-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
-        margin-bottom: 0 !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-    }
     .st-key-guia_foco_tarifa div.stButton,
-    .st-key-btn_confirmar_tarifa div.stButton,
-    .st-key-btn_buscar_china div.stButton,
-    .st-key-btn_escanear_catalogo div.stButton {
+    .st-key-btn_confirmar_tarifa div.stButton {
         width: 100% !important;
     }
     .st-key-guia_foco_tarifa div.stButton > button,
@@ -6374,18 +6459,6 @@ st.markdown(
         margin-bottom: 0 !important;
         margin-top: 0 !important;
     }
-    .st-key-btn_buscar_china div.stButton > button,
-    .st-key-btn_escanear_catalogo div.stButton > button,
-    .st-key-btn_buscar_china [data-testid^="stBaseButton"],
-    .st-key-btn_escanear_catalogo [data-testid^="stBaseButton"] {
-        width: 100% !important;
-        max-width: 100% !important;
-        min-height: 48px !important;
-        height: 48px !important;
-        max-height: none !important;
-        box-sizing: border-box !important;
-    }
-
     .mas-seccion {
         font-size: 0.75rem;
         font-weight: 800;
@@ -6671,122 +6744,540 @@ st.markdown(
         font-size: 1.05rem !important;
     }
 
+    .actividad-politicas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-top: 12px;
+        padding: 15px 16px;
+        background: #fff8e6;
+        border: 1px solid #f0d28b;
+        border-left: 4px solid #d89b22;
+        border-radius: 6px;
+        color: #243447;
+        box-sizing: border-box;
+    }
+    .st-key-vista_actividad {
+        display: block !important;
+        min-height: 0 !important;
+        padding-bottom: 0 !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+    }
+    .st-key-safe_actividad {
+        display: block !important;
+        width: 100% !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    [data-testid="stElementContainer"]:has(> .st-key-safe_actividad),
+    [data-testid="stElementContainer"]:has(> [class~="st-key-safe_actividad"]),
+    [data-testid="stLayoutWrapper"]:has(> .st-key-safe_actividad) {
+        height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 28px) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+    .actividad-politicas-copy {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        min-width: 0;
+    }
+    .actividad-politicas-icon {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 28px;
+        background: #d89b22;
+        color: #17212b;
+        border-radius: 50%;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+    .actividad-politicas-copy small {
+        display: block;
+        margin-bottom: 3px;
+        color: #8a641b;
+        font-size: .60rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .actividad-politicas-copy b {
+        display: block;
+        color: #1c2d40;
+        font-size: .86rem;
+        line-height: 1.25;
+    }
+    .actividad-politicas-copy p {
+        max-width: 520px;
+        margin: 4px 0 0;
+        color: #586675;
+        font-size: .68rem;
+        line-height: 1.4;
+    }
+    a.actividad-politicas-cta,
+    a.actividad-politicas-cta:link,
+    a.actividad-politicas-cta:visited,
+    a.actividad-politicas-cta:hover,
+    a.actividad-politicas-cta:active {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px;
+        min-width: 166px;
+        padding: 10px 12px;
+        background: #173c64 !important;
+        color: #ffffff !important;
+        text-decoration: none !important;
+        border: 1px solid #173c64;
+        border-radius: 5px;
+        box-sizing: border-box;
+        font-size: .72rem;
+        font-weight: 800;
+        transition: transform 160ms ease, background-color 160ms ease;
+    }
+    .actividad-politicas-cta * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    a.actividad-politicas-cta:hover {
+        transform: translateY(-1px);
+        background: #0b2341 !important;
+    }
+    a.actividad-politicas-cta:focus-visible {
+        outline: 3px solid #f2c75c;
+        outline-offset: 3px;
+    }
+    @media (max-width: 640px) {
+        .actividad-politicas {
+            align-items: stretch;
+            flex-direction: column;
+            gap: 13px;
+            padding: 14px 12px;
+        }
+        a.actividad-politicas-cta { width: 100% !important; min-width: 0; }
+    }
+
+    .actividad-formato {
+        margin-top: 0;
+        padding: 16px;
+        background: #eef8f2;
+        border: 1px solid #b9dec7;
+        border-left: 4px solid #217346;
+        border-radius: 6px;
+        color: #20352a;
+        box-sizing: border-box;
+        box-shadow: 0 7px 16px rgba(33, 115, 70, .08);
+    }
+    .actividad-formato-gap {
+        display: block;
+        width: 100%;
+        height: 20px;
+        min-height: 20px;
+    }
+    .actividad-formato-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+    }
+    .actividad-formato-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 32px;
+        flex: 0 0 38px;
+        background: #217346;
+        color: #ffffff;
+        border-radius: 4px;
+        font-size: .62rem;
+        font-weight: 900;
+    }
+    .actividad-formato-head small {
+        display: block;
+        margin-bottom: 3px;
+        color: #347553;
+        font-size: .60rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .actividad-formato-head b {
+        display: block;
+        color: #173b29;
+        font-size: .90rem;
+        line-height: 1.25;
+    }
+    .actividad-formato-head p {
+        max-width: 720px;
+        margin: 5px 0 0;
+        color: #50685b;
+        font-size: .69rem;
+        line-height: 1.45;
+    }
+    .actividad-formato-pasos {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 13px 0;
+        padding: 0;
+        list-style: none;
+    }
+    .actividad-formato-pasos li {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        color: #365244;
+        font-size: .64rem;
+        font-weight: 700;
+        line-height: 1.3;
+    }
+    .actividad-formato-pasos li span {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        background: #d7eddf;
+        color: #17603a;
+        border-radius: 50%;
+        font-size: .62rem;
+        font-weight: 900;
+    }
+    .actividad-formato-acciones {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+    }
+    a.actividad-formato-descarga,
+    a.actividad-formato-descarga:link,
+    a.actividad-formato-descarga:visited,
+    a.actividad-formato-whatsapp,
+    a.actividad-formato-whatsapp:link,
+    a.actividad-formato-whatsapp:visited {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px;
+        min-height: 40px;
+        padding: 9px 11px;
+        border-radius: 5px;
+        box-sizing: border-box;
+        font-size: .68rem;
+        font-weight: 800;
+        text-decoration: none !important;
+        transition: transform 160ms ease, background-color 160ms ease;
+    }
+    a.actividad-formato-descarga,
+    a.actividad-formato-descarga:link,
+    a.actividad-formato-descarga:visited {
+        background: #217346 !important;
+        color: #ffffff !important;
+        border: 1px solid #217346;
+    }
+    a.actividad-formato-whatsapp,
+    a.actividad-formato-whatsapp:link,
+    a.actividad-formato-whatsapp:visited {
+        background: #ffffff !important;
+        color: #12613f !important;
+        border: 1px solid #56a879;
+    }
+    .actividad-formato-acciones a * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    a.actividad-formato-descarga:hover,
+    a.actividad-formato-whatsapp:hover {
+        transform: translateY(-1px);
+        text-decoration: none !important;
+    }
+    a.actividad-formato-descarga:hover { background: #185f39 !important; color: #ffffff !important; }
+    a.actividad-formato-whatsapp:hover { background: #e0f3e7 !important; color: #0e5134 !important; }
+    .actividad-formato-acciones a:focus-visible {
+        outline: 3px solid #6bc28d;
+        outline-offset: 3px;
+    }
+    @media (max-width: 640px) {
+        .actividad-formato-gap { height: 16px; min-height: 16px; }
+        .actividad-formato { padding: 14px 12px; }
+        .actividad-formato-pasos { grid-template-columns: 1fr; gap: 7px; }
+        .actividad-formato-acciones { grid-template-columns: 1fr; }
+    }
+
     .promo-ad-card {
         position: relative;
         z-index: 1;
         overflow: hidden;
-        background:
-            radial-gradient(circle at 95% 4%, rgba(251, 191, 36, 0.30) 0%, transparent 29%),
-            radial-gradient(circle at 4% 98%, rgba(56, 189, 248, 0.28) 0%, transparent 35%),
-            linear-gradient(135deg, #062c76 0%, #004ac1 55%, #1558d6 100%);
-        border: 1px solid rgba(191, 219, 254, 0.42);
-        border-radius: 20px;
-        padding: 22px 20px 19px 20px;
+        background: #0b2341;
+        border: 1px solid #173c64;
+        border-radius: 8px;
+        padding: 0;
         color: #ffffff;
         margin: 16px 0 22px 0;
-        box-shadow: 0 18px 38px rgba(0, 58, 145, 0.30);
+        box-shadow: 0 16px 34px rgba(11, 35, 65, 0.22);
         box-sizing: border-box;
         scroll-margin-top: calc(var(--header-offset, 208px) + 12px);
+        animation: promo-ad-enter 360ms ease-out both;
     }
-    .promo-ad-glow {
-        position: absolute;
-        right: -12px;
-        top: 9px;
-        font-size: 5rem;
-        opacity: 0.16;
-        transform: rotate(-9deg);
-        pointer-events: none;
+    .promo-ad-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 24px 24px 20px;
+        border-top: 4px solid #f2b84b;
     }
+    .promo-ad-heading { min-width: 0; }
     .promo-ad-kicker {
         display: flex;
         align-items: center;
         gap: 7px;
-        font-size: 0.68rem;
+        font-size: 0.66rem;
         font-weight: 800;
-        letter-spacing: 0.08em;
+        letter-spacing: 0;
         text-transform: uppercase;
-        color: #dbeafe;
-        margin: 0 0 8px 0;
+        color: #a9c4df;
+        margin: 0 0 7px;
     }
-    .promo-ad-live { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 4px rgba(74,222,128,.16); }
+    .promo-ad-live {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-radius: 50%;
+        background: #4ade80;
+        box-shadow: 0 0 0 4px rgba(74, 222, 128, .13);
+        animation: promo-ad-pulse 2.2s ease-in-out infinite;
+    }
     .promo-ad-title {
-        font-size: clamp(1.36rem, 4vw, 1.72rem);
+        font-size: 1.52rem;
         font-weight: 900;
-        line-height: 1.25;
-        margin: 0 0 3px 0;
+        line-height: 1.16;
+        margin: 0 0 6px;
         color: #ffffff;
-        letter-spacing: -0.02em;
+        letter-spacing: 0;
     }
-    .promo-ad-subtitle { font-size: 0.90rem; color: #fef3c7; margin: 0 0 13px 0; }
-    .promo-ad-body {
-        font-size: 0.88rem;
-        font-weight: 500;
-        line-height: 1.45;
-        color: #e2e8f0;
-        margin: 0 0 14px 0;
+    .promo-ad-subtitle {
+        max-width: 430px;
+        font-size: .84rem;
+        line-height: 1.4;
+        color: #cbd9e8;
+        margin: 0;
     }
-    .promo-ad-badges {
+    .promo-ad-deadline {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-        margin: 0 0 16px 0;
-    }
-    .promo-ad-badge {
-        display: flex;
-        gap: 7px;
-        align-items: flex-start;
-        min-width: 0;
-        padding: 9px 8px;
-        background: rgba(255,255,255,.12);
-        border: 1px solid rgba(255,255,255,.20);
-        border-radius: 12px;
-        color: #fff;
-    }
-    .promo-ad-badge > span { font-size: 1.05rem; line-height: 1.1; }
-    .promo-ad-badge div { min-width: 0; }
-    .promo-ad-badge small { display: block; font-size: .57rem; letter-spacing: .045em; color: #bfdbfe; font-weight: 800; line-height: 1.2; }
-    .promo-ad-badge b { display: block; font-size: .70rem; line-height: 1.25; margin-top: 3px; color: #fff; overflow-wrap: anywhere; }
-    .promo-ad-badge-close { background: rgba(245, 158, 11, .20); border-color: rgba(253, 230, 138, .42); }
-    .promo-ad-product-label { font-size: .65rem; font-weight: 800; letter-spacing: .08em; color: #bfdbfe; margin: 0 0 7px; }
-    .promo-ad-products { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
-    .promo-ad-products span { background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: 5px 8px; color: #fff; font-size: .72rem; font-weight: 700; }
-    .promo-ad-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin: 0 0 16px 0;
-    }
-    .promo-ad-pill {
-        background: rgba(255, 255, 255, 0.14);
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        border-radius: 999px;
-        padding: 5px 10px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #ffffff;
-    }
-    .promo-ad-cta {
-        display: block;
-        width: 100%;
-        box-sizing: border-box;
+        width: 108px;
+        min-width: 108px;
+        padding: 11px 8px 10px;
         text-align: center;
-        background: linear-gradient(135deg, #fef3c7, #fbbf24);
-        color: #713f12;
-        font-weight: 800;
-        font-size: 0.95rem;
-        text-decoration: none;
-        border-radius: 12px;
-        padding: 12px 14px;
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+        background: #f2b84b;
+        color: #17212b;
+        border-radius: 6px;
+        box-sizing: border-box;
     }
-    .promo-ad-cta:hover { filter: brightness(1.04); color: #713f12; text-decoration: none; }
+    .promo-ad-deadline strong { font-size: 2.25rem; line-height: .9; font-weight: 900; }
+    .promo-ad-deadline span { margin-top: 4px; font-size: .78rem; font-weight: 900; }
+    .promo-ad-deadline small { margin-top: 2px; font-size: .59rem; font-weight: 700; }
+    .promo-ad-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        margin: 0 24px 18px;
+        padding: 12px 14px;
+        background: #fff6df;
+        color: #3f2b0b;
+        border-left: 4px solid #e7a72e;
+        border-radius: 4px;
+    }
+    .promo-ad-alert > span {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        background: #e7a72e;
+        color: #17212b;
+        border-radius: 50%;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+    .promo-ad-alert b { display: block; font-size: .80rem; }
+    .promo-ad-alert p { margin: 3px 0 0; font-size: .74rem; line-height: 1.42; }
+    .promo-ad-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        margin: 0 24px 18px;
+        border-top: 1px solid #31506f;
+        border-bottom: 1px solid #31506f;
+    }
+    .promo-ad-meta > div { padding: 10px 0; }
+    .promo-ad-meta > div + div { padding-left: 18px; border-left: 1px solid #31506f; }
+    .promo-ad-meta small,
+    .promo-ad-address small,
+    .promo-ad-address-head small {
+        display: block;
+        color: #7894af;
+        font-size: .58rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        line-height: 1.25;
+    }
+    .promo-ad-meta b { display: block; margin-top: 3px; color: #fff; font-size: .76rem; }
+    .promo-ad-addresses {
+        margin: 0 24px 18px;
+        padding: 16px;
+        background: #f7f9fc;
+        color: #14283d;
+        border-radius: 6px;
+    }
+    .promo-ad-address-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding-bottom: 11px;
+        border-bottom: 1px solid #d8e0e9;
+    }
+    .promo-ad-address-head > span { color: #d9961d; font-size: 1.30rem; line-height: 1; }
+    .promo-ad-address-head b { display: block; margin-top: 2px; color: #14283d; font-size: .86rem; }
+    .promo-ad-address-primary { padding: 12px 0; border-bottom: 1px solid #d8e0e9; }
+    .promo-ad-address-primary b { font-size: .95rem !important; color: #0d3155 !important; }
+    .promo-ad-translations {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        padding-top: 12px;
+    }
+    .promo-ad-address {
+        min-width: 0;
+    }
+    .promo-ad-address b {
+        display: block;
+        margin-top: 4px;
+        color: #31465b;
+        font-size: .72rem;
+        font-weight: 650;
+        line-height: 1.42;
+        overflow-wrap: anywhere;
+    }
+    a.promo-ad-cta,
+    a.promo-ad-cta:link,
+    a.promo-ad-cta:visited,
+    a.promo-ad-cta:hover,
+    a.promo-ad-cta:active {
+        display: flex !important;
+        align-items: center !important;
+        gap: 11px;
+        width: auto !important;
+        min-height: 62px;
+        box-sizing: border-box;
+        margin: 0 24px 24px;
+        background: #128c5b !important;
+        color: #ffffff !important;
+        text-decoration: none !important;
+        border-radius: 6px;
+        border: 1px solid #39c779;
+        padding: 10px 12px;
+        box-shadow: 0 8px 18px rgba(18, 140, 91, .24);
+        transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+    .promo-ad-cta *,
+    .promo-ad-cta:link *,
+    .promo-ad-cta:visited * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        background: #ffffff;
+        color: #128c5b !important;
+        border-radius: 50%;
+        font-size: .68rem;
+        font-weight: 900;
+    }
+    .promo-ad-cta-copy { display: grid; min-width: 0; }
+    .promo-ad-cta-copy b {
+        color: #ffffff !important;
+        font-size: .88rem;
+        line-height: 1.2;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-copy small {
+        margin-top: 3px;
+        color: #d8f8e6 !important;
+        font-size: .64rem;
+        line-height: 1.25;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-arrow {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 30px;
+        margin-left: auto;
+        background: rgba(255, 255, 255, .14);
+        color: #ffffff !important;
+        border-radius: 50%;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    a.promo-ad-cta:hover {
+        transform: translateY(-2px);
+        background: #0f744b !important;
+        box-shadow: 0 11px 22px rgba(18, 140, 91, .30);
+    }
+    a.promo-ad-cta:focus-visible {
+        outline: 3px solid #86efac;
+        outline-offset: 3px;
+    }
+    @keyframes promo-ad-enter {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes promo-ad-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .55; }
+    }
     @media (max-width: 640px) {
-        .promo-ad-card { padding: 18px 15px 16px 15px; border-radius: 17px; }
-        .promo-ad-title { font-size: 1.22rem; padding-right: 32px; }
-        .promo-ad-body { font-size: .82rem; line-height: 1.43; }
-        .promo-ad-badges { grid-template-columns: 1fr; gap: 7px; }
-        .promo-ad-badge { padding: 8px 10px; }
-        .promo-ad-badge b { font-size: .77rem; }
+        .promo-ad-card { border-radius: 8px; }
+        .promo-ad-top { align-items: flex-start; gap: 12px; padding: 18px 15px 15px; }
+        .promo-ad-title { font-size: 1.24rem; }
+        .promo-ad-subtitle { font-size: .76rem; }
+        .promo-ad-deadline { width: 82px; min-width: 82px; padding: 9px 5px 8px; }
+        .promo-ad-deadline strong { font-size: 1.78rem; }
+        .promo-ad-deadline span { font-size: .69rem; }
+        .promo-ad-alert,
+        .promo-ad-meta,
+        .promo-ad-addresses,
+        .promo-ad-cta { margin-left: 15px; margin-right: 15px; }
+        .promo-ad-alert { padding: 11px 10px; }
+        .promo-ad-meta { grid-template-columns: 1fr; }
+        .promo-ad-meta > div + div { padding-left: 0; border-left: 0; border-top: 1px solid #31506f; }
+        .promo-ad-translations { grid-template-columns: 1fr; gap: 12px; }
+        .promo-ad-addresses { padding: 14px 12px; }
+        .promo-ad-address-primary b { font-size: .84rem !important; }
+        .promo-ad-address b { font-size: .70rem; }
+        a.promo-ad-cta { min-height: 60px; margin-bottom: 16px; padding: 9px 10px; }
+        .promo-ad-cta-icon { width: 34px; height: 34px; flex-basis: 34px; }
+        .promo-ad-cta-copy b { font-size: .80rem; }
+        .promo-ad-cta-copy small { font-size: .58rem; }
+        .promo-ad-cta-arrow { width: 28px; height: 28px; flex-basis: 28px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .promo-ad-card,
+        .promo-ad-live { animation: none; }
+        .promo-ad-cta { transition: none; }
     }
 
     .st-key-bottom_nav [data-testid="stHorizontalBlock"] {
@@ -7471,7 +7962,7 @@ st.markdown(
         border: 2px dashed #0052cc;
         border-radius: 12px;
         padding: 1.2rem;
-        font-family: 'Space Mono', monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         font-size: 0.82rem;
         color: #ffffff;
     }
@@ -7991,6 +8482,10 @@ if not st.session_state["autenticado"]:
             u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
             u_pass = st.session_state.get("log_pwd") or u_pass or ""
             if u_ident and u_pass:
+                permitido, espera_s = comprobar_limite_acceso(u_ident)
+                if not permitido:
+                    st.error(f"Demasiados intentos fallidos. Espere {max(1, math.ceil(espera_s / 60))} minuto(s).")
+                    st.stop()
                 u_correo = normalizar_correo(u_ident)
                 claves = coincidencias_casillero(u_ident)
                 placeholders = ",".join("?" * len(claves))
@@ -8007,6 +8502,7 @@ if not st.session_state["autenticado"]:
                     user = c.fetchone()
 
                 if user and verificar_pwd(u_pass, user[8]):
+                    limpiar_fallos_acceso(u_ident)
                     # Al entrar correctamente se actualiza de forma transparente
                     # cualquier hash SHA-256 legado a scrypt con sal.
                     if not str(user[8] or "").startswith("scrypt$"):
@@ -8036,6 +8532,7 @@ if not st.session_state["autenticado"]:
                         st.query_params["vista"] = "Inicio"
                         st.rerun()
                 else:
+                    registrar_fallo_acceso(u_ident)
                     st.error("❌ Credenciales inválidas.")
             else:
                 st.warning("Complete todos los campos.")
@@ -8257,25 +8754,25 @@ if not st.session_state["autenticado"]:
             st.rerun()
 
     elif st.session_state["vista_actual"] == "recuperar":
-        st.markdown("### 🔄 Restablecer Contraseña")
-        r_mail = st.text_input("Correo Registrado")
-        r_dni = st.text_input("o Número de Identidad (DNI)")
-        if st.button("Generar Nueva Contraseña", type="primary"):
-            with get_db() as conn:
-                c = conn.cursor()
-                c.execute(
-                    "SELECT id FROM usuarios WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ?",
-                    (normalizar_correo(r_mail), str(r_dni or "").strip()),
-                )
-                u = c.fetchone()
-            if u:
-                nueva_p = generar_clave_provisional()
-                with get_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(nueva_p), u[0]))
-                st.success(f"✅ Nueva clave: **{nueva_p}**")
-            else:
-                st.error("No se encontró una cuenta con ese correo o DNI.")
+        st.markdown("### 🔄 Recuperar acceso")
+        st.info(
+            "Por seguridad, una contraseña no puede cambiarse únicamente con un correo o DNI. "
+            "Solicite la verificación de identidad con soporte."
+        )
+        r_identidad = st.text_input(
+            "Correo o número de identidad registrado",
+            key="recuperar_identidad",
+        )
+        msg_recuperacion = urllib.parse.quote(
+            "Hola Centro de Cerámicas y Más. Solicito recuperar el acceso a mi casillero. "
+            f"Mi correo o identidad registrada es: {str(r_identidad or '').strip() or '[indicar dato]'}. "
+            "Entiendo que debo completar la verificación de identidad antes del restablecimiento."
+        )
+        st.link_button(
+            "💬 Solicitar verificación por WhatsApp",
+            f"https://wa.me/50495771099?text={msg_recuperacion}",
+            use_container_width=True,
+        )
         if st.button("Volver al Login", type="secondary"):
             st.session_state["vista_actual"] = "login"
             st.rerun()
@@ -8308,12 +8805,8 @@ elif st.session_state["rol"] == "cliente":
     ahora_hn = obtener_tiempo_honduras()
     # La purga ya se ejecutó al arrancar y se limita a intervalos para que
     # navegar o pulsar botones no dispare una operación completa en la BD.
-    marca_purga_cliente = float(st.session_state.get("_ccm_ultima_purga") or 0)
-    if not USA_SUPABASE and datetime.now().timestamp() - marca_purga_cliente >= 60:
-        purgar_cotizaciones_no_confirmadas_vencidas(ahora_hn)
-        st.session_state["_ccm_ultima_purga"] = datetime.now().timestamp()
+    purgar_cotizaciones_si_corresponde(ahora_hn)
     _limpiar_cotizacion_vencida_en_sesion(ahora_hn)
-    hidratar_cotizaciones_sesion(casillero)
     nombre_completo = str(st.session_state.get("nombre") or "Cliente")
     tel_cli = st.session_state.get("telefono", "+504 9577-1099")
     ciu_cli = st.session_state.get("ciudad", "San Juan, Intibucá")
@@ -8339,10 +8832,17 @@ elif st.session_state["rol"] == "cliente":
     hora_formato = ahora_hn.strftime("%I:%M %p")
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
-    lista_todas_cotizaciones, lista_mis_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
+    lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = direcciones_sesion(casillero)
-    opciones_modalidad = opciones_entrega_desde_sesion(casillero)
+    opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
+    if st.session_state.pop("_ccm_error_permisos", False):
+        st.error(
+            "No fue posible validar los permisos de la cuenta. "
+            "Los módulos permanecerán bloqueados hasta recuperar la conexión."
+        )
+    if st.session_state.pop("_ccm_error_datos", False):
+        st.warning("No fue posible actualizar todos los datos. Intente nuevamente en unos segundos.")
     crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
     mod_actual = st.session_state.get("modalidad_envio_seleccionada")
     previa_destino = st.session_state.get("destino_entrega_activo")
@@ -8356,10 +8856,12 @@ elif st.session_state["rol"] == "cliente":
             st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
 
     with st.container(key="sticky_top_header"):
+        nombre_header = html.escape(nombre_display)
+        casillero_header = html.escape(casillero)
         st.markdown(
             html_encabezado_institucional(
-                f'<div class="app-greeting-title">{saludo_horario}, {nombre_display}</div>'
-                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
+                f'<div class="app-greeting-title">{saludo_horario}, {nombre_header}</div>'
+                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero_header}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
                 f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
             ),
             unsafe_allow_html=True,
@@ -8475,17 +8977,15 @@ elif st.session_state["rol"] == "cliente":
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
             pintar_banner_promocional_china(casillero)
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
-            st.markdown(
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
-                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
-                '<b>⏳ Tarifa pendiente</b><br><span style="font-size:.86rem;">Confírmela en <b>1 hora</b> antes de que venza.</span></div>'
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
-                '<b>🛡️ Tarifa confirmada</b><br><span style="font-size:.86rem;">Permanece disponible durante <b>48 horas</b>.</span></div>'
-                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
-                '<b>📦 Seguimiento y documentos</b><br><span style="font-size:.86rem;">Consulte y descargue sus PDFs desde Mis Envíos.</span></div>'
-                '</div>',
-                unsafe_allow_html=True,
+            pintar_guias_informativas(
+                [
+                    ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
+                    ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
+                    ("📦", "Seguimiento y documentos", "El seguimiento y los PDFs están disponibles en <b>Mis Envíos</b>.", "verde"),
+                ]
             )
+            # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
+            st.session_state.pop("filtro_historial_cotizaciones", None)
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
             error_confirmacion = st.session_state.pop("flash_error_confirmacion", None)
             if confirmada_flash:
@@ -8513,11 +9013,14 @@ elif st.session_state["rol"] == "cliente":
                             *clave_orden_cotizacion(r[7], r[0]),
                         ),
                     )
+                cotizaciones_render, total_historial, limite_historial = pagina_registros(
+                    lista_mis_cotizaciones, "limite_historial_cotizaciones"
+                )
                 scroll_pendiente_hecho = False
-                for cot in lista_mis_cotizaciones:
+                for cot in cotizaciones_render:
                     id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                     consolidada = es_cotizacion_confirmada(conf_c)
-                    fecha_confirmacion = fecha_confirmacion_cotizacion(id_cot_item, casillero)
+                    fecha_confirmacion = confirmaciones_cotizaciones.get(int(id_cot_item))
                     estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn, fecha_confirmacion)
                     color_estado = "#1d4ed8" if consolidada else "#166534"
                     icono_estado = "✅" if consolidada else "⏳"
@@ -8618,6 +9121,14 @@ elif st.session_state["rol"] == "cliente":
                         if pendiente_foco and not scroll_pendiente_hecho:
                             desplazar_a_cotizacion_pendiente()
                             scroll_pendiente_hecho = True
+                if limite_historial < total_historial:
+                    st.button(
+                        f"Mostrar 10 cotizaciones más ({limite_historial} de {total_historial})",
+                        key="btn_mas_historial",
+                        use_container_width=True,
+                        on_click=aumentar_limite_registros,
+                        args=("limite_historial_cotizaciones",),
+                    )
             else:
                 st.info(
                     "No hay cotizaciones vigentes ni consolidadas. Emita una tarifa en el Cotizador; "
@@ -8752,68 +9263,16 @@ elif st.session_state["rol"] == "cliente":
 
     if st.session_state["sub_tab_inicio"] == "Catálogo":
         with st.container(key="vista_catalogo"):
-            with st.container(key="catalogo_formulario"):
-                st.markdown("#### 🛍️ Búsqueda en Fábricas de China (1688 Direct)")
-
-                modo_busq = st.radio("Modalidad de búsqueda:", ["🔎 Por Nombre / Palabras", "📷 Por Foto / Imagen"], horizontal=True)
-
-                resultados_1688 = []
-                if modo_busq == "🔎 Por Nombre / Palabras":
-                    kw = st.text_input("Producto a buscar:", placeholder="Ej: porcelanato 60x120, grifería, taladro...")
-                    if st.button(
-                        "Buscar Productos en China ➔",
-                        type="primary",
-                        key="btn_buscar_china",
-                        use_container_width=True,
-                    ) and kw:
-                        with st.spinner("Consultando catálogo de 1688..."):
-                            resultados_1688 = buscar_productos_1688_texto(kw)
-                else:
-                    img_up = st.file_uploader("Sube una foto del producto:", type=["jpg", "png", "jpeg", "webp"])
-                    if img_up and st.button(
-                        "Escanear Coincidencia Visual ➔",
-                        type="primary",
-                        key="btn_escanear_catalogo",
-                        use_container_width=True,
-                    ):
-                        with st.spinner("Buscando por reconocimiento visual..."):
-                            resultados_1688 = buscar_productos_1688_imagen(img_up.getvalue())
-
-            if resultados_1688:
-                st.markdown("---")
-                for prod in resultados_1688:
-                    calc = calcular_costo_puesto_honduras(
-                        prod["precio_fabrica_usd"], prod["peso_kg"], prod["volumen_m3"], prod["moq"]
-                    )
-
-                    c_img, c_det = st.columns([1, 1.8])
-                    with c_img:
-                        st.image(prod["imagen_url"], use_container_width=True)
-                    with c_det:
-                        st.markdown(f"**{prod['nombre']}**")
-                        st.caption(f"🏭 {prod['proveedor']} | SKU: `{prod['sku']}`")
-                        st.markdown(
-                            f"💰 **Fábrica:** ¥{prod['precio_fabrica_cny']:.2f} CNY (~${prod['precio_fabrica_usd']:.2f} USD) | **MOQ:** {prod['moq']} uds."
-                        )
-                        st.success(
-                            f"🇭🇳 **Puesto en Honduras:** ${calc['total_estimado_usd']:.2f} USD (~L {calc['total_estimado_hnl']:.2f} HNL)\n\n*(Destino: {destino_para_documentos()})*"
-                        )
-
-                        msg_cot = f"Hola Centro de Cerámicas y Más, me interesa importar este producto: {prod['nombre']} (SKU: {prod['sku']}) para mi casillero {casillero}. Cantidad: {prod['moq']} uds. Destino/Entrega: {destino_para_documentos()}. Enlace: {prod['url_proveedor']}"
-                        url_wa_p = "https://wa.me/50495771099?text=" + urllib.parse.quote(msg_cot)
-
-                        c_b1, c_b2 = st.columns(2)
-                        with c_b1:
-                            st.markdown(
-                                f'<a href="{prod["url_proveedor"]}" target="_blank"><button style="background:white; border:1.5px solid #cbd5e1; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">🔗 Ver en 1688</button></a>',
-                                unsafe_allow_html=True,
-                            )
-                        with c_b2:
-                            st.markdown(
-                                f'<a href="{url_wa_p}" target="_blank"><button style="background:#22c55e; color:white; border:none; border-radius:8px; width:100%; height:44px; font-weight:bold; cursor:pointer;">📲 Cotizar WhatsApp</button></a>',
-                                unsafe_allow_html=True,
-                            )
-                    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div role="status" style="margin:42px 0;padding:38px 20px;text-align:center;
+                background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;color:#1e3a8a;">
+                    <div style="font-size:2.5rem;line-height:1;margin-bottom:14px;">🛍️</div>
+                    <div style="font-size:1.35rem;font-weight:800;">Catálogo próximamente disponible</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             espaciador_barra_inferior("safe_catalogo")
 
     elif (
@@ -9098,7 +9557,7 @@ elif st.session_state["rol"] == "cliente":
                     )
                     fecha_confirmacion = (
                         d_pdf.get("fecha_confirmacion")
-                        or fecha_confirmacion_cotizacion(id_c, casillero)
+                        or confirmaciones_cotizaciones.get(int(id_c))
                     )
                     tarifa_sigue_visible = (
                         cotizacion_confirmada_vigente(
@@ -9221,24 +9680,14 @@ elif st.session_state["rol"] == "cliente":
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
             pintar_banner_promocional_china(casillero)
-            st.markdown(
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0 14px;">'
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 12px;color:#1e3a8a;">'
-                '<b>🛡️ Vigencia confirmada</b><br><span style="font-size:.86rem;">Cada cotización confirmada se conserva por <b>48 horas</b>.</span></div>'
-                '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:11px 12px;color:#166534;">'
-                '<b>📦 Seguimiento activo</b><br><span style="font-size:.86rem;">Consulte aquí el estado de sus paquetes en tránsito.</span></div>'
-                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 12px;color:#9a3412;">'
-                '<b>📄 Documentos oficiales</b><br><span style="font-size:.86rem;">La Ficha y el PDF Tarifa están debajo de cada envío.</span></div>'
-                '</div>',
-                unsafe_allow_html=True,
+            pintar_guias_informativas(
+                [
+                    ("🛡️", "Vigencia confirmada", "Cada cotización confirmada se conserva por <b>48 horas</b>.", "azul"),
+                    ("📦", "Seguimiento activo", "Consulte aquí el estado de sus paquetes en tránsito.", "verde"),
+                    ("📄", "Documentos oficiales", "La Ficha y el PDF Tarifa están debajo de cada envío.", "naranja"),
+                ]
             )
-            with get_db() as conn:
-                c = conn.cursor()
-                c.execute(
-                    "SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion FROM paquetes WHERE codigo_casillero = ?",
-                    (casillero,),
-                )
-                paquetes = c.fetchall()
+            paquetes = cargar_paquetes_db(casillero)
 
             if paquetes:
                 st.markdown("#### 📦 Mis Paquetes en Tránsito")
@@ -9274,7 +9723,10 @@ elif st.session_state["rol"] == "cliente":
                     if extra_foco:
                         cotizaciones_despacho = [extra_foco] + list(cotizaciones_despacho)
             if cotizaciones_despacho:
-                for cot_env in cotizaciones_despacho:
+                envios_render, total_envios, limite_envios = pagina_registros(
+                    cotizaciones_despacho, "limite_documentos_envios"
+                )
+                for cot_env in envios_render:
                     id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
                     es_foco = foco_envios and int(id_e) == foco_envios
                     borde = "#004ac1" if es_foco else "#e2e8f0"
@@ -9284,7 +9736,7 @@ elif st.session_state["rol"] == "cliente":
                         desplazar_a_ancla("cotizacion-envio-foco")
                     id_ancla_env = f'id="cotizacion-env-{id_e}"'
                     estado_envio = texto_estado_cotizacion(
-                        fec_e, conf_e, ahora_hn, fecha_confirmacion_cotizacion(id_e, casillero)
+                        fec_e, conf_e, ahora_hn, confirmaciones_cotizaciones.get(int(id_e))
                     )
                     aviso_seguimiento = (
                         '<div style="margin:10px 0 8px;padding:8px 10px;border-radius:8px;'
@@ -9355,6 +9807,14 @@ elif st.session_state["rol"] == "cliente":
                             key=f"dl_tarifa_env_{id_e}",
                             use_container_width=True,
                         )
+                if limite_envios < total_envios:
+                    st.button(
+                        f"Mostrar 10 documentos más ({limite_envios} de {total_envios})",
+                        key="btn_mas_documentos_envios",
+                        use_container_width=True,
+                        on_click=aumentar_limite_registros,
+                        args=("limite_documentos_envios",),
+                    )
             else:
                 st.info("Confirme una cotización para consultar y descargar la Ficha y el PDF Tarifa en este módulo.")
             espaciador_barra_inferior("safe_envios")
@@ -9368,7 +9828,10 @@ elif st.session_state["rol"] == "cliente":
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
             if cotizaciones_ficha:
-                for cot_f in cotizaciones_ficha:
+                fichas_render, total_fichas, limite_fichas = pagina_registros(
+                    cotizaciones_ficha, "limite_fichas"
+                )
+                for cot_f in fichas_render:
                     id_f, al_f, an_f, la_f, pe_f, vol_f, tot_f, fec_f, conf_f = cot_f
                     st.markdown(
                         f"""
@@ -9402,6 +9865,14 @@ elif st.session_state["rol"] == "cliente":
                         use_container_width=True,
                     )
                     st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
+                if limite_fichas < total_fichas:
+                    st.button(
+                        f"Mostrar 10 fichas más ({limite_fichas} de {total_fichas})",
+                        key="btn_mas_fichas",
+                        use_container_width=True,
+                        on_click=aumentar_limite_registros,
+                        args=("limite_fichas",),
+                    )
             else:
                 st.info("Confirme una cotización para descargar su ficha de bodega.")
             espaciador_barra_inferior("safe_fichas")
@@ -9423,20 +9894,26 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
     titulo = "Panel de Superadministrador" if root else "Panel Administrativo"
+    admin_nombre = html.escape(str(st.session_state.get("nombre") or ""))
+    admin_usuario = html.escape(str(st.session_state.get("usuario") or ""))
     st.markdown(
         html_encabezado_institucional(
             f'<div class="app-greeting-title">{titulo}</div>'
-            f'<div class="app-greeting-sub">{st.session_state.get("nombre", "")} • {st.session_state.get("usuario", "")}</div>',
+            f'<div class="app-greeting-sub">{admin_nombre} • {admin_usuario}</div>',
             extra_style="margin-bottom:12px;",
         ),
         unsafe_allow_html=True,
     )
 
-    tab_u, tab_p, tab_t, tab_s = st.tabs(
-        ["👥 Usuarios y permisos", "📦 Paquetes", "⚙️ Tarifas y fórmulas", "🗄️ Sistema"]
+    admin_seccion = st.segmented_control(
+        "Sección administrativa",
+        options=["Usuarios", "Paquetes", "Tarifas", "Sistema"],
+        default="Usuarios",
+        label_visibility="collapsed",
+        key="admin_seccion",
     )
 
-    with tab_u:
+    if admin_seccion == "Usuarios":
         with get_db() as conn:
             c = conn.cursor()
             if root:
@@ -9445,6 +9922,7 @@ elif es_rol_admin():
                     SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
                            departamento, ciudad, direccion_exacta, rol, activo
                     FROM usuarios ORDER BY rol DESC, nombre_completo
+                    LIMIT 500
                     """
                 )
             else:
@@ -9453,6 +9931,7 @@ elif es_rol_admin():
                     SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
                            departamento, ciudad, direccion_exacta, rol, activo
                     FROM usuarios WHERE rol = 'cliente' ORDER BY nombre_completo
+                    LIMIT 500
                     """
                 )
             filas = c.fetchall()
@@ -9620,7 +10099,7 @@ elif es_rol_admin():
                     except sqlite3.IntegrityError:
                         st.error("Ya existe un casillero o correo con esos datos.")
 
-    with tab_p:
+    if admin_seccion == "Paquetes":
         t_in = st.text_input("Tracking de China")
         c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-15011985 o DNI del cliente")
         d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
@@ -9653,12 +10132,12 @@ elif es_rol_admin():
                         """,
                         (t_in, formatear_casillero(c_in), d_in, cont_in, e_in, f_act),
                     )
+                cargar_paquetes_db.clear()
                 st.success("Paquete actualizado.")
-                st.rerun()
             else:
                 st.warning("Ingrese tracking y casillero.")
 
-    with tab_t:
+    if admin_seccion == "Tarifas":
         st.markdown("#### Tarifas y constantes del cotizador")
         n_lb = st.number_input("Tarifa por libra China (USD)", min_value=0.01, value=float(get_tarifa("tarifa_libra") or 3.5), step=0.05)
         n_m3 = st.number_input("Tarifa por m³ (USD)", min_value=0.01, value=float(get_tarifa("tarifa_m3") or 680), step=1.0)
@@ -9679,24 +10158,14 @@ elif es_rol_admin():
             set_config_sistema("COMISION_CCM_PORCENTAJE", n_com, "Comisión CCM sobre FOB")
             st.success("Parámetros globales actualizados.")
 
-    with tab_s:
+    if admin_seccion == "Sistema":
         st.markdown("#### Mantenimiento de base de datos")
-        with get_db() as conn:
-            c = conn.cursor()
-            if USA_SUPABASE:
-                c.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' ORDER BY table_name"
-                )
-            else:
-                c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-            tablas = [r[0] for r in c.fetchall()]
-            conteos = {}
-            for t in tablas:
-                c.execute(f"SELECT COUNT(*) FROM {t}")
-                conteos[t] = c.fetchone()[0]
+        conteos = obtener_conteos_tablas()
         st.dataframe(
-            {"Tabla": list(conteos.keys()), "Registros": list(conteos.values())},
+            {
+                "Tabla": list(conteos.keys()),
+                "Registros estimados" if USA_SUPABASE else "Registros": list(conteos.values()),
+            },
             use_container_width=True,
             hide_index=True,
         )
@@ -9705,7 +10174,7 @@ elif es_rol_admin():
         env_keys = sorted(k for k in os.environ if k.startswith(("STREAMLIT_", "CCM_")) or k in ("PORT", "HOSTNAME", "HOME"))
         if env_keys:
             st.dataframe(
-                {"Variable": env_keys, "Valor": [os.environ.get(k, "") for k in env_keys]},
+                {"Variable": env_keys, "Estado": ["Configurada" for _ in env_keys]},
                 use_container_width=True,
                 hide_index=True,
             )
