@@ -2845,7 +2845,7 @@ def pintar_banner_promocional_china(casillero):
         f'</div>'
         f'</div>'
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
-        f'<span class="promo-ad-cta-icon" aria-hidden="true">💬</span><span><b>Notificar envío por WhatsApp</b><small>Complete los datos y envíe el aviso</small></span><span class="promo-ad-cta-arrow" aria-hidden="true">→</span></a>'
+        f'<span class="promo-ad-cta-icon" aria-hidden="true">WA</span><span class="promo-ad-cta-copy"><b>Notificar carga por WhatsApp</b><small>+504 9577-1099 · mensaje preparado para completar</small></span><span class="promo-ad-cta-arrow" aria-hidden="true">→</span></a>'
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -7109,32 +7109,80 @@ st.markdown(
         line-height: 1.42;
         overflow-wrap: anywhere;
     }
-    .promo-ad-cta {
-        display: flex;
-        align-items: center;
+    a.promo-ad-cta,
+    a.promo-ad-cta:link,
+    a.promo-ad-cta:visited,
+    a.promo-ad-cta:hover,
+    a.promo-ad-cta:active {
+        display: flex !important;
+        align-items: center !important;
         gap: 11px;
-        width: auto;
+        width: auto !important;
+        min-height: 62px;
         box-sizing: border-box;
         margin: 0 24px 24px;
-        background: #16a34a;
-        color: #ffffff;
-        text-decoration: none;
+        background: #128c5b !important;
+        color: #ffffff !important;
+        text-decoration: none !important;
         border-radius: 6px;
-        padding: 12px 14px;
-        box-shadow: 0 7px 16px rgba(22, 163, 74, .20);
+        border: 1px solid #39c779;
+        padding: 10px 12px;
+        box-shadow: 0 8px 18px rgba(18, 140, 91, .24);
         transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
     }
-    .promo-ad-cta-icon { font-size: 1.05rem; }
-    .promo-ad-cta > span:nth-child(2) { display: grid; min-width: 0; }
-    .promo-ad-cta b { font-size: .84rem; line-height: 1.2; }
-    .promo-ad-cta small { margin-top: 2px; color: #dcfce7; font-size: .63rem; line-height: 1.2; }
-    .promo-ad-cta-arrow { margin-left: auto; font-size: 1.10rem; font-weight: 800; }
-    .promo-ad-cta:hover {
+    .promo-ad-cta *,
+    .promo-ad-cta:link *,
+    .promo-ad-cta:visited * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        background: #ffffff;
+        color: #128c5b !important;
+        border-radius: 50%;
+        font-size: .68rem;
+        font-weight: 900;
+    }
+    .promo-ad-cta-copy { display: grid; min-width: 0; }
+    .promo-ad-cta-copy b {
+        color: #ffffff !important;
+        font-size: .88rem;
+        line-height: 1.2;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-copy small {
+        margin-top: 3px;
+        color: #d8f8e6 !important;
+        font-size: .64rem;
+        line-height: 1.25;
+        text-decoration: none !important;
+    }
+    .promo-ad-cta-arrow {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 30px;
+        margin-left: auto;
+        background: rgba(255, 255, 255, .14);
+        color: #ffffff !important;
+        border-radius: 50%;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    a.promo-ad-cta:hover {
         transform: translateY(-2px);
-        background: #15803d;
-        color: #ffffff;
-        text-decoration: none;
-        box-shadow: 0 10px 20px rgba(22, 163, 74, .26);
+        background: #0f744b !important;
+        box-shadow: 0 11px 22px rgba(18, 140, 91, .30);
+    }
+    a.promo-ad-cta:focus-visible {
+        outline: 3px solid #86efac;
+        outline-offset: 3px;
     }
     @keyframes promo-ad-enter {
         from { opacity: 0; transform: translateY(8px); }
@@ -7163,7 +7211,11 @@ st.markdown(
         .promo-ad-addresses { padding: 14px 12px; }
         .promo-ad-address-primary b { font-size: .84rem !important; }
         .promo-ad-address b { font-size: .70rem; }
-        .promo-ad-cta { margin-bottom: 16px; }
+        a.promo-ad-cta { min-height: 60px; margin-bottom: 16px; padding: 9px 10px; }
+        .promo-ad-cta-icon { width: 34px; height: 34px; flex-basis: 34px; }
+        .promo-ad-cta-copy b { font-size: .80rem; }
+        .promo-ad-cta-copy small { font-size: .58rem; }
+        .promo-ad-cta-arrow { width: 28px; height: 28px; flex-basis: 28px; }
     }
     @media (prefers-reduced-motion: reduce) {
         .promo-ad-card,
