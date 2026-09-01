@@ -35,7 +35,7 @@ GATEWAY_DEFAULT = "https://api-sg.aliexpress.com/sync"
 TIMEOUT_S = 25
 PAGE_SIZE = 20
 TZ_CN = timezone(timedelta(hours=8))
-ENLACE_DOCUMENTO_CLIENTES = (
+ENLACE_POLITICAS_ENVIO = (
     "https://drive.google.com/file/d/1OevqlVTqsWSWb_R95QBTAOJq5h_F7kiK/view?usp=sharing"
 )
 
@@ -3046,10 +3046,14 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
-        st.link_button(
-            "📘 Abrir documento para clientes",
-            ENLACE_DOCUMENTO_CLIENTES,
-            use_container_width=True,
+        st.markdown(
+            f'<section class="actividad-politicas" aria-label="Políticas de envío y productos restringidos">'
+            f'<div class="actividad-politicas-copy"><span class="actividad-politicas-icon" aria-hidden="true">!</span>'
+            f'<div><small>ANTES DE COMPRAR O ENVIAR</small><b>Políticas de envío y productos restringidos</b>'
+            f'<p>Revise los requisitos de recepción, embalaje y transporte, además de los productos que no pueden enviarse o requieren autorización.</p></div></div>'
+            f'<a class="actividad-politicas-cta" href="{html.escape(ENLACE_POLITICAS_ENVIO)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Consultar políticas</span><span aria-hidden="true">→</span></a></section>',
+            unsafe_allow_html=True,
         )
 
 
@@ -6952,6 +6956,102 @@ st.markdown(
         color: #94a3b8 !important;
         font-weight: 700 !important;
         font-size: 1.05rem !important;
+    }
+
+    .actividad-politicas {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-top: 12px;
+        padding: 15px 16px;
+        background: #fff8e6;
+        border: 1px solid #f0d28b;
+        border-left: 4px solid #d89b22;
+        border-radius: 6px;
+        color: #243447;
+        box-sizing: border-box;
+    }
+    .actividad-politicas-copy {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        min-width: 0;
+    }
+    .actividad-politicas-icon {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 28px;
+        background: #d89b22;
+        color: #17212b;
+        border-radius: 50%;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+    .actividad-politicas-copy small {
+        display: block;
+        margin-bottom: 3px;
+        color: #8a641b;
+        font-size: .60rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .actividad-politicas-copy b {
+        display: block;
+        color: #1c2d40;
+        font-size: .86rem;
+        line-height: 1.25;
+    }
+    .actividad-politicas-copy p {
+        max-width: 520px;
+        margin: 4px 0 0;
+        color: #586675;
+        font-size: .68rem;
+        line-height: 1.4;
+    }
+    a.actividad-politicas-cta,
+    a.actividad-politicas-cta:link,
+    a.actividad-politicas-cta:visited,
+    a.actividad-politicas-cta:hover,
+    a.actividad-politicas-cta:active {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px;
+        min-width: 166px;
+        padding: 10px 12px;
+        background: #173c64 !important;
+        color: #ffffff !important;
+        text-decoration: none !important;
+        border: 1px solid #173c64;
+        border-radius: 5px;
+        box-sizing: border-box;
+        font-size: .72rem;
+        font-weight: 800;
+        transition: transform 160ms ease, background-color 160ms ease;
+    }
+    .actividad-politicas-cta * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    a.actividad-politicas-cta:hover {
+        transform: translateY(-1px);
+        background: #0b2341 !important;
+    }
+    a.actividad-politicas-cta:focus-visible {
+        outline: 3px solid #f2c75c;
+        outline-offset: 3px;
+    }
+    @media (max-width: 640px) {
+        .actividad-politicas {
+            align-items: stretch;
+            flex-direction: column;
+            gap: 13px;
+            padding: 14px 12px;
+        }
+        a.actividad-politicas-cta { width: 100% !important; min-width: 0; }
     }
 
     .promo-ad-card {
