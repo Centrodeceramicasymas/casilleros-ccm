@@ -41,6 +41,9 @@ TZ_CN = timezone(timedelta(hours=8))
 ENLACE_POLITICAS_ENVIO = (
     "https://drive.google.com/file/d/1OevqlVTqsWSWb_R95QBTAOJq5h_F7kiK/view?usp=sharing"
 )
+ENLACE_FORMATO_PRODUCTOS = (
+    "https://drive.google.com/drive/folders/1afzW8GMWePgIQq1aad6SfR7AkG3rNAVT?usp=sharing"
+)
 
 ORDEN_API = {
     "Más vendidos": "LAST_VOLUME_DESC",
@@ -3077,6 +3080,12 @@ def abrir_dialogo_editar_perfil():
 
 def pintar_vista_actividad(total_cotizaciones=0):
     """Panel de actividad: concentra documentos y seguimiento sin recargar la navegación."""
+    cas_formato = formatear_casillero(st.session_state.get("casillero", "")) or "mi casillero"
+    mensaje_formato = urllib.parse.quote(
+        f"Hola Centro de Cerámicas y Más, soy del casillero {cas_formato}. "
+        "Adjunto el formato Excel de información del producto completado por mi fabricante para su revisión."
+    )
+    url_whatsapp_formato = f"https://wa.me/50495771099?text={mensaje_formato}"
     with st.container(key="vista_actividad"):
         st.markdown("#### 📌 Actividad")
         st.caption("Consulte sus tarifas, seguimiento y documentos desde un solo lugar.")
@@ -3110,6 +3119,22 @@ def pintar_vista_actividad(total_cotizaciones=0):
             f'<p>Revise los requisitos de recepción, embalaje y transporte, además de los productos que no pueden enviarse o requieren autorización.</p></div></div>'
             f'<a class="actividad-politicas-cta" href="{html.escape(ENLACE_POLITICAS_ENVIO)}" target="_blank" rel="noopener noreferrer">'
             f'<span>Consultar políticas</span><span aria-hidden="true">→</span></a></section>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<section class="actividad-formato" aria-label="Formato Excel de información del producto">'
+            f'<div class="actividad-formato-head"><span class="actividad-formato-icon" aria-hidden="true">XLS</span>'
+            f'<div><small>PLANTILLA PARA EL FABRICANTE</small><b>Formato Excel de información del producto</b>'
+            f'<p>Descargue la plantilla y envíela a su fabricante para que complete todos los datos solicitados del producto. '
+            f'Cuando esté llena, remítala a nuestro WhatsApp para revisión.</p></div></div>'
+            f'<ol class="actividad-formato-pasos"><li><span>1</span>Descargar el Excel</li>'
+            f'<li><span>2</span>Completar con el fabricante</li><li><span>3</span>Enviar el archivo a CCM</li></ol>'
+            f'<div class="actividad-formato-acciones">'
+            f'<a class="actividad-formato-descarga" href="{html.escape(ENLACE_FORMATO_PRODUCTOS)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Abrir carpeta y descargar Excel</span><span aria-hidden="true">↓</span></a>'
+            f'<a class="actividad-formato-whatsapp" href="{html.escape(url_whatsapp_formato)}" target="_blank" rel="noopener noreferrer">'
+            f'<span>Enviar formato por WhatsApp</span><span aria-hidden="true">→</span></a>'
+            f'</div></section>',
             unsafe_allow_html=True,
         )
         espaciador_barra_inferior("safe_actividad")
@@ -6838,6 +6863,143 @@ st.markdown(
             padding: 14px 12px;
         }
         a.actividad-politicas-cta { width: 100% !important; min-width: 0; }
+    }
+
+    .actividad-formato {
+        margin-top: 10px;
+        padding: 16px;
+        background: #eef8f2;
+        border: 1px solid #b9dec7;
+        border-left: 4px solid #217346;
+        border-radius: 6px;
+        color: #20352a;
+        box-sizing: border-box;
+    }
+    .actividad-formato-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+    }
+    .actividad-formato-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 32px;
+        flex: 0 0 38px;
+        background: #217346;
+        color: #ffffff;
+        border-radius: 4px;
+        font-size: .62rem;
+        font-weight: 900;
+    }
+    .actividad-formato-head small {
+        display: block;
+        margin-bottom: 3px;
+        color: #347553;
+        font-size: .60rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .actividad-formato-head b {
+        display: block;
+        color: #173b29;
+        font-size: .90rem;
+        line-height: 1.25;
+    }
+    .actividad-formato-head p {
+        max-width: 720px;
+        margin: 5px 0 0;
+        color: #50685b;
+        font-size: .69rem;
+        line-height: 1.45;
+    }
+    .actividad-formato-pasos {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 13px 0;
+        padding: 0;
+        list-style: none;
+    }
+    .actividad-formato-pasos li {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        color: #365244;
+        font-size: .64rem;
+        font-weight: 700;
+        line-height: 1.3;
+    }
+    .actividad-formato-pasos li span {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        background: #d7eddf;
+        color: #17603a;
+        border-radius: 50%;
+        font-size: .62rem;
+        font-weight: 900;
+    }
+    .actividad-formato-acciones {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+    }
+    a.actividad-formato-descarga,
+    a.actividad-formato-descarga:link,
+    a.actividad-formato-descarga:visited,
+    a.actividad-formato-whatsapp,
+    a.actividad-formato-whatsapp:link,
+    a.actividad-formato-whatsapp:visited {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px;
+        min-height: 40px;
+        padding: 9px 11px;
+        border-radius: 5px;
+        box-sizing: border-box;
+        font-size: .68rem;
+        font-weight: 800;
+        text-decoration: none !important;
+        transition: transform 160ms ease, background-color 160ms ease;
+    }
+    a.actividad-formato-descarga,
+    a.actividad-formato-descarga:link,
+    a.actividad-formato-descarga:visited {
+        background: #217346 !important;
+        color: #ffffff !important;
+        border: 1px solid #217346;
+    }
+    a.actividad-formato-whatsapp,
+    a.actividad-formato-whatsapp:link,
+    a.actividad-formato-whatsapp:visited {
+        background: #ffffff !important;
+        color: #12613f !important;
+        border: 1px solid #56a879;
+    }
+    .actividad-formato-acciones a * {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    a.actividad-formato-descarga:hover,
+    a.actividad-formato-whatsapp:hover {
+        transform: translateY(-1px);
+        text-decoration: none !important;
+    }
+    a.actividad-formato-descarga:hover { background: #185f39 !important; color: #ffffff !important; }
+    a.actividad-formato-whatsapp:hover { background: #e0f3e7 !important; color: #0e5134 !important; }
+    .actividad-formato-acciones a:focus-visible {
+        outline: 3px solid #6bc28d;
+        outline-offset: 3px;
+    }
+    @media (max-width: 640px) {
+        .actividad-formato { padding: 14px 12px; }
+        .actividad-formato-pasos { grid-template-columns: 1fr; gap: 7px; }
+        .actividad-formato-acciones { grid-template-columns: 1fr; }
     }
 
     .promo-ad-card {
