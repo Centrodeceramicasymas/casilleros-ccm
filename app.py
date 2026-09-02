@@ -8123,29 +8123,6 @@ st.markdown(
         height: 38px !important;
         border-radius: 7px !important;
     }
-    .st-key-home_actions {
-        padding: 3px 0 1px;
-    }
-    [class*="st-key-home_action_"] {
-        min-height: 118px;
-        padding: 13px 12px 9px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-    }
-    [class*="st-key-home_action_"] button {
-        min-height: 44px !important;
-        height: auto !important;
-        border-radius: 7px !important;
-        font-size: .8rem !important;
-    }
-    .home-action-detail {
-        margin: 7px 2px 0;
-        color: #64748b;
-        font-size: .69rem;
-        line-height: 1.35;
-        text-align: center;
-    }
     .st-key-home_help {
         margin-top: 20px;
         padding: 15px 16px 13px;
@@ -8170,8 +8147,7 @@ st.markdown(
         border-radius: 7px !important;
     }
     @media (max-width: 640px) {
-        [class*="st-key-home_origin_"],
-        [class*="st-key-home_action_"] { min-height: 0; }
+        [class*="st-key-home_origin_"] { min-height: 0; }
         .home-origin-card { min-height: 0; }
         .home-origin-detail { min-height: 0; margin-bottom: 10px; }
         .client-home-section { margin-top: 17px; }
@@ -9187,31 +9163,6 @@ elif st.session_state["rol"] == "cliente":
                                     on_click=ir_a,
                                     args=("Inicio", hub_id),
                                 )
-
-                    modulos_inicio = modulos_china_visibles() if usuario_puede_hub("china") else []
-                    orden_inicio = {"Catálogo": 0, "Cotizador": 1, "Mis Cotizaciones": 2}
-                    modulos_inicio = sorted(
-                        modulos_inicio,
-                        key=lambda modulo: orden_inicio.get(modulo["id"], 99),
-                    )
-                    if modulos_inicio:
-                        st.markdown('<div class="client-home-section">Accesos rápidos</div>', unsafe_allow_html=True)
-                        with st.container(key="home_actions"):
-                            columnas_modulo = st.columns(len(modulos_inicio), gap="medium")
-                            for columna_modulo, modulo in zip(columnas_modulo, modulos_inicio):
-                                with columna_modulo:
-                                    with st.container(border=True, key=f"home_action_{modulo['btn_key']}"):
-                                        st.button(
-                                            f"{modulo['icon']} {modulo['label']}",
-                                            key=f"home_{modulo['btn_key']}",
-                                            use_container_width=True,
-                                            on_click=ir_a,
-                                            args=(modulo["id"], "china"),
-                                        )
-                                        st.markdown(
-                                            f'<div class="home-action-detail">{html.escape(modulo["detalle"])}</div>',
-                                            unsafe_allow_html=True,
-                                        )
 
                     mensaje_ayuda = urllib.parse.quote(
                         f"Hola Centro de Cerámicas y Más, necesito ayuda con mi casillero {casillero}."
