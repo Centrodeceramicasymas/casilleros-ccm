@@ -4085,7 +4085,7 @@ def set_tarifa(clave, valor):
     get_tarifa.clear()
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False, max_entries=2048)
 def get_config_sistema(clave, valor_default=""):
     try:
         with get_db() as conn:
@@ -4132,6 +4132,143 @@ def set_config_sistema(clave, valor, descripcion=""):
         )
         conn.commit()
     get_config_sistema.clear()
+
+
+ANUNCIO_PORTAL_CLAVE = "ANUNCIO_PORTAL_CLIENTES"
+ANUNCIO_PORTAL_DEFAULT = {
+    "id": "",
+    "activo": False,
+    "tipo": "Información",
+    "icono": "📢",
+    "titulo": "",
+    "mensaje": "",
+    "boton_texto": "",
+    "boton_url": "",
+}
+
+
+def cargar_anuncio_portal():
+    """Devuelve un anuncio normalizado desde config_sistema."""
+    anuncio = dict(ANUNCIO_PORTAL_DEFAULT)
+    raw = get_config_sistema(ANUNCIO_PORTAL_CLAVE, "")
+    if not raw:
+        return anuncio
+    try:
+        datos = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return anuncio
+    if not isinstance(datos, dict):
+        return anuncio
+    for clave in anuncio:
+        if clave in datos:
+            anuncio[clave] = datos[clave]
+    anuncio["activo"] = bool(anuncio.get("activo"))
+    anuncio["tipo"] = str(anuncio.get("tipo") or "Información")[:30]
+    anuncio["icono"] = str(anuncio.get("icono") or "📢")[:8]
+    anuncio["titulo"] = str(anuncio.get("titulo") or "")[:120]
+    anuncio["mensaje"] = str(anuncio.get("mensaje") or "")[:1200]
+    anuncio["boton_texto"] = str(anuncio.get("boton_texto") or "")[:60]
+    anuncio["boton_url"] = str(anuncio.get("boton_url") or "")[:600]
+    anuncio["id"] = str(anuncio.get("id") or "")[:80]
+    return anuncio
+
+
+def url_anuncio_segura(url):
+    """Solo permite enlaces web absolutos en el botón del anuncio."""
+    valor = str(url or "").strip()
+    if not valor:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(valor)
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        return ""
+    return valor
+
+
+def html_anuncio_portal(anuncio, vista_previa=False):
+    paletas = {
+        "Información": ("#eff6ff", "#93c5fd", "#1d4ed8", "#1e3a8a"),
+        "Promoción": ("#ecfdf5", "#86efac", "#15803d", "#14532d"),
+        "Importante": ("#fffbeb", "#fcd34d", "#b45309", "#78350f"),
+    }
+    tipo = str(anuncio.get("tipo") or "Información")
+    fondo, borde, acento, texto = paletas.get(tipo, paletas["Información"])
+    titulo = html.escape(str(anuncio.get("titulo") or "Aviso importante"))
+    mensaje = html.escape(str(anuncio.get("mensaje") or "")).replace("\n", "<br>")
+    icono = html.escape(str(anuncio.get("icono") or "📢"))
+    etiqueta = "Vista previa" if vista_previa else tipo
+    return (
+        f'<section class="portal-announcement" style="--ann-bg:{fondo};--ann-border:{borde};'
+        f'--ann-accent:{acento};--ann-text:{texto};" aria-label="Anuncio: {titulo}">'
+        f'<div class="portal-announcement-icon">{icono}</div>'
+        f'<div class="portal-announcement-copy"><span class="portal-announcement-label">{html.escape(etiqueta)}</span>'
+        f'<div class="portal-announcement-title">{titulo}</div>'
+        f'<div class="portal-announcement-message">{mensaje}</div></div>'
+        f'</section>'
+    )
+
+
+def clave_omision_anuncio(casillero):
+    cas = formatear_casillero(casillero)
+    digest = hashlib.sha256(cas.encode("utf-8")).hexdigest()[:24]
+    return f"ANUNCIO_OMITIDO_{digest}"
+
+
+def omitir_anuncio_portal(anuncio_id, casillero):
+    cas = formatear_casillero(casillero)
+    clave_sesion = f"_ccm_anuncios_omitidos_{hashlib.sha256(cas.encode('utf-8')).hexdigest()[:16]}"
+    ocultos = set(st.session_state.get(clave_sesion) or ())
+    ocultos.add(str(anuncio_id or ""))
+    st.session_state[clave_sesion] = ocultos
+    if cas and anuncio_id:
+        set_config_sistema(
+            clave_omision_anuncio(cas),
+            str(anuncio_id),
+            "Versión del anuncio omitida por una cuenta de cliente",
+        )
+
+
+def pintar_anuncio_portal_cliente():
+    anuncio = cargar_anuncio_portal()
+    anuncio_id = str(anuncio.get("id") or "")
+    casillero = formatear_casillero(st.session_state.get("casillero", ""))
+    clave_sesion = f"_ccm_anuncios_omitidos_{hashlib.sha256(casillero.encode('utf-8')).hexdigest()[:16]}"
+    ocultos = set(st.session_state.get(clave_sesion) or ())
+    omitido_persistente = get_config_sistema(clave_omision_anuncio(casillero), "") if casillero else ""
+    if (
+        not anuncio.get("activo")
+        or not anuncio_id
+        or anuncio_id in ocultos
+        or str(omitido_persistente or "") == anuncio_id
+    ):
+        return
+    with st.container(key="portal_announcement_client"):
+        st.markdown(html_anuncio_portal(anuncio), unsafe_allow_html=True)
+        url_boton = url_anuncio_segura(anuncio.get("boton_url"))
+        texto_boton = str(anuncio.get("boton_texto") or "").strip()
+        clave_widget = hashlib.sha256(anuncio_id.encode("utf-8")).hexdigest()[:12]
+        if url_boton and texto_boton:
+            col_accion, col_omitir = st.columns([1.7, 1], gap="medium")
+            with col_accion:
+                st.link_button(texto_boton, url_boton, use_container_width=True)
+            with col_omitir:
+                st.button(
+                    "Omitir anuncio",
+                    key=f"omitir_anuncio_{clave_widget}",
+                    use_container_width=True,
+                    on_click=omitir_anuncio_portal,
+                    args=(anuncio_id, casillero),
+                )
+        else:
+            st.button(
+                "Omitir anuncio",
+                key=f"omitir_anuncio_{clave_widget}",
+                use_container_width=True,
+                on_click=omitir_anuncio_portal,
+                args=(anuncio_id, casillero),
+            )
 
 
 PREFIJO_CASILLERO = "CCM-"
@@ -8123,6 +8260,69 @@ st.markdown(
         height: 38px !important;
         border-radius: 7px !important;
     }
+    .st-key-portal_announcement_client {
+        margin: 0 0 18px;
+        padding: 14px 15px 13px;
+        background: #ffffff;
+        border: 1px solid #dbe3ee;
+        border-radius: 8px;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
+    }
+    .portal-announcement {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 13px 14px;
+        color: var(--ann-text);
+        background: var(--ann-bg);
+        border: 1px solid var(--ann-border);
+        border-left: 4px solid var(--ann-accent);
+        border-radius: 7px;
+    }
+    .portal-announcement-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        background: #ffffff;
+        border: 1px solid var(--ann-border);
+        border-radius: 7px;
+        font-size: 1.05rem;
+    }
+    .portal-announcement-copy { min-width: 0; }
+    .portal-announcement-label {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--ann-accent);
+        font-size: .62rem;
+        font-weight: 850;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .portal-announcement-title {
+        color: var(--ann-text);
+        font-size: .94rem;
+        font-weight: 850;
+        line-height: 1.3;
+    }
+    .portal-announcement-message {
+        margin-top: 4px;
+        color: var(--ann-text);
+        font-size: .76rem;
+        line-height: 1.5;
+    }
+    .st-key-portal_announcement_client [data-testid="stHorizontalBlock"] {
+        gap: 10px !important;
+        margin-top: 10px;
+    }
+    .st-key-portal_announcement_client button,
+    .st-key-portal_announcement_client a {
+        min-height: 39px !important;
+        height: 39px !important;
+        border-radius: 7px !important;
+        font-size: .72rem !important;
+    }
     .st-key-home_help {
         margin-top: 20px;
         padding: 15px 16px 13px;
@@ -8151,6 +8351,8 @@ st.markdown(
         .home-origin-card { min-height: 0; }
         .home-origin-detail { min-height: 0; margin-bottom: 10px; }
         .client-home-section { margin-top: 17px; }
+        .st-key-portal_announcement_client { padding: 10px; }
+        .portal-announcement { padding: 11px; }
     }
     .hub-empty-box {
         background: #f8fafc;
@@ -9128,6 +9330,7 @@ elif st.session_state["rol"] == "cliente":
         hub_sel = st.session_state.get("hub")
         with st.container(key="vista_inicio"):
             if not hub_sel:
+                pintar_anuncio_portal_cliente()
                 st.markdown(
                     '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
                     '<div class="client-home-copy">Seleccione el origen de su carga o abra directamente una herramienta disponible.</div>',
@@ -10373,6 +10576,65 @@ elif es_rol_admin():
                 border-color: #f0a3a0;
                 background: #ffffff;
             }
+            .admin-announcement-status {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 14px;
+                padding: 12px 14px;
+                color: #334155;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 8px;
+            }
+            .admin-announcement-status b { color: #0f172a; }
+            .admin-announcement-state {
+                padding: 4px 8px;
+                border-radius: 999px;
+                font-size: .68rem;
+                font-weight: 850;
+                white-space: nowrap;
+            }
+            .admin-announcement-state.is-active {
+                color: #087050;
+                background: #dcfce7;
+            }
+            .admin-announcement-state.is-inactive {
+                color: #64748b;
+                background: #eef2f7;
+            }
+            .st-key-admin_announcement_editor {
+                padding: 18px 20px 20px;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 10px;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+            }
+            .st-key-admin_announcement_editor [data-baseweb="input"],
+            .st-key-admin_announcement_editor [data-baseweb="select"] > div,
+            .st-key-admin_announcement_editor [data-baseweb="textarea"] {
+                border-radius: 8px !important;
+            }
+            .st-key-admin_announcement_preview {
+                margin-top: 16px;
+                padding: 16px;
+                background: #f8fafc;
+                border: 1px solid #dbe3ee;
+                border-radius: 8px;
+            }
+            .admin-preview-label {
+                margin-bottom: 9px;
+                color: #64748b;
+                font-size: .68rem;
+                font-weight: 850;
+                letter-spacing: .06em;
+                text-transform: uppercase;
+            }
+            .st-key-admin_disable_announcement {
+                width: 220px;
+                margin: 12px 0 0 auto;
+            }
             .st-key-btn_logout_admin {
                 width: 180px;
                 margin: 24px 0 0 auto;
@@ -10398,6 +10660,8 @@ elif es_rol_admin():
                 .st-key-admin_user_workspace { padding: 12px; }
                 .admin-account-head { align-items: flex-start; }
                 .admin-account-badge { white-space: nowrap; }
+                .st-key-admin_announcement_editor { padding: 13px; }
+                .st-key-admin_disable_announcement { width: 100%; }
                 .st-key-btn_logout_admin { width: 100%; }
             }
         </style>
@@ -10417,10 +10681,15 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
 
+    opciones_admin = ["Usuarios", "Paquetes", "Tarifas", "Sistema"]
+    if root:
+        opciones_admin.insert(1, "Anuncios")
+    if st.session_state.get("admin_seccion") not in (None, *opciones_admin):
+        st.session_state["admin_seccion"] = "Usuarios"
     with st.container(key="admin_nav"):
         admin_seccion = st.segmented_control(
             "Sección administrativa",
-            options=["Usuarios", "Paquetes", "Tarifas", "Sistema"],
+            options=opciones_admin,
             default="Usuarios",
             label_visibility="collapsed",
             key="admin_seccion",
@@ -10621,6 +10890,10 @@ elif es_rol_admin():
                                     cur = conn.cursor()
                                     for tabla in ("permisos_usuario", "direcciones_entrega", "carrito_catalogo", "cotizaciones", "paquetes"):
                                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
+                                    cur.execute(
+                                        "DELETE FROM config_sistema WHERE clave = ?",
+                                        (clave_omision_anuncio(cas_u),),
+                                    )
                                     cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
@@ -10723,6 +10996,150 @@ elif es_rol_admin():
                     except sqlite3.IntegrityError:
                         st.error("Ya existe un casillero o correo con esos datos.")
 
+    if admin_seccion == "Anuncios" and root:
+        st.markdown(
+            '<div class="admin-section-heading">Anuncios para clientes</div>'
+            '<div class="admin-section-copy">Cree un aviso personalizado para la pantalla principal de todas las cuentas de cliente.</div>',
+            unsafe_allow_html=True,
+        )
+        anuncio_actual = cargar_anuncio_portal()
+        estado_anuncio = "Activo" if anuncio_actual.get("activo") else "Inactivo"
+        clase_estado = "is-active" if anuncio_actual.get("activo") else "is-inactive"
+        st.markdown(
+            '<div class="admin-announcement-status">'
+            '<div><b>Visibilidad global</b><br><span style="font-size:.76rem;">Solo aparece a usuarios normales autenticados en Inicio.</span></div>'
+            f'<span class="admin-announcement-state {clase_estado}">{estado_anuncio}</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        flash_anuncio = st.session_state.pop("_admin_anuncio_flash", None)
+        if flash_anuncio:
+            st.success(flash_anuncio)
+
+        tipos_anuncio = ["Información", "Promoción", "Importante"]
+        iconos_anuncio = ["📢", "ℹ️", "🚢", "📦", "🎉", "⚠️"]
+        tipo_actual = anuncio_actual.get("tipo") if anuncio_actual.get("tipo") in tipos_anuncio else "Información"
+        icono_actual = anuncio_actual.get("icono") if anuncio_actual.get("icono") in iconos_anuncio else "📢"
+        version_formulario = hashlib.sha256(
+            str(anuncio_actual.get("id") or "nuevo").encode("utf-8")
+        ).hexdigest()[:10]
+        with st.container(key="admin_announcement_editor"):
+            st.markdown("#### Contenido del anuncio")
+            st.caption("Al guardar se crea una nueva versión. Los clientes podrán omitirla individualmente.")
+            with st.form(f"admin_announcement_form_{version_formulario}", clear_on_submit=False):
+                a_estado, a_tipo, a_icono = st.columns([1.1, 1.2, .8], gap="medium")
+                with a_estado:
+                    anuncio_activo = st.toggle(
+                        "Mostrar a clientes",
+                        value=bool(anuncio_actual.get("activo")),
+                        key=f"admin_anuncio_activo_{version_formulario}",
+                    )
+                with a_tipo:
+                    anuncio_tipo = st.selectbox(
+                        "Estilo",
+                        tipos_anuncio,
+                        index=tipos_anuncio.index(tipo_actual),
+                        key=f"admin_anuncio_tipo_{version_formulario}",
+                    )
+                with a_icono:
+                    anuncio_icono = st.selectbox(
+                        "Icono",
+                        iconos_anuncio,
+                        index=iconos_anuncio.index(icono_actual),
+                        key=f"admin_anuncio_icono_{version_formulario}",
+                    )
+                anuncio_titulo = st.text_input(
+                    "Título *",
+                    value=str(anuncio_actual.get("titulo") or ""),
+                    max_chars=120,
+                    placeholder="Ej. Próxima salida marítima",
+                    key=f"admin_anuncio_titulo_{version_formulario}",
+                )
+                anuncio_mensaje = st.text_area(
+                    "Mensaje *",
+                    value=str(anuncio_actual.get("mensaje") or ""),
+                    max_chars=1200,
+                    height=130,
+                    placeholder="Escriba la información que deben ver los clientes.",
+                    key=f"admin_anuncio_mensaje_{version_formulario}",
+                )
+                st.markdown("##### Botón opcional")
+                b_texto, b_url = st.columns([1, 1.7], gap="medium")
+                with b_texto:
+                    anuncio_boton_texto = st.text_input(
+                        "Texto del botón",
+                        value=str(anuncio_actual.get("boton_texto") or ""),
+                        max_chars=60,
+                        placeholder="Ver información",
+                        key=f"admin_anuncio_boton_{version_formulario}",
+                    )
+                with b_url:
+                    anuncio_boton_url = st.text_input(
+                        "Enlace del botón",
+                        value=str(anuncio_actual.get("boton_url") or ""),
+                        max_chars=600,
+                        placeholder="https://...",
+                        key=f"admin_anuncio_url_{version_formulario}",
+                    )
+                guardar_anuncio = st.form_submit_button(
+                    "Guardar anuncio",
+                    type="primary",
+                    use_container_width=True,
+                )
+
+            if guardar_anuncio:
+                titulo_limpio = str(anuncio_titulo or "").strip()
+                mensaje_limpio = str(anuncio_mensaje or "").strip()
+                texto_boton_limpio = str(anuncio_boton_texto or "").strip()
+                url_boton_raw = str(anuncio_boton_url or "").strip()
+                url_boton_limpia = url_anuncio_segura(url_boton_raw)
+                if not titulo_limpio or not mensaje_limpio:
+                    st.error("Complete el título y el mensaje del anuncio.")
+                elif bool(texto_boton_limpio) != bool(url_boton_raw):
+                    st.error("Para mostrar el botón debe completar tanto el texto como el enlace.")
+                elif url_boton_raw and not url_boton_limpia:
+                    st.error("El enlace debe comenzar con https:// o http:// y tener un dominio válido.")
+                else:
+                    version_anuncio = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+                    nuevo_anuncio = {
+                        "id": version_anuncio,
+                        "activo": bool(anuncio_activo),
+                        "tipo": anuncio_tipo,
+                        "icono": anuncio_icono,
+                        "titulo": titulo_limpio,
+                        "mensaje": mensaje_limpio,
+                        "boton_texto": texto_boton_limpio,
+                        "boton_url": url_boton_limpia,
+                    }
+                    set_config_sistema(
+                        ANUNCIO_PORTAL_CLAVE,
+                        json.dumps(nuevo_anuncio, ensure_ascii=False),
+                        "Anuncio global mostrado en el Inicio de las cuentas de cliente",
+                    )
+                    st.session_state["_admin_anuncio_flash"] = (
+                        "Anuncio publicado para los clientes."
+                        if anuncio_activo
+                        else "Anuncio guardado como inactivo."
+                    )
+                    st.rerun()
+
+        if anuncio_actual.get("titulo") and anuncio_actual.get("mensaje"):
+            with st.container(key="admin_announcement_preview"):
+                st.markdown('<div class="admin-preview-label">Vista del cliente</div>', unsafe_allow_html=True)
+                st.markdown(html_anuncio_portal(anuncio_actual, vista_previa=True), unsafe_allow_html=True)
+            if anuncio_actual.get("activo"):
+                with st.container(key="admin_disable_announcement"):
+                    if st.button("Desactivar anuncio", key="btn_disable_announcement", use_container_width=True):
+                        anuncio_actual["activo"] = False
+                        anuncio_actual["id"] = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+                        set_config_sistema(
+                            ANUNCIO_PORTAL_CLAVE,
+                            json.dumps(anuncio_actual, ensure_ascii=False),
+                            "Anuncio global mostrado en el Inicio de las cuentas de cliente",
+                        )
+                        st.session_state["_admin_anuncio_flash"] = "Anuncio desactivado correctamente."
+                        st.rerun()
+
     if admin_seccion == "Paquetes":
         t_in = st.text_input("Tracking de China")
         c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-15011985 o DNI del cliente")
@@ -10806,7 +11223,10 @@ elif es_rol_admin():
             st.caption("No hay variables STREAMLIT_/CCM_ en el entorno del proceso.")
 
         with get_db() as conn:
-            filas_cfg = conn.execute("SELECT clave, valor, descripcion FROM config_sistema ORDER BY clave").fetchall()
+            filas_cfg = conn.execute(
+                "SELECT clave, valor, descripcion FROM config_sistema "
+                "WHERE clave NOT LIKE 'ANUNCIO_OMITIDO_%' ORDER BY clave"
+            ).fetchall()
         st.markdown("##### config_sistema (prioridad sobre secrets.toml)")
         for clave, valor, desc in filas_cfg:
             nv = st.text_input(f"{clave}", value=str(valor), help=desc or "", key=f"sys_{clave}")
