@@ -5768,6 +5768,130 @@ st.markdown(
         text-align: center !important;
         text-align-last: center !important;
     }
+    .stApp:has(.st-key-login_card),
+    [data-testid="stAppViewContainer"]:has(.st-key-login_card) {
+        background: #eef3f8 !important;
+    }
+    .stApp:has(.st-key-login_card) .block-container,
+    .stApp:has(.st-key-login_card) [data-testid="stMainBlockContainer"],
+    .stApp:has(.st-key-login_card) .stMainBlockContainer {
+        max-width: 620px !important;
+        padding-top: clamp(22px, 5vh, 54px) !important;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+        padding-bottom: 48px !important;
+    }
+    .st-key-login_header {
+        margin-bottom: 14px !important;
+    }
+    .st-key-login_header .app-header-blue {
+        padding: 16px 20px !important;
+        border-radius: 10px !important;
+        box-shadow: 0 10px 24px rgba(0, 54, 140, .18) !important;
+    }
+    .st-key-login_header .app-header-top {
+        margin-bottom: 7px !important;
+        padding-bottom: 10px !important;
+    }
+    .st-key-login_header .app-header-brand {
+        font-size: clamp(1.15rem, 3vw, 1.45rem) !important;
+        letter-spacing: .035em !important;
+    }
+    .st-key-login_card {
+        padding: 22px 24px 20px;
+        background: #ffffff;
+        border: 1px solid #d8e1ec !important;
+        border-radius: 10px !important;
+        box-shadow: 0 14px 34px rgba(15, 23, 42, .09);
+    }
+    .login-card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 17px;
+    }
+    .login-card-icon {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
+        color: #ffffff;
+        background: #0757c8;
+        border-radius: 8px;
+        font-size: 1.1rem;
+    }
+    .login-card-title {
+        color: #0f172a;
+        font-size: 1.08rem;
+        font-weight: 850;
+        line-height: 1.25;
+    }
+    .login-card-copy {
+        margin-top: 3px;
+        color: #64748b;
+        font-size: .76rem;
+        line-height: 1.4;
+    }
+    .st-key-login_card [data-baseweb="input"] {
+        min-height: 46px !important;
+        border-radius: 8px !important;
+    }
+    .st-key-login_card .st-key-btn_login_submit button {
+        min-height: 46px !important;
+        height: 46px !important;
+        margin-top: 7px;
+        border-radius: 8px !important;
+        font-size: .84rem !important;
+    }
+    .login-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 17px 0 13px;
+        color: #94a3b8;
+        font-size: .68rem;
+        font-weight: 750;
+        text-transform: uppercase;
+    }
+    .login-divider::before,
+    .login-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #e2e8f0;
+    }
+    .st-key-login_secondary_actions [data-testid="stHorizontalBlock"] {
+        gap: 12px !important;
+    }
+    .st-key-login_secondary_actions button {
+        min-height: 42px !important;
+        height: 42px !important;
+        border-radius: 8px !important;
+        font-size: .75rem !important;
+    }
+    .login-security-note {
+        margin: 15px 0 0;
+        padding-top: 13px;
+        border-top: 1px solid #edf1f5;
+        color: #64748b;
+        font-size: .7rem;
+        text-align: center;
+    }
+    @media (max-width: 640px) {
+        .stApp:has(.st-key-login_card) .block-container,
+        .stApp:has(.st-key-login_card) [data-testid="stMainBlockContainer"],
+        .stApp:has(.st-key-login_card) .stMainBlockContainer {
+            padding-top: 10px !important;
+            padding-left: 9px !important;
+            padding-right: 9px !important;
+        }
+        .st-key-login_card { padding: 18px 15px 16px; }
+        .st-key-login_header { margin-bottom: 10px !important; }
+        .st-key-login_header .app-header-blue { padding: 13px 14px !important; }
+        .st-key-login_secondary_actions [data-testid="stHorizontalBlock"] { gap: 8px !important; }
+        .st-key-login_secondary_actions button { font-size: .68rem !important; }
+    }
 
     .app-greeting-sub {
         font-size: var(--greeting-sub) !important;
@@ -7929,6 +8053,129 @@ st.markdown(
         font-weight: 600;
         margin: -6px 0 12px 0;
     }
+    .client-home-title {
+        margin: 2px 0 3px;
+        color: #0f172a;
+        font-size: 1.12rem;
+        font-weight: 850;
+        line-height: 1.3;
+    }
+    .client-home-copy {
+        margin: 0 0 15px;
+        color: #64748b;
+        font-size: .84rem;
+        line-height: 1.45;
+    }
+    .client-home-section {
+        margin: 20px 0 10px;
+        color: #334155;
+        font-size: .72rem;
+        font-weight: 850;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    [class*="st-key-home_origin_"] {
+        min-height: 166px;
+        padding: 15px 14px 12px;
+        background: #ffffff;
+        border: 1px solid #dbe3ee !important;
+        border-radius: 8px !important;
+        box-shadow: 0 5px 15px rgba(15, 23, 42, .05);
+    }
+    [class*="st-key-home_origin_"]:has(.home-origin-card[data-active="true"]) {
+        border-top: 3px solid #0f9f6e !important;
+    }
+    .home-origin-card { min-height: 83px; }
+    .home-origin-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 7px;
+    }
+    .home-origin-name {
+        color: #0f172a;
+        font-size: .96rem;
+        font-weight: 850;
+    }
+    .home-origin-icon { margin-right: 5px; font-size: 1.12rem; }
+    .home-origin-status {
+        padding: 3px 7px;
+        color: #526175;
+        background: #f1f5f9;
+        border-radius: 999px;
+        font-size: .62rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .home-origin-card[data-active="true"] .home-origin-status {
+        color: #087050;
+        background: #ddf7ed;
+    }
+    .home-origin-detail {
+        min-height: 36px;
+        color: #64748b;
+        font-size: .72rem;
+        line-height: 1.35;
+    }
+    [class*="st-key-home_origin_"] button {
+        min-height: 38px !important;
+        height: 38px !important;
+        border-radius: 7px !important;
+    }
+    .st-key-home_actions {
+        padding: 3px 0 1px;
+    }
+    [class*="st-key-home_action_"] {
+        min-height: 118px;
+        padding: 13px 12px 9px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+    }
+    [class*="st-key-home_action_"] button {
+        min-height: 44px !important;
+        height: auto !important;
+        border-radius: 7px !important;
+        font-size: .8rem !important;
+    }
+    .home-action-detail {
+        margin: 7px 2px 0;
+        color: #64748b;
+        font-size: .69rem;
+        line-height: 1.35;
+        text-align: center;
+    }
+    .st-key-home_help {
+        margin-top: 20px;
+        padding: 15px 16px 13px;
+        background: #f6f9fd;
+        border: 1px solid #dbe3ee !important;
+        border-left: 4px solid #2563eb !important;
+        border-radius: 8px !important;
+    }
+    .home-help-title {
+        color: #0f172a;
+        font-size: .9rem;
+        font-weight: 850;
+    }
+    .home-help-copy {
+        margin: 3px 0 10px;
+        color: #64748b;
+        font-size: .74rem;
+    }
+    .st-key-home_help button,
+    .st-key-home_help a {
+        min-height: 40px !important;
+        border-radius: 7px !important;
+    }
+    @media (max-width: 640px) {
+        [class*="st-key-home_origin_"],
+        [class*="st-key-home_action_"] { min-height: 0; }
+        .home-origin-card { min-height: 0; }
+        .home-origin-detail { min-height: 0; margin-bottom: 10px; }
+        .client-home-section { margin-top: 17px; }
+    }
     .hub-empty-box {
         background: #f8fafc;
         border: 1.5px dashed #cbd5e1;
@@ -8349,19 +8596,31 @@ st.markdown(
     .st-key-hub_china div.stButton > button,
     .st-key-hub_eeuu div.stButton > button,
     .st-key-hub_honduras div.stButton > button {
-        height: 72px !important;
-        min-height: 72px !important;
-        max-height: 72px !important;
-        font-size: 1.05rem !important;
-        border-radius: 14px !important;
-        justify-content: flex-start !important;
-        padding: 0 16px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
+        font-size: 0.78rem !important;
+        border-radius: 7px !important;
+        justify-content: center !important;
+        padding: 0 12px !important;
         white-space: normal !important;
         background: #ffffff !important;
         background-color: #ffffff !important;
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
         border: 1.5px solid #cbd5e1 !important;
+    }
+    .st-key-hub_china div.stButton > button[kind="primary"] {
+        background: #0f9f6e !important;
+        background-color: #0f9f6e !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border-color: #0f8a60 !important;
+        box-shadow: 0 4px 10px rgba(15, 159, 110, .20) !important;
+    }
+    .st-key-hub_china div.stButton > button[kind="primary"] * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
     }
 
     .st-key-china_modulos button,
@@ -8464,88 +8723,106 @@ if not st.session_state["autenticado"]:
                 html_encabezado_institucional(
                     '<div class="app-greeting-sub">Consolidación Marítima China ➔ Honduras</div>',
                     extra_class="app-header-login",
-                    extra_style="margin-bottom: 2rem; border-radius: 16px;",
+                    extra_style="margin-bottom: 0; border-radius: 10px;",
                 ),
                 unsafe_allow_html=True,
             )
 
-        st.markdown("#### 🔐 Iniciar Sesión en su Casillero")
-        u_ident = st.text_input(
-            "Casillero, DNI o correo",
-            placeholder="Ej: CCM-13011998 o correo@gmail.com",
-            key="log_cas",
-        )
-        u_pass = st.text_input("Contraseña", type="password", placeholder="Introduce tu contraseña", key="log_pwd")
+        with st.container(border=True, key="login_card"):
+            st.markdown(
+                '<div class="login-card-head">'
+                '<div class="login-card-icon">🔐</div>'
+                '<div><div class="login-card-title">Acceso a su casillero</div>'
+                '<div class="login-card-copy">Consulte cotizaciones, documentos y el estado de sus envíos.</div></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            u_ident = st.text_input(
+                "Casillero, DNI o correo",
+                placeholder="Ej. CCM-13011998 o correo@gmail.com",
+                key="log_cas",
+            )
+            u_pass = st.text_input(
+                "Contraseña",
+                type="password",
+                placeholder="Ingrese su contraseña",
+                key="log_pwd",
+            )
 
-        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        if st.button("➔ Ingresar a mi Casillero", type="primary", key="btn_login_submit"):
-            u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
-            u_pass = st.session_state.get("log_pwd") or u_pass or ""
-            if u_ident and u_pass:
-                permitido, espera_s = comprobar_limite_acceso(u_ident)
-                if not permitido:
-                    st.error(f"Demasiados intentos fallidos. Espere {max(1, math.ceil(espera_s / 60))} minuto(s).")
-                    st.stop()
-                u_correo = normalizar_correo(u_ident)
-                claves = coincidencias_casillero(u_ident)
-                placeholders = ",".join("?" * len(claves))
-                with get_db() as conn:
-                    c = conn.cursor()
-                    c.execute(
-                        f"""
-                        SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad, password_hash
-                        FROM usuarios
-                        WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({placeholders})
-                        """,
-                        (u_correo, u_ident, *claves),
-                    )
-                    user = c.fetchone()
+            if st.button("Ingresar a mi casillero", type="primary", key="btn_login_submit"):
+                u_ident = (st.session_state.get("log_cas") or u_ident or "").strip()
+                u_pass = st.session_state.get("log_pwd") or u_pass or ""
+                if u_ident and u_pass:
+                    permitido, espera_s = comprobar_limite_acceso(u_ident)
+                    if not permitido:
+                        st.error(f"Demasiados intentos fallidos. Espere {max(1, math.ceil(espera_s / 60))} minuto(s).")
+                        st.stop()
+                    u_correo = normalizar_correo(u_ident)
+                    claves = coincidencias_casillero(u_ident)
+                    placeholders = ",".join("?" * len(claves))
+                    with get_db() as conn:
+                        c = conn.cursor()
+                        c.execute(
+                            f"""
+                            SELECT id, codigo_casillero, nombre_completo, correo_principal, rol, activo, telefono_principal, ciudad, password_hash
+                            FROM usuarios
+                            WHERE LOWER(TRIM(correo_principal)) = ? OR dni = ? OR codigo_casillero IN ({placeholders})
+                            """,
+                            (u_correo, u_ident, *claves),
+                        )
+                        user = c.fetchone()
 
-                if user and verificar_pwd(u_pass, user[8]):
-                    limpiar_fallos_acceso(u_ident)
-                    # Al entrar correctamente se actualiza de forma transparente
-                    # cualquier hash SHA-256 legado a scrypt con sal.
-                    if not str(user[8] or "").startswith("scrypt$"):
-                        with get_db() as conn:
-                            conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(u_pass), user[0]))
-                    if user[5] == 0:
-                        st.error("⛔ Cuenta inactiva. Contacte al soporte.")
-                    else:
-                        st.session_state["autenticado"] = True
-                        st.session_state["rol"] = normalizar_rol(user[4])
-                        perfil_login = cargar_perfil_usuario(user[1])
-                        if perfil_login:
-                            aplicar_perfil_en_sesion(perfil_login)
+                    if user and verificar_pwd(u_pass, user[8]):
+                        limpiar_fallos_acceso(u_ident)
+                        # Al entrar correctamente se actualiza de forma transparente
+                        # cualquier hash SHA-256 legado a scrypt con sal.
+                        if not str(user[8] or "").startswith("scrypt$"):
+                            with get_db() as conn:
+                                conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(u_pass), user[0]))
+                        if user[5] == 0:
+                            st.error("⛔ Cuenta inactiva. Contacte al soporte.")
                         else:
-                            st.session_state["casillero"] = formatear_casillero(user[1])
-                            st.session_state["nombre"] = user[2]
-                            st.session_state["usuario"] = user[3]
-                            st.session_state["telefono"] = user[6]
-                            st.session_state["ciudad"] = user[7]
-                        st.session_state.pop("datos_pdf_confirmado", None)
-                        st.session_state["china_modulos_desbloqueados"] = False
-                        st.session_state["sub_tab_inicio"] = "Inicio"
-                        st.session_state["hub"] = None
-                        hidratar_cotizaciones_sesion(formatear_casillero(user[1]))
+                            st.session_state["autenticado"] = True
+                            st.session_state["rol"] = normalizar_rol(user[4])
+                            perfil_login = cargar_perfil_usuario(user[1])
+                            if perfil_login:
+                                aplicar_perfil_en_sesion(perfil_login)
+                            else:
+                                st.session_state["casillero"] = formatear_casillero(user[1])
+                                st.session_state["nombre"] = user[2]
+                                st.session_state["usuario"] = user[3]
+                                st.session_state["telefono"] = user[6]
+                                st.session_state["ciudad"] = user[7]
+                            st.session_state.pop("datos_pdf_confirmado", None)
+                            st.session_state["china_modulos_desbloqueados"] = False
+                            st.session_state["sub_tab_inicio"] = "Inicio"
+                            st.session_state["hub"] = None
+                            hidratar_cotizaciones_sesion(formatear_casillero(user[1]))
 
-                        st.query_params["casillero"] = formatear_casillero(user[1])
-                        st.query_params["vista"] = "Inicio"
-                        st.rerun()
+                            st.query_params["casillero"] = formatear_casillero(user[1])
+                            st.query_params["vista"] = "Inicio"
+                            st.rerun()
+                    else:
+                        registrar_fallo_acceso(u_ident)
+                        st.error("❌ Credenciales inválidas.")
                 else:
-                    registrar_fallo_acceso(u_ident)
-                    st.error("❌ Credenciales inválidas.")
-            else:
-                st.warning("Complete todos los campos.")
+                    st.warning("Complete todos los campos.")
 
-        c_b1, c_b2 = st.columns(2)
-        with c_b1:
-            if st.button("Recuperar Clave", type="secondary"):
-                st.session_state["vista_actual"] = "recuperar"
-                st.rerun()
-        with c_b2:
-            if st.button("Crear Casillero", type="secondary"):
-                st.session_state["vista_actual"] = "registro"
-                st.rerun()
+            st.markdown('<div class="login-divider">Otras opciones</div>', unsafe_allow_html=True)
+            with st.container(key="login_secondary_actions"):
+                c_b1, c_b2 = st.columns(2, gap="medium")
+                with c_b1:
+                    if st.button("Recuperar contraseña", type="secondary", key="btn_login_recover"):
+                        st.session_state["vista_actual"] = "recuperar"
+                        st.rerun()
+                with c_b2:
+                    if st.button("Crear casillero", type="secondary", key="btn_login_register"):
+                        st.session_state["vista_actual"] = "registro"
+                        st.rerun()
+            st.markdown(
+                '<div class="login-security-note">🔒 Acceso protegido para clientes y personal autorizado.</div>',
+                unsafe_allow_html=True,
+            )
 
     elif st.session_state["vista_actual"] == "registro":
         st.markdown("### 📋 Apertura de Casillero en China")
@@ -8875,23 +9152,90 @@ elif st.session_state["rol"] == "cliente":
         hub_sel = st.session_state.get("hub")
         with st.container(key="vista_inicio"):
             if not hub_sel:
-                st.markdown("#### 🏠 Inicio")
-                st.caption("Seleccione el origen de su carga para ver los módulos disponibles.")
+                st.markdown(
+                    '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
+                    '<div class="client-home-copy">Seleccione el origen de su carga o abra directamente una herramienta disponible.</div>',
+                    unsafe_allow_html=True,
+                )
                 visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
                 if not visibles_hub:
                     st.info("Su cuenta no tiene hubs habilitados. Contacte al administrador.")
-                for hub_id, hub in HUBS.items():
-                    if not usuario_puede_hub(hub_id):
-                        continue
-                    if st.button(
-                        f"{hub['icon']}  {hub['label']}",
-                        type="secondary",
-                        key=f"hub_{hub_id}",
-                        use_container_width=True,
-                        on_click=ir_a,
-                        args=("Inicio", hub_id),
-                    ):
-                        pass
+                else:
+                    st.markdown('<div class="client-home-section">Origen de la carga</div>', unsafe_allow_html=True)
+                    columnas_hub = st.columns(len(visibles_hub), gap="medium")
+                    for columna_hub, hub_id in zip(columnas_hub, visibles_hub):
+                        hub = HUBS[hub_id]
+                        hub_activo = bool(hub.get("activo"))
+                        estado_hub = "Disponible" if hub_activo else "Próximamente"
+                        boton_hub = f"Abrir {hub['label']}" if hub_activo else "Ver información"
+                        with columna_hub:
+                            with st.container(border=True, key=f"home_origin_{hub_id}"):
+                                st.markdown(
+                                    f'<div class="home-origin-card" data-active="{str(hub_activo).lower()}">'
+                                    f'<div class="home-origin-top"><div class="home-origin-name">'
+                                    f'<span class="home-origin-icon">{html.escape(hub["icon"])}</span>{html.escape(hub["label"])}</div>'
+                                    f'<span class="home-origin-status">{estado_hub}</span></div>'
+                                    f'<div class="home-origin-detail">{html.escape(hub["descripcion"])}</div>'
+                                    f'</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                st.button(
+                                    boton_hub,
+                                    type="primary" if hub_activo else "secondary",
+                                    key=f"hub_{hub_id}",
+                                    use_container_width=True,
+                                    on_click=ir_a,
+                                    args=("Inicio", hub_id),
+                                )
+
+                    modulos_inicio = modulos_china_visibles() if usuario_puede_hub("china") else []
+                    orden_inicio = {"Catálogo": 0, "Cotizador": 1, "Mis Cotizaciones": 2}
+                    modulos_inicio = sorted(
+                        modulos_inicio,
+                        key=lambda modulo: orden_inicio.get(modulo["id"], 99),
+                    )
+                    if modulos_inicio:
+                        st.markdown('<div class="client-home-section">Accesos rápidos</div>', unsafe_allow_html=True)
+                        with st.container(key="home_actions"):
+                            columnas_modulo = st.columns(len(modulos_inicio), gap="medium")
+                            for columna_modulo, modulo in zip(columnas_modulo, modulos_inicio):
+                                with columna_modulo:
+                                    with st.container(border=True, key=f"home_action_{modulo['btn_key']}"):
+                                        st.button(
+                                            f"{modulo['icon']} {modulo['label']}",
+                                            key=f"home_{modulo['btn_key']}",
+                                            use_container_width=True,
+                                            on_click=ir_a,
+                                            args=(modulo["id"], "china"),
+                                        )
+                                        st.markdown(
+                                            f'<div class="home-action-detail">{html.escape(modulo["detalle"])}</div>',
+                                            unsafe_allow_html=True,
+                                        )
+
+                    mensaje_ayuda = urllib.parse.quote(
+                        f"Hola Centro de Cerámicas y Más, necesito ayuda con mi casillero {casillero}."
+                    )
+                    with st.container(border=True, key="home_help"):
+                        st.markdown(
+                            '<div class="home-help-title">Centro de ayuda</div>'
+                            '<div class="home-help-copy">Obtenga asistencia o consulte el recorrido guiado del portal.</div>',
+                            unsafe_allow_html=True,
+                        )
+                        ayuda_wa, ayuda_guia = st.columns(2, gap="medium")
+                        with ayuda_wa:
+                            st.link_button(
+                                "💬 Soporte por WhatsApp",
+                                f"https://wa.me/50495771099?text={mensaje_ayuda}",
+                                use_container_width=True,
+                            )
+                        with ayuda_guia:
+                            st.button(
+                                "▶ Abrir guía paso a paso",
+                                key="home_abrir_guia",
+                                use_container_width=True,
+                                on_click=iniciar_guia_desde_mas,
+                            )
                 st.markdown(
                     """
                     <section class="ccm-versiculo-banner" aria-label="Versículo bíblico inspirador">
