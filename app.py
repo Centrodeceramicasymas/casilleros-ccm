@@ -10231,39 +10231,119 @@ elif es_rol_admin():
     st.markdown(
         """
         <style>
-            :root { --app-max-width: 920px; }
-            .block-container { max-width: 920px !important; }
-            .st-key-admin_nav [data-testid="stSegmentedControl"] {
-                background: #f1f5f9;
+            :root { --app-max-width: 1120px; }
+            .block-container,
+            [data-testid="stMainBlockContainer"],
+            .stMainBlockContainer,
+            [data-testid="stAppViewBlockContainer"] {
+                max-width: 1120px !important;
+                padding-top: 18px !important;
+                padding-left: 24px !important;
+                padding-right: 24px !important;
+                padding-bottom: 54px !important;
+            }
+            .stApp,
+            [data-testid="stAppViewContainer"],
+            [data-testid="stMain"],
+            [data-testid="stMainBlockContainer"] {
+                background: #f3f6fa !important;
+            }
+            .app-header-blue {
+                border-radius: 10px !important;
+                padding: 15px 20px !important;
+                box-shadow: 0 10px 25px rgba(0, 54, 140, .16) !important;
+            }
+            .admin-header-kicker {
+                margin-bottom: 4px;
+                color: #bfdbfe;
+                font-size: .65rem;
+                font-weight: 850;
+                letter-spacing: .08em;
+                text-transform: uppercase;
+            }
+            .st-key-admin_nav {
+                margin: 14px 0 20px;
+                padding: 6px;
+                background: #ffffff;
                 border: 1px solid #dbe3ee;
                 border-radius: 10px;
-                padding: 5px;
+                box-shadow: 0 5px 16px rgba(15, 23, 42, .05);
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] {
+                background: transparent;
+                border: 0;
+                border-radius: 7px;
+                padding: 0;
             }
             .st-key-admin_nav [data-testid="stSegmentedControl"] button {
-                min-height: 42px;
+                min-height: 44px;
+                border-radius: 7px !important;
                 font-weight: 750;
             }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-pressed="true"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked) {
+                color: #ffffff !important;
+                background: #0757c8 !important;
+                box-shadow: 0 4px 11px rgba(7, 87, 200, .20) !important;
+            }
             .admin-section-heading {
-                margin: 20px 0 4px;
+                margin: 4px 0 3px;
                 color: #0f172a;
-                font-size: 1.12rem;
+                font-size: 1.2rem;
                 font-weight: 850;
             }
             .admin-section-copy {
-                margin: 0 0 14px;
+                margin: 0 0 16px;
                 color: #64748b;
                 font-size: .86rem;
+            }
+            .st-key-admin_metrics {
+                margin-bottom: 14px;
+            }
+            .st-key-admin_metrics [data-testid="stHorizontalBlock"] {
+                gap: 14px !important;
+            }
+            .st-key-admin_metrics [data-testid="stMetric"] {
+                min-height: 84px;
+                padding: 14px 16px !important;
+                background: #ffffff !important;
+                border: 1px solid #dbe3ee !important;
+                border-radius: 8px !important;
+                box-shadow: 0 5px 14px rgba(15, 23, 42, .04) !important;
+            }
+            .st-key-admin_metrics [data-testid="stMetricValue"] {
+                color: #0757c8 !important;
+                font-size: 1.45rem !important;
+            }
+            .st-key-admin_directory {
+                margin: 4px 0 16px;
+            }
+            .st-key-admin_directory details {
+                overflow: hidden;
+                background: #ffffff;
+                border: 1px solid #dbe3ee !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 12px rgba(15, 23, 42, .04);
+            }
+            .st-key-admin_directory summary {
+                min-height: 45px;
+                font-weight: 800;
+            }
+            .st-key-admin_selector [data-baseweb="select"] > div {
+                min-height: 45px !important;
+                background: #ffffff !important;
+                border-radius: 8px !important;
             }
             .admin-account-head {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 gap: 12px;
-                margin: 6px 0 16px;
-                padding: 14px 16px;
-                background: #f8fafc;
+                margin: 2px 0 16px;
+                padding: 15px 16px;
+                background: #f5f9ff;
                 border: 1px solid #dbe3ee;
-                border-left: 4px solid #0f9f6e;
+                border-left: 4px solid #0757c8;
                 border-radius: 8px;
             }
             .admin-account-name { color: #0f172a; font-weight: 850; line-height: 1.3; }
@@ -10272,20 +10352,20 @@ elif es_rol_admin():
                 flex: 0 0 auto;
                 padding: 5px 9px;
                 color: #075e45;
-                background: #dff7ed;
-                border: 1px solid #9ee4ca;
+                background: #e1f7ef;
+                border: 1px solid #a6e5cf;
                 border-radius: 999px;
                 font-size: .72rem;
                 font-weight: 850;
                 text-transform: uppercase;
             }
             .st-key-admin_user_workspace {
-                margin-top: 14px;
-                padding: 16px 18px 18px;
+                margin-top: 10px;
+                padding: 18px 20px 20px;
                 background: #ffffff;
                 border: 1px solid #dbe3ee;
-                border-radius: 8px;
-                box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+                border-radius: 10px;
+                box-shadow: 0 12px 28px rgba(15, 23, 42, .07);
             }
             .st-key-admin_user_workspace [data-baseweb="tab-list"] {
                 gap: 6px;
@@ -10298,6 +10378,16 @@ elif es_rol_admin():
                 border-radius: 6px;
                 font-weight: 750;
             }
+            .st-key-admin_user_workspace [data-baseweb="tab"][aria-selected="true"] {
+                color: #0757c8 !important;
+                background: #ffffff !important;
+                box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+            }
+            .st-key-admin_user_workspace [data-baseweb="input"],
+            .st-key-admin_user_workspace [data-baseweb="select"] > div,
+            .st-key-admin_user_workspace [data-baseweb="textarea"] {
+                border-radius: 8px !important;
+            }
             .st-key-admin_perm_hubs,
             .st-key-admin_perm_modules,
             .st-key-admin_security_box {
@@ -10309,7 +10399,11 @@ elif es_rol_admin():
             }
             .st-key-admin_perm_hubs [data-testid="stCheckbox"],
             .st-key-admin_perm_modules [data-testid="stCheckbox"] {
-                padding: 3px 0;
+                margin: 3px 0;
+                padding: 8px 9px;
+                background: #ffffff;
+                border: 1px solid #e7edf4;
+                border-radius: 7px;
             }
             .st-key-adm_save_user button {
                 min-height: 46px;
@@ -10328,10 +10422,32 @@ elif es_rol_admin():
                 border-color: #f0a3a0;
                 background: #ffffff;
             }
+            .st-key-btn_logout_admin {
+                width: 180px;
+                margin: 24px 0 0 auto;
+            }
+            .st-key-btn_logout_admin button {
+                min-height: 42px !important;
+                border-radius: 8px !important;
+            }
             @media (max-width: 640px) {
+                .block-container,
+                [data-testid="stMainBlockContainer"],
+                .stMainBlockContainer,
+                [data-testid="stAppViewBlockContainer"] {
+                    padding-top: 9px !important;
+                    padding-left: 9px !important;
+                    padding-right: 9px !important;
+                }
+                .st-key-admin_nav { margin: 9px 0 15px; padding: 4px; }
+                .st-key-admin_nav [data-testid="stSegmentedControl"] button {
+                    min-height: 40px;
+                    font-size: .7rem !important;
+                }
                 .st-key-admin_user_workspace { padding: 12px; }
                 .admin-account-head { align-items: flex-start; }
                 .admin-account-badge { white-space: nowrap; }
+                .st-key-btn_logout_admin { width: 100%; }
             }
         </style>
         """,
@@ -10342,6 +10458,7 @@ elif es_rol_admin():
     admin_usuario = html.escape(str(st.session_state.get("usuario") or ""))
     st.markdown(
         html_encabezado_institucional(
+            '<div class="admin-header-kicker">Centro de control</div>'
             f'<div class="app-greeting-title">{titulo}</div>'
             f'<div class="app-greeting-sub">{admin_nombre} • {admin_usuario}</div>',
             extra_style="margin-bottom:12px;",
@@ -10390,34 +10507,38 @@ elif es_rol_admin():
             total_cuentas = len(filas)
             total_activas = sum(1 for r in filas if bool(r[10]))
             total_gestores = sum(1 for r in filas if str(r[9] or "").lower() in ("admin", "superadmin"))
-            m_total, m_activas, m_gestores = st.columns(3, gap="medium")
-            m_total.metric("Cuentas", total_cuentas)
-            m_activas.metric("Activas", total_activas)
-            m_gestores.metric("Administradores", total_gestores)
-            st.dataframe(
-                {
-                    "Casillero": [formatear_casillero(r[1]) for r in filas],
-                    "Nombre": [r[2] for r in filas],
-                    "DNI": [r[3] for r in filas],
-                    "Correo": [r[4] for r in filas],
-                    "Teléfono": [r[5] for r in filas],
-                    "Rol": [r[9] for r in filas],
-                    "Activo": ["Sí" if r[10] else "No" for r in filas],
-                },
-                use_container_width=True,
-                hide_index=True,
-            )
+            with st.container(key="admin_metrics"):
+                m_total, m_activas, m_gestores = st.columns(3, gap="medium")
+                m_total.metric("Cuentas", total_cuentas)
+                m_activas.metric("Activas", total_activas)
+                m_gestores.metric("Administradores", total_gestores)
+            with st.container(key="admin_directory"):
+                with st.expander(f"Directorio de usuarios · {total_cuentas} cuentas"):
+                    st.dataframe(
+                        {
+                            "Casillero": [formatear_casillero(r[1]) for r in filas],
+                            "Nombre": [r[2] for r in filas],
+                            "DNI": [r[3] for r in filas],
+                            "Correo": [r[4] for r in filas],
+                            "Teléfono": [r[5] for r in filas],
+                            "Rol": [r[9] for r in filas],
+                            "Activo": ["Sí" if r[10] else "No" for r in filas],
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
         else:
             st.info("No hay cuentas para mostrar.")
 
         etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
         if etiquetas:
-            elegido = st.selectbox(
-                "Cuenta a gestionar",
-                etiquetas,
-                key="admin_sel_user",
-                help="Seleccione una cuenta para editar su perfil, permisos o credenciales.",
-            )
+            with st.container(key="admin_selector"):
+                elegido = st.selectbox(
+                    "Cuenta a gestionar",
+                    etiquetas,
+                    key="admin_sel_user",
+                    help="Seleccione una cuenta para editar su perfil, permisos o credenciales.",
+                )
             idx = etiquetas.index(elegido)
             u = filas[idx]
             uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = u
