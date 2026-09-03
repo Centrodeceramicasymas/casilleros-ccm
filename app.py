@@ -11411,6 +11411,24 @@ elif es_rol_admin():
                 border-left: 4px solid #0757c8;
                 border-radius: 8px;
             }
+            .admin-account-identity {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                min-width: 0;
+            }
+            .admin-account-avatar {
+                display: grid;
+                place-items: center;
+                flex: 0 0 42px;
+                width: 42px;
+                height: 42px;
+                color: #ffffff;
+                background: #0757c8;
+                border-radius: 8px;
+                font-size: .78rem;
+                font-weight: 900;
+            }
             .admin-account-name { color: #0f172a; font-weight: 850; line-height: 1.3; }
             .admin-account-meta { color: #64748b; font-size: .8rem; margin-top: 3px; }
             .admin-account-badge {
@@ -11423,6 +11441,11 @@ elif es_rol_admin():
                 font-size: .72rem;
                 font-weight: 850;
                 text-transform: uppercase;
+            }
+            .admin-account-badge.is-inactive {
+                color: #9f1239;
+                background: #fff1f2;
+                border-color: #fecdd3;
             }
             .st-key-admin_user_workspace {
                 margin-top: 10px;
@@ -11453,6 +11476,43 @@ elif es_rol_admin():
             .st-key-admin_user_workspace [data-baseweb="textarea"] {
                 border-radius: 8px !important;
             }
+            .admin-form-section {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin: 18px 0 10px;
+                padding-bottom: 8px;
+                color: #0f172a;
+                border-bottom: 1px solid #e5eaf1;
+                font-size: .82rem;
+                font-weight: 850;
+            }
+            .admin-form-section:first-child { margin-top: 10px; }
+            .admin-form-step {
+                display: grid;
+                place-items: center;
+                width: 24px;
+                height: 24px;
+                color: #0757c8;
+                background: #eaf3ff;
+                border-radius: 6px;
+                font-size: .68rem;
+                font-weight: 900;
+            }
+            .admin-form-section small {
+                margin-left: auto;
+                color: #7c8798;
+                font-size: .67rem;
+                font-weight: 650;
+            }
+            .st-key-admin_save_bar {
+                margin-top: 18px;
+                padding: 12px 14px;
+                background: #f8fafc;
+                border-top: 1px solid #dbe3ee;
+                border-radius: 0 0 8px 8px;
+            }
+            .st-key-admin_save_bar [data-testid="stCaptionContainer"] { color: #64748b; }
             .st-key-admin_perm_hubs,
             .st-key-admin_perm_modules,
             .st-key-admin_security_box {
@@ -11470,9 +11530,9 @@ elif es_rol_admin():
                 border: 1px solid #e7edf4;
                 border-radius: 7px;
             }
-            .st-key-adm_save_user button {
+            .st-key-adm_save_user button,
+            .st-key-admin_save_bar button {
                 min-height: 46px;
-                margin-top: 14px;
                 font-weight: 850;
                 border-radius: 8px !important;
                 box-shadow: 0 5px 13px rgba(7, 87, 200, .18) !important;
@@ -11576,6 +11636,38 @@ elif es_rol_admin():
                 min-height: 45px;
                 font-weight: 800;
             }
+            .st-key-admin_create_area {
+                margin-top: 14px;
+            }
+            .admin-create-intro {
+                margin: 4px 0 14px;
+                padding: 12px 14px;
+                color: #334155;
+                background: #f5f9ff;
+                border-left: 3px solid #0757c8;
+                border-radius: 6px;
+                font-size: .78rem;
+            }
+            .admin-generated-code {
+                margin: 2px 0 12px;
+                padding: 10px 12px;
+                color: #0757c8;
+                background: #f8fafc;
+                border: 1px dashed #9cbce3;
+                border-radius: 7px;
+                font-size: .78rem;
+                font-weight: 800;
+            }
+            .admin-created-result {
+                margin: 0 0 14px;
+                padding: 13px 15px;
+                color: #14532d;
+                background: #f0fdf4;
+                border: 1px solid #bbf7d0;
+                border-left: 4px solid #16a34a;
+                border-radius: 8px;
+                font-size: .82rem;
+            }
             .st-key-adm_create_user button {
                 min-height: 44px !important;
                 border-radius: 8px !important;
@@ -11618,6 +11710,8 @@ elif es_rol_admin():
                 .st-key-admin_user_workspace { padding: 12px; }
                 .admin-account-head,
                 .admin-title-row { align-items: flex-start; }
+                .admin-account-head { flex-direction: column; }
+                .admin-form-section small { display: none; }
                 .admin-account-badge { white-space: nowrap; }
                 .admin-access-badge { display: none; }
                 .st-key-admin_announcement_editor { padding: 13px; }
@@ -11679,6 +11773,16 @@ elif es_rol_admin():
             '<div class="admin-section-copy">Administre perfiles, accesos, credenciales y estado de las cuentas.</div>',
             unsafe_allow_html=True,
         )
+        cuenta_creada_flash = st.session_state.pop("_admin_cuenta_creada", None)
+        if isinstance(cuenta_creada_flash, dict):
+            st.markdown(
+                '<div class="admin-created-result"><b>Cuenta creada correctamente</b><br>'
+                f'Casillero: <b>{html.escape(str(cuenta_creada_flash.get("casillero") or ""))}</b> · '
+                f'Usuario: {html.escape(str(cuenta_creada_flash.get("nombre") or ""))}</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("Contraseña provisional. Entréguela de forma privada; se muestra una sola vez.")
+            st.code(str(cuenta_creada_flash.get("clave") or ""), language="text")
         with get_db() as conn:
             c = conn.cursor()
             if root:
@@ -11753,14 +11857,18 @@ elif es_rol_admin():
             perm = permisos_de(cas_u)
             estado_cuenta = "Activa" if bool(act_u) else "Inactiva"
             rol_visible = html.escape(str(rol_u or "cliente"))
+            partes_usuario = [p for p in str(nom_u or "").split() if p]
+            iniciales_usuario = "".join(p[0].upper() for p in partes_usuario[:2]) or "US"
+            clase_estado_cuenta = "" if bool(act_u) else " is-inactive"
             with st.container(key="admin_user_workspace"):
                 st.markdown(
                     '<div class="admin-account-head">'
-                    '<div>'
+                    '<div class="admin-account-identity">'
+                    f'<div class="admin-account-avatar">{html.escape(iniciales_usuario)}</div><div>'
                     f'<div class="admin-account-name">{html.escape(str(nom_u or "Sin nombre"))}</div>'
                     f'<div class="admin-account-meta">{html.escape(formatear_casillero(cas_u))} · {html.escape(str(cor_u or "Sin correo"))}</div>'
-                    '</div>'
-                    f'<span class="admin-account-badge">{rol_visible} · {estado_cuenta}</span>'
+                    '</div></div>'
+                    f'<span class="admin-account-badge{clase_estado_cuenta}">{rol_visible} · {estado_cuenta}</span>'
                     '</div>',
                     unsafe_allow_html=True,
                 )
@@ -11770,17 +11878,31 @@ elif es_rol_admin():
                 )
 
                 with tab_perfil:
-                    st.caption("Información de identidad, contacto y clasificación de la cuenta.")
+                    st.markdown(
+                        '<div class="admin-form-section"><span class="admin-form-step">1</span>'
+                        'Identidad del cliente<small>Datos legales</small></div>',
+                        unsafe_allow_html=True,
+                    )
                     f1, f2 = st.columns(2, gap="medium")
                     with f1:
                         n_nom = st.text_input("Nombre completo", value=nom_u, key=f"adm_nom_{cas_u}")
                     with f2:
-                        n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
+                        n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
+                    st.markdown(
+                        '<div class="admin-form-section"><span class="admin-form-step">2</span>'
+                        'Información de contacto<small>Acceso y notificaciones</small></div>',
+                        unsafe_allow_html=True,
+                    )
                     f3, f4 = st.columns(2, gap="medium")
                     with f3:
-                        n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
+                        n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
                     with f4:
                         n_tel = st.text_input("Teléfono", value=tel_u, key=f"adm_tel_{cas_u}")
+                    st.markdown(
+                        '<div class="admin-form-section"><span class="admin-form-step">3</span>'
+                        'Ubicación y entrega<small>Dirección principal</small></div>',
+                        unsafe_allow_html=True,
+                    )
                     f5, f6 = st.columns(2, gap="medium")
                     with f5:
                         n_dep = st.selectbox(
@@ -11797,7 +11919,17 @@ elif es_rol_admin():
                             index=munis.index(ciu_u) if ciu_u in munis else 0,
                             key=f"adm_ciu_{cas_u}",
                         )
-                    n_dir = st.text_area("Dirección", value=dir_u or "", key=f"adm_dir_{cas_u}")
+                    n_dir = st.text_area(
+                        "Dirección exacta",
+                        value=dir_u or "",
+                        key=f"adm_dir_{cas_u}",
+                        height=82,
+                    )
+                    st.markdown(
+                        '<div class="admin-form-section"><span class="admin-form-step">4</span>'
+                        'Acceso a la plataforma<small>Casillero, rol y estado</small></div>',
+                        unsafe_allow_html=True,
+                    )
                     f7, f8 = st.columns(2, gap="medium")
                     with f7:
                         n_cas = st.text_input(
@@ -11897,14 +12029,27 @@ elif es_rol_admin():
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
 
-                if st.button(
-                    "💾 Guardar perfil y permisos",
-                    type="primary",
-                    key="adm_save_user",
-                    use_container_width=True,
-                ):
+                with st.container(key="admin_save_bar"):
+                    barra_info, barra_accion = st.columns([1.6, 1], gap="medium")
+                    with barra_info:
+                        st.caption("Guarda juntos el perfil, rol, estado y permisos configurados.")
+                    with barra_accion:
+                        guardar_cambios_usuario = st.button(
+                            "Guardar cambios",
+                            type="primary",
+                            key="adm_save_user",
+                            use_container_width=True,
+                        )
+                if guardar_cambios_usuario:
                     nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
-                    if rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
+                    correo_editado = normalizar_correo(n_cor)
+                    if not (n_nom.strip() and n_dni.strip() and correo_editado and n_tel.strip()):
+                        st.error("Nombre, DNI, correo y teléfono son obligatorios.")
+                    elif "@" not in correo_editado or "." not in correo_editado.rsplit("@", 1)[-1]:
+                        st.error("Ingrese un correo electrónico válido.")
+                    elif not nuevo_cas:
+                        st.error("No fue posible generar un código de casillero válido.")
+                    elif rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
                         st.error("Solo el superadministrador puede alterar la cuenta raíz.")
                     else:
                         with get_db() as conn:
@@ -11917,7 +12062,10 @@ elif es_rol_admin():
                                     departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
                                 WHERE id=?
                                 """,
-                                (n_nom, n_dni, n_cor, n_tel, n_dep, n_ciu, n_dir, nuevo_cas, n_rol, bool(n_act), uid),
+                                (
+                                    n_nom.strip(), n_dni.strip(), correo_editado, n_tel.strip(),
+                                    n_dep, n_ciu, n_dir.strip(), nuevo_cas, n_rol, bool(n_act), uid,
+                                ),
                             )
                         guardar_permisos(
                             nuevo_cas,
@@ -11952,65 +12100,110 @@ elif es_rol_admin():
                         hide_index=True,
                     )
 
-        with st.expander("➕ Crear una cuenta nueva"):
-            st.caption("Registre al usuario y asigne su rol inicial. Los permisos podrán ajustarse después.")
-            c1, c2 = st.columns(2, gap="medium")
-            with c1:
-                c_nom = st.text_input("Nombre completo *", key="new_nom")
-            with c2:
-                c_dni = st.text_input("DNI *", key="new_dni")
-            c3, c4 = st.columns(2, gap="medium")
-            with c3:
-                c_cor = st.text_input("Correo *", key="new_cor")
-            with c4:
-                c_tel = st.text_input("Teléfono *", key="new_tel")
-            c5, c6 = st.columns(2, gap="medium")
-            with c5:
-                c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
-            with c6:
-                c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
-            c_dir = st.text_input("Dirección", key="new_dir")
-            c7, c8 = st.columns(2, gap="medium")
-            with c7:
-                c_pwd = st.text_input("Contraseña inicial", type="password", key="new_pwd")
-            with c8:
-                c_rol = st.selectbox("Rol", ["cliente", "admin"] if root else ["cliente"], key="new_rol")
-            if st.button("Crear usuario", type="primary", key="adm_create_user"):
-                if not (c_nom and c_dni and c_cor and c_tel):
-                    st.warning("Complete los campos obligatorios.")
-                else:
-                    n_cod = generar_codigo_casillero_dni(c_dni)
-                    n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
-                    try:
-                        with get_db() as conn:
-                            cur = conn.cursor()
-                            cur.execute(
-                                """
-                                INSERT INTO usuarios (
-                                    codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
-                                    departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
-                                """,
-                                (
-                                    n_cod,
-                                    c_nom,
-                                    c_dni,
-                                    c_cor,
-                                    c_tel,
-                                    c_dep,
-                                    c_ciu,
-                                    c_dir or "San Juan, Intibucá",
-                                    hash_pwd(n_pwd),
-                                    c_rol,
-                                    obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
-                                ),
-                            )
-                            conn.commit()
-                        asegurar_permisos_casillero(n_cod, c_rol)
-                        st.success(f"Cuenta creada. Casillero `{n_cod}` • Contraseña `{n_pwd}`")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Ya existe un casillero o correo con esos datos.")
+        with st.container(key="admin_create_area"):
+            with st.expander("Crear una cuenta nueva"):
+                st.markdown(
+                    '<div class="admin-create-intro"><b>Alta de cliente</b><br>'
+                    'Complete la identidad, contacto y acceso. El casillero se generará automáticamente desde el DNI.</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="admin-form-section"><span class="admin-form-step">1</span>'
+                    'Identidad y contacto<small>Campos obligatorios</small></div>',
+                    unsafe_allow_html=True,
+                )
+                c1, c2 = st.columns(2, gap="medium")
+                with c1:
+                    c_nom = st.text_input("Nombre completo *", key="new_nom")
+                with c2:
+                    c_dni = st.text_input("DNI *", key="new_dni")
+                codigo_casillero_previo = generar_codigo_casillero_dni(c_dni)
+                if codigo_casillero_previo:
+                    st.markdown(
+                        f'<div class="admin-generated-code">Casillero generado: '
+                        f'{html.escape(codigo_casillero_previo)}</div>',
+                        unsafe_allow_html=True,
+                    )
+                c3, c4 = st.columns(2, gap="medium")
+                with c3:
+                    c_cor = st.text_input("Correo electrónico *", key="new_cor")
+                with c4:
+                    c_tel = st.text_input("Teléfono *", key="new_tel")
+
+                st.markdown(
+                    '<div class="admin-form-section"><span class="admin-form-step">2</span>'
+                    'Ubicación principal<small>Datos de entrega</small></div>',
+                    unsafe_allow_html=True,
+                )
+                c5, c6 = st.columns(2, gap="medium")
+                with c5:
+                    c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
+                with c6:
+                    c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
+                c_dir = st.text_area("Dirección exacta", key="new_dir", height=82)
+
+                st.markdown(
+                    '<div class="admin-form-section"><span class="admin-form-step">3</span>'
+                    'Credenciales y rol<small>Configuración inicial</small></div>',
+                    unsafe_allow_html=True,
+                )
+                c7, c8 = st.columns(2, gap="medium")
+                with c7:
+                    c_pwd = st.text_input(
+                        "Contraseña inicial",
+                        type="password",
+                        key="new_pwd",
+                        placeholder="Vacío para generar una clave segura",
+                    )
+                with c8:
+                    c_rol = st.selectbox(
+                        "Rol inicial",
+                        ["cliente", "admin"] if root else ["cliente"],
+                        key="new_rol",
+                    )
+                crear_usuario = st.button(
+                    "Crear cuenta y generar casillero",
+                    type="primary",
+                    key="adm_create_user",
+                    use_container_width=True,
+                )
+                if crear_usuario:
+                    correo_nuevo = normalizar_correo(c_cor)
+                    if not (c_nom.strip() and c_dni.strip() and correo_nuevo and c_tel.strip()):
+                        st.warning("Complete todos los campos obligatorios.")
+                    elif "@" not in correo_nuevo or "." not in correo_nuevo.rsplit("@", 1)[-1]:
+                        st.warning("Ingrese un correo electrónico válido.")
+                    elif not codigo_casillero_previo:
+                        st.warning("El DNI debe contener suficientes dígitos para generar el casillero.")
+                    else:
+                        n_cod = codigo_casillero_previo
+                        n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
+                        try:
+                            with get_db() as conn:
+                                cur = conn.cursor()
+                                cur.execute(
+                                    """
+                                    INSERT INTO usuarios (
+                                        codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
+                                        departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
+                                    """,
+                                    (
+                                        n_cod, c_nom.strip(), c_dni.strip(), correo_nuevo, c_tel.strip(),
+                                        c_dep, c_ciu, c_dir.strip() or f"{c_ciu}, {c_dep}",
+                                        hash_pwd(n_pwd), c_rol,
+                                        obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
+                                    ),
+                                )
+                            asegurar_permisos_casillero(n_cod, c_rol)
+                            st.session_state["_admin_cuenta_creada"] = {
+                                "casillero": n_cod,
+                                "nombre": c_nom.strip(),
+                                "clave": n_pwd,
+                            }
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Ya existe un casillero, DNI o correo con esos datos.")
 
     if admin_seccion == "Anuncios" and root:
         st.markdown(
