@@ -10143,7 +10143,56 @@ def pintar_control_cliente_360():
             .control360-badge { padding:5px 9px; color:#166534 !important; background:#dcfce7; border-radius:999px; font-weight:800; white-space:nowrap; }
             .control360-section { margin:14px 0 8px; color:#0f172a; font-size:.86rem; font-weight:850; }
             .st-key-control360_action { padding:14px; background:#f8fafc; border:1px solid #dbe3ee; border-radius:8px; }
-            @media(max-width:640px){ .control360-head{flex-direction:column}.control360-badge{align-self:flex-start} }
+            [data-testid="stTabs"] [data-baseweb="tab-list"] {
+                display:flex !important;
+                gap:6px !important;
+                padding:6px !important;
+                overflow-x:auto !important;
+                background:#eef3f8 !important;
+                border:1px solid #d8e1ec !important;
+                border-radius:9px !important;
+                scrollbar-width:thin;
+            }
+            [data-testid="stTabs"] [role="tab"] {
+                flex:1 0 auto !important;
+                min-height:42px !important;
+                padding:9px 14px !important;
+                color:#334155 !important;
+                -webkit-text-fill-color:#334155 !important;
+                background:#ffffff !important;
+                border:1px solid #d7e0eb !important;
+                border-radius:7px !important;
+                box-shadow:0 1px 3px rgba(15,23,42,.05) !important;
+                font-size:.78rem !important;
+                font-weight:800 !important;
+                opacity:1 !important;
+            }
+            [data-testid="stTabs"] [role="tab"] *,
+            [data-testid="stTabs"] [role="tab"] p,
+            [data-testid="stTabs"] [role="tab"] span {
+                color:inherit !important;
+                -webkit-text-fill-color:inherit !important;
+                opacity:1 !important;
+            }
+            [data-testid="stTabs"] [role="tab"]:hover {
+                color:#0757c8 !important;
+                -webkit-text-fill-color:#0757c8 !important;
+                border-color:#8eb5ea !important;
+                background:#f5f9ff !important;
+            }
+            [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+                color:#ffffff !important;
+                -webkit-text-fill-color:#ffffff !important;
+                background:#0757c8 !important;
+                border-color:#0757c8 !important;
+                box-shadow:0 4px 10px rgba(7,87,200,.20) !important;
+            }
+            [data-testid="stTabs"] [data-baseweb="tab-highlight"] { display:none !important; }
+            @media(max-width:640px){
+                .control360-head{flex-direction:column}
+                .control360-badge{align-self:flex-start}
+                [data-testid="stTabs"] [role="tab"] { flex:0 0 auto !important; min-width:112px !important; }
+            }
         </style>
         """,
         unsafe_allow_html=True,
