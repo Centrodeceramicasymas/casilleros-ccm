@@ -863,6 +863,15 @@ if USA_SUPABASE:
 def traducir_sql_postgres(sql):
     """Compatibilidad temporal entre las consultas históricas SQLite y PostgreSQL."""
     sql_pg = str(sql)
+    # Algunas instalaciones antiguas guardan estas columnas como TIMESTAMP y
+    # otras como TEXT. Para lecturas, normalizarlas a texto evita que COALESCE
+    # intente combinar tipos incompatibles en PostgreSQL.
+    sql_pg = re.sub(
+        r"COALESCE\(fecha_creacion\s*,\s*fecha\)",
+        "COALESCE(fecha_creacion::text, fecha::text)",
+        sql_pg,
+        flags=re.I,
+    )
     sql_pg = re.sub(r"\bIFNULL\(confirmada\s*,\s*0\)", "COALESCE(confirmada, FALSE)", sql_pg, flags=re.I)
     sql_pg = re.sub(r"\bIFNULL\(", "COALESCE(", sql_pg, flags=re.I)
     # Después de convertir IFNULL, también hay que convertir la comparación
@@ -4131,20 +4140,45 @@ def asegurar_esquema_cotizaciones():
     with get_db() as conn:
         cursor = conn.cursor()
         if USA_SUPABASE:
-            sentencias = (
-                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS confirmada BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS fecha_confirmacion TEXT",
-                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS fecha_creacion TEXT",
-            )
-            for sentencia in sentencias:
-                cursor.execute(sentencia)
             cursor.execute(
                 """
-                UPDATE cotizaciones
-                SET fecha_creacion = fecha::text
-                WHERE fecha_creacion IS NULL OR BTRIM(fecha_creacion::text) = ''
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'cotizaciones'
                 """
             )
+            columnas = {str(fila[0]): str(fila[1]) for fila in cursor.fetchall()}
+
+            if "confirmada" not in columnas:
+                cursor.execute(
+                    "ALTER TABLE cotizaciones "
+                    "ADD COLUMN confirmada BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            if "fecha_confirmacion" not in columnas:
+                cursor.execute(
+                    "ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT"
+                )
+            if "fecha_creacion" not in columnas:
+                tipo_fecha = columnas.get("fecha", "text")
+                tipos_permitidos = {
+                    "date": "DATE",
+                    "timestamp without time zone": "TIMESTAMP WITHOUT TIME ZONE",
+                    "timestamp with time zone": "TIMESTAMP WITH TIME ZONE",
+                }
+                tipo_sql = tipos_permitidos.get(tipo_fecha, "TEXT")
+                cursor.execute(
+                    f"ALTER TABLE cotizaciones ADD COLUMN fecha_creacion {tipo_sql}"
+                )
+                if "fecha" in columnas:
+                    # La columna nueva conserva el tipo de la fecha histórica.
+                    cursor.execute(
+                        """
+                        UPDATE cotizaciones
+                        SET fecha_creacion = fecha
+                        WHERE fecha_creacion IS NULL
+                        """
+                    )
         else:
             cursor.execute("PRAGMA table_info(cotizaciones)")
             columnas = {str(fila[1]) for fila in cursor.fetchall()}
