@@ -6154,7 +6154,225 @@ def logout():
 
 
 def abrir_creacion_usuario_admin():
-    st.session_state["admin_user_mode"] = "Crear cuenta"
+    st.session_state["_admin_dialog_crear"] = True
+    st.session_state["_admin_user_table_version"] = (
+        int(st.session_state.get("_admin_user_table_version") or 0) + 1
+    )
+
+
+def reiniciar_tabla_usuarios_admin():
+    st.session_state["_admin_user_table_version"] = (
+        int(st.session_state.get("_admin_user_table_version") or 0) + 1
+    )
+
+
+def invalidar_cache_datos_admin():
+    cargar_paquetes_db.clear()
+    cargar_eventos_tracking_db.clear()
+    cargar_paquetes_admin.clear()
+    cargar_metricas_paquetes_admin.clear()
+    cargar_eventos_tracking_admin.clear()
+    cargar_cotizaciones_db.clear()
+    cargar_cotizaciones_confirmadas_admin.clear()
+    cargar_resumen_operativo_admin.clear()
+
+
+@st.dialog("Editar cuenta", width="large")
+def dialogo_editar_usuario_admin(usuario, root=False):
+    uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = usuario
+    perm = permisos_de(cas_u)
+    st.markdown(
+        f"**{html.escape(str(nom_u or 'Sin nombre'))}**  \n"
+        f"{html.escape(formatear_casillero(cas_u))} · {html.escape(str(cor_u or 'Sin correo'))}"
+    )
+    tab_perfil, tab_permisos, tab_seguridad = st.tabs(["Perfil", "Permisos", "Seguridad"])
+    with tab_perfil:
+        p1, p2 = st.columns(2, gap="medium")
+        with p1:
+            n_nom = st.text_input("Nombre completo", value=nom_u, key=f"dlg_nom_{uid}")
+            n_dni = st.text_input("DNI", value=dni_u, key=f"dlg_dni_{uid}")
+            n_cor = st.text_input("Correo", value=cor_u, key=f"dlg_cor_{uid}")
+            n_tel = st.text_input("Teléfono", value=tel_u, key=f"dlg_tel_{uid}")
+        with p2:
+            departamentos = list(MUNICIPIOS_HONDURAS.keys())
+            n_dep = st.selectbox(
+                "Departamento", departamentos,
+                index=departamentos.index(dep_u) if dep_u in departamentos else 0,
+                key=f"dlg_dep_{uid}",
+            )
+            municipios = MUNICIPIOS_HONDURAS[n_dep]
+            n_ciu = st.selectbox(
+                "Ciudad", municipios,
+                index=municipios.index(ciu_u) if ciu_u in municipios else 0,
+                key=f"dlg_ciu_{uid}",
+            )
+            n_dir = st.text_area("Dirección exacta", value=dir_u or "", key=f"dlg_dir_{uid}", height=88)
+            n_cas = st.text_input(
+                "Código de casillero", value=formatear_casillero(cas_u), key=f"dlg_cas_{uid}"
+            )
+        acceso1, acceso2 = st.columns(2, gap="medium")
+        roles = ["cliente", "admin", "superadmin"] if root else ["cliente", "admin"]
+        with acceso1:
+            n_rol = st.selectbox(
+                "Rol", roles, index=roles.index(rol_u) if rol_u in roles else 0,
+                key=f"dlg_rol_{uid}", disabled=(rol_u == "superadmin" and not root),
+            )
+        with acceso2:
+            n_act = st.toggle("Cuenta activa", value=bool(act_u), key=f"dlg_act_{uid}")
+
+    with tab_permisos:
+        st.caption("Los cambios determinan las áreas visibles para esta cuenta.")
+        col_hub, col_mod = st.columns(2, gap="medium")
+        with col_hub:
+            st.markdown("**Acceso por país**")
+            p_china = st.toggle("China", value=bool(perm.get("hub_china")), key=f"dlg_h_cn_{uid}")
+            p_eeuu = st.toggle("Estados Unidos", value=bool(perm.get("hub_eeuu")), key=f"dlg_h_us_{uid}")
+            p_hn = st.toggle("Honduras", value=bool(perm.get("hub_honduras")), key=f"dlg_h_hn_{uid}")
+        with col_mod:
+            st.markdown("**Herramientas**")
+            p_cot = st.toggle("Cotizador", value=bool(perm.get("mod_cotizador")), key=f"dlg_m_cot_{uid}")
+            p_cat = st.toggle("Catálogo", value=bool(perm.get("mod_catalogo")), key=f"dlg_m_cat_{uid}")
+            p_hist = st.toggle("Mis cotizaciones", value=bool(perm.get("mod_cotizaciones")), key=f"dlg_m_hist_{uid}")
+            p_env = st.toggle("Envíos", value=bool(perm.get("mod_envios")), key=f"dlg_m_env_{uid}")
+            p_fic = st.toggle("Fichas", value=bool(perm.get("mod_fichas")), key=f"dlg_m_fic_{uid}")
+
+    with tab_seguridad:
+        st.markdown("**Restablecer contraseña**")
+        nueva_clave = st.text_input(
+            "Nueva contraseña", type="password", key=f"dlg_pwd_{uid}",
+            placeholder="Vacío para generar una clave temporal",
+        )
+        if st.button("Restablecer credenciales", key=f"dlg_reset_{uid}"):
+            clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
+            with get_db() as conn:
+                conn.execute("UPDATE usuarios SET password_hash=? WHERE id=?", (hash_pwd(clave), uid))
+            st.success("Contraseña actualizada. Se muestra una sola vez.")
+            st.code(clave, language="text")
+        if rol_u != "superadmin":
+            st.divider()
+            confirmar = st.checkbox("Confirmo la eliminación definitiva", key=f"dlg_delete_ok_{uid}")
+            if st.button("Eliminar cuenta", key=f"dlg_delete_{uid}", disabled=not confirmar):
+                with get_db() as conn:
+                    cur = conn.cursor()
+                    for tabla in (
+                        "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
+                        "eventos_tracking", "paquetes", "cotizaciones",
+                    ):
+                        cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero=?", (cas_u,))
+                    cur.execute("DELETE FROM usuarios WHERE id=?", (uid,))
+                invalidar_cache_datos_admin()
+                reiniciar_tabla_usuarios_admin()
+                st.session_state["_admin_usuario_flash"] = "Cuenta eliminada correctamente."
+                st.rerun()
+
+    accion_info, accion_cerrar, accion_guardar = st.columns([1.2, 0.55, 1], gap="medium")
+    with accion_info:
+        st.caption("Los cambios de perfil y permisos se aplicarán en el próximo refresco del cliente.")
+    with accion_cerrar:
+        if st.button("Cerrar", key=f"dlg_close_{uid}", use_container_width=True):
+            reiniciar_tabla_usuarios_admin()
+            st.rerun()
+    with accion_guardar:
+        guardar = st.button(
+            "Guardar cambios", type="primary", key=f"dlg_save_{uid}", use_container_width=True
+        )
+    if guardar:
+        nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
+        correo = normalizar_correo(n_cor)
+        if not (n_nom.strip() and n_dni.strip() and correo and n_tel.strip() and nuevo_cas):
+            st.error("Complete nombre, DNI, correo, teléfono y casillero.")
+        elif "@" not in correo or "." not in correo.rsplit("@", 1)[-1]:
+            st.error("Ingrese un correo electrónico válido.")
+        elif rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
+            st.error("Solo el superusuario puede alterar la cuenta raíz.")
+        else:
+            with get_db() as conn:
+                cur = conn.cursor()
+                if nuevo_cas != formatear_casillero(cas_u):
+                    _migrar_casillero_tablas(conn, cas_u, nuevo_cas)
+                cur.execute(
+                    """
+                    UPDATE usuarios SET nombre_completo=?, dni=?, correo_principal=?, telefono_principal=?,
+                        departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
+                    WHERE id=?
+                    """,
+                    (
+                        n_nom.strip(), n_dni.strip(), correo, n_tel.strip(), n_dep, n_ciu,
+                        n_dir.strip(), nuevo_cas, n_rol, bool(n_act), uid,
+                    ),
+                )
+            guardar_permisos(
+                nuevo_cas,
+                {
+                    "hub_china": p_china, "hub_eeuu": p_eeuu, "hub_honduras": p_hn,
+                    "mod_cotizador": p_cot, "mod_catalogo": p_cat,
+                    "mod_cotizaciones": p_hist, "mod_envios": p_env, "mod_fichas": p_fic,
+                },
+            )
+            reiniciar_tabla_usuarios_admin()
+            st.session_state["_admin_usuario_flash"] = "Cambios guardados correctamente."
+            st.rerun()
+
+
+@st.dialog("Crear usuario", width="large")
+def dialogo_crear_usuario_admin(root=False):
+    intro_crear, cerrar_crear = st.columns([1, 0.24], gap="medium")
+    with intro_crear:
+        st.caption("Registre la identidad, ubicación y credenciales iniciales.")
+    with cerrar_crear:
+        if st.button("Cancelar", key="dlg_new_cancel", use_container_width=True):
+            st.session_state["_admin_dialog_crear"] = False
+            st.rerun()
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        nombre = st.text_input("Nombre completo *", key="dlg_new_nom")
+        dni = st.text_input("DNI *", key="dlg_new_dni")
+        correo = st.text_input("Correo electrónico *", key="dlg_new_cor")
+        telefono = st.text_input("Teléfono *", key="dlg_new_tel")
+    with c2:
+        departamento = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS), key="dlg_new_dep")
+        ciudad = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[departamento], key="dlg_new_ciu")
+        direccion = st.text_area("Dirección exacta", key="dlg_new_dir", height=88)
+        clave_ingresada = st.text_input(
+            "Contraseña inicial", type="password", key="dlg_new_pwd",
+            placeholder="Vacío para generar una clave segura",
+        )
+        rol = st.selectbox("Rol inicial", ["cliente", "admin"] if root else ["cliente"], key="dlg_new_rol")
+    casillero = generar_codigo_casillero_dni(dni)
+    if casillero:
+        st.info(f"Casillero que será asignado: {casillero}")
+    if st.button("Crear cuenta", type="primary", key="dlg_new_submit", use_container_width=True):
+        correo_normalizado = normalizar_correo(correo)
+        if not (nombre.strip() and dni.strip() and correo_normalizado and telefono.strip() and casillero):
+            st.error("Complete todos los campos obligatorios.")
+        elif "@" not in correo_normalizado or "." not in correo_normalizado.rsplit("@", 1)[-1]:
+            st.error("Ingrese un correo electrónico válido.")
+        else:
+            clave = clave_ingresada.strip() if clave_ingresada else generar_clave_provisional()
+            try:
+                with get_db() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO usuarios (
+                            codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
+                            departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
+                        """,
+                        (
+                            casillero, nombre.strip(), dni.strip(), correo_normalizado, telefono.strip(),
+                            departamento, ciudad, direccion.strip() or f"{ciudad}, {departamento}",
+                            hash_pwd(clave), rol, obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
+                        ),
+                    )
+                asegurar_permisos_casillero(casillero, rol)
+                reiniciar_tabla_usuarios_admin()
+                st.session_state["_admin_cuenta_creada"] = {
+                    "casillero": casillero, "nombre": nombre.strip(), "clave": clave,
+                }
+                st.session_state["_admin_dialog_crear"] = False
+                st.rerun()
+            except sqlite3.IntegrityError:
+                st.error("Ya existe una cuenta con ese casillero, DNI o correo.")
 
 
 # ---------------------------------------------------------
@@ -11955,6 +12173,20 @@ elif es_rol_admin():
                 """
             )
             metricas_cuentas = c.fetchone() or (0, 0, 0)
+            c.execute(
+                "SELECT codigo_casillero, COUNT(*) FROM cotizaciones GROUP BY codigo_casillero"
+            )
+            cotizaciones_por_usuario = {str(cas): int(total or 0) for cas, total in c.fetchall()}
+            c.execute(
+                """
+                SELECT codigo_casillero, COUNT(*), MAX(fecha_actualizacion)
+                FROM paquetes GROUP BY codigo_casillero
+                """
+            )
+            paquetes_por_usuario = {
+                str(cas): (int(total or 0), ultima or "—")
+                for cas, total, ultima in c.fetchall()
+            }
 
         if filas:
             total_cuentas = int(metricas_cuentas[0] or 0)
@@ -11966,10 +12198,128 @@ elif es_rol_admin():
                 m_total.metric("Usuarios", total_cuentas)
                 m_activas.metric("Activas", total_activas)
                 m_inactivas.metric("Inactivas", total_inactivas)
-            if root and total_gestores:
-                st.caption(f"Personal con acceso administrativo: {total_gestores}")
         else:
             st.info("No hay cuentas para mostrar.")
+
+        st.markdown(
+            """
+            <style>
+                .st-key-admin_metrics,
+                .st-key-admin_management_mode,
+                .st-key-admin_selector_row,
+                .st-key-admin_user_workspace,
+                .st-key-admin_create_area,
+                .st-key-admin_directory { display: none !important; }
+                .admin-users-inline-summary {
+                    margin: 2px 0 12px;
+                    color: #475569;
+                    font-size: .78rem;
+                    font-weight: 700;
+                }
+                .admin-users-inline-summary b { color: #0f172a; }
+                .st-key-admin_user_filters {
+                    margin-bottom: 8px;
+                    padding: 10px 12px;
+                    background: #ffffff;
+                    border: 1px solid #dbe3ee;
+                    border-radius: 8px;
+                }
+                .st-key-admin_user_table [data-testid="stDataFrame"] {
+                    border: 1px solid #dbe3ee;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        total_directorio = int(metricas_cuentas[0] or 0)
+        activas_directorio = int(metricas_cuentas[1] or 0)
+        inactivas_directorio = max(0, total_directorio - activas_directorio)
+        st.markdown(
+            f'<div class="admin-users-inline-summary"><b>{total_directorio}</b> usuarios · '
+            f'<b>{activas_directorio}</b> activos · <b>{inactivas_directorio}</b> inactivos</div>',
+            unsafe_allow_html=True,
+        )
+        flash_usuario = st.session_state.pop("_admin_usuario_flash", "")
+        if flash_usuario:
+            st.success(flash_usuario)
+
+        with st.container(key="admin_user_filters"):
+            filtro_buscar_col, filtro_rol_col, filtro_estado_col = st.columns([1.7, 0.8, 0.8], gap="small")
+            with filtro_buscar_col:
+                filtro_directorio = st.text_input(
+                    "Buscar", key="admin_directory_search", placeholder="Nombre, casillero, DNI o correo"
+                ).strip().lower()
+            roles_filtro = ["Todos"] + sorted({str(r[9] or "cliente") for r in filas})
+            with filtro_rol_col:
+                rol_directorio = st.selectbox("Rol", roles_filtro, key="admin_directory_role")
+            with filtro_estado_col:
+                estado_directorio = st.selectbox(
+                    "Estado", ["Todos", "Activa", "Inactiva"], key="admin_directory_status"
+                )
+
+        filas_directorio = []
+        for fila in filas:
+            estado_fila = "Activa" if bool(fila[10]) else "Inactiva"
+            texto_busqueda = " ".join(str(v or "") for v in fila[:6]).lower()
+            if filtro_directorio and filtro_directorio not in texto_busqueda:
+                continue
+            if rol_directorio != "Todos" and str(fila[9] or "cliente") != rol_directorio:
+                continue
+            if estado_directorio != "Todos" and estado_fila != estado_directorio:
+                continue
+            cas_fila = str(fila[1] or "")
+            total_paquetes_fila, ultima_actividad_fila = paquetes_por_usuario.get(cas_fila, (0, "—"))
+            filas_directorio.append(
+                {
+                    "Nombre": str(fila[2] or "Sin nombre"),
+                    "Casillero": formatear_casillero(cas_fila),
+                    "Correo": str(fila[4] or "—"),
+                    "Rol": str(fila[9] or "cliente").title(),
+                    "Estado": estado_fila,
+                    "Cotizaciones": cotizaciones_por_usuario.get(cas_fila, 0),
+                    "Paquetes": total_paquetes_fila,
+                    "Última actividad": ultima_actividad_fila,
+                    "_usuario": fila,
+                }
+            )
+
+        with st.container(key="admin_user_table"):
+            if filas_directorio:
+                datos_tabla = {
+                    clave: [registro[clave] for registro in filas_directorio]
+                    for clave in (
+                        "Nombre", "Casillero", "Correo", "Rol", "Estado",
+                        "Cotizaciones", "Paquetes", "Última actividad",
+                    )
+                }
+                version_tabla = int(st.session_state.get("_admin_user_table_version") or 0)
+                evento_tabla = st.dataframe(
+                    datos_tabla,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(520, 72 + len(filas_directorio) * 35),
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key=f"admin_users_table_{version_tabla}",
+                )
+                st.caption("Seleccione una fila para editar el perfil, permisos o seguridad de la cuenta.")
+                try:
+                    filas_seleccionadas = list(evento_tabla.selection.rows)
+                except (AttributeError, TypeError):
+                    filas_seleccionadas = []
+                if filas_seleccionadas and not st.session_state.get("_admin_dialog_crear"):
+                    indice_seleccionado = int(filas_seleccionadas[0])
+                    if 0 <= indice_seleccionado < len(filas_directorio):
+                        dialogo_editar_usuario_admin(
+                            filas_directorio[indice_seleccionado]["_usuario"], root=root
+                        )
+            else:
+                st.info("No hay usuarios que coincidan con los filtros seleccionados.")
+
+        if st.session_state.get("_admin_dialog_crear"):
+            dialogo_crear_usuario_admin(root=root)
 
         with st.container(key="admin_management_mode"):
             modo_gestion_usuario = st.segmented_control(
