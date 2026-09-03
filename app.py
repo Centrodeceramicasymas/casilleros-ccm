@@ -6153,6 +6153,10 @@ def logout():
     st.rerun()
 
 
+def abrir_creacion_usuario_admin():
+    st.session_state["admin_user_mode"] = "Crear cuenta"
+
+
 # ---------------------------------------------------------
 # 6. ESTILOS CSS REFINADOS: ADAPTABLES A MÓVILES (IPHONE Y ANDROID)
 # ---------------------------------------------------------
@@ -11309,6 +11313,59 @@ elif es_rol_admin():
                 color: #64748b;
                 font-size: .86rem;
             }
+            .admin-header-panel.app-header-blue {
+                padding: 10px 16px !important;
+            }
+            .admin-header-panel .app-header-top {
+                margin-bottom: 5px !important;
+                padding-bottom: 6px !important;
+            }
+            .admin-header-panel .app-greeting-title {
+                font-size: 1.05rem !important;
+            }
+            .admin-header-panel .app-greeting-sub {
+                font-size: .72rem !important;
+            }
+            .st-key-admin_nav {
+                margin: 8px 0 16px !important;
+                padding: 0 !important;
+                background: transparent !important;
+                border: 0 !important;
+                border-bottom: 1px solid #dbe3ee !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label,
+            .st-key-admin_nav [role="radiogroup"] > label,
+            .st-key-admin_nav [data-baseweb="radio"] {
+                min-height: 40px !important;
+                background: transparent !important;
+                border: 0 !important;
+                border-bottom: 2px solid transparent !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-pressed="true"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-checked="true"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[data-state="on"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked),
+            .st-key-admin_nav [role="radiogroup"] > label:has(input:checked),
+            .st-key-admin_nav [data-baseweb="radio"]:has(input:checked) {
+                color: #0757c8 !important;
+                background: #eff6ff !important;
+                border-bottom-color: #0757c8 !important;
+                box-shadow: none !important;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-pressed="true"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-checked="true"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[data-state="on"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked) *,
+            .st-key-admin_nav [role="radiogroup"] > label:has(input:checked) *,
+            .st-key-admin_nav [data-baseweb="radio"]:has(input:checked) * {
+                color: #0757c8 !important;
+                -webkit-text-fill-color: #0757c8 !important;
+            }
             .st-key-admin_metrics,
             .st-key-admin_package_metrics,
             .st-key-admin_ops_metrics {
@@ -11328,6 +11385,10 @@ elif es_rol_admin():
                 border: 1px solid #dbe3ee !important;
                 border-radius: 8px !important;
                 box-shadow: 0 5px 14px rgba(15, 23, 42, .04) !important;
+            }
+            .st-key-admin_metrics [data-testid="stMetric"] {
+                min-height: 72px;
+                padding: 10px 14px !important;
             }
             .st-key-admin_metrics [data-testid="stMetricValue"],
             .st-key-admin_package_metrics [data-testid="stMetricValue"],
@@ -11399,7 +11460,6 @@ elif es_rol_admin():
             }
             .st-key-admin_selector {
                 margin-top: 3px;
-                height: 100%;
                 padding: 14px 16px;
                 background: #ffffff;
                 border: 1px solid #dbe3ee;
@@ -11407,7 +11467,6 @@ elif es_rol_admin():
                 box-shadow: 0 5px 14px rgba(15, 23, 42, .04);
             }
             .st-key-admin_selected_summary {
-                height: 100%;
                 padding: 15px 18px;
                 background: #f8fafc;
                 border: 1px solid #dbe3ee;
@@ -11506,12 +11565,19 @@ elif es_rol_admin():
                 border-color: #fecdd3;
             }
             .st-key-admin_user_workspace {
-                margin-top: 10px;
+                margin-top: 8px;
                 padding: 18px 20px 20px;
                 background: #ffffff;
                 border: 1px solid #dbe3ee;
                 border-radius: 10px;
                 box-shadow: 0 12px 28px rgba(15, 23, 42, .07);
+            }
+            .st-key-admin_user_workspace .admin-account-head { display: none; }
+            .st-key-admin_directory { display: none !important; }
+            .st-key-admin_section_action button {
+                min-height: 40px !important;
+                border-radius: 7px !important;
+                font-weight: 800 !important;
             }
             .st-key-admin_user_workspace [data-baseweb="tab-list"] {
                 gap: 6px;
@@ -11795,9 +11861,9 @@ elif es_rol_admin():
             '<div class="admin-header-kicker">Operaciones · Administración</div>'
             '<div class="admin-title-row">'
             f'<div class="app-greeting-title">{titulo}</div>'
-            f'<span class="admin-access-badge">{"Acceso total" if root else "Acceso administrativo"}</span>'
+            f'<span class="admin-access-badge">{"Sistema operativo" if root else "Sesión administrativa"}</span>'
             '</div>'
-            f'<div class="app-greeting-sub">{admin_nombre} • {admin_usuario}</div>',
+            f'<div class="app-greeting-sub">{admin_nombre} · {"Superusuario" if root else "Administrador"}</div>',
             extra_class="admin-header-panel",
             extra_style="margin-bottom:12px;",
         ),
@@ -11832,11 +11898,22 @@ elif es_rol_admin():
         )
 
     if admin_seccion == "Usuarios":
-        st.markdown(
-            '<div class="admin-section-heading">Usuarios y permisos</div>'
-            '<div class="admin-section-copy">Administre perfiles, accesos, credenciales y estado de las cuentas.</div>',
-            unsafe_allow_html=True,
-        )
+        titulo_usuarios_col, accion_usuarios_col = st.columns([1, 0.28], gap="medium")
+        with titulo_usuarios_col:
+            st.markdown(
+                '<div class="admin-section-heading">Usuarios y permisos</div>'
+                '<div class="admin-section-copy">Administre perfiles, accesos, credenciales y estado de las cuentas.</div>',
+                unsafe_allow_html=True,
+            )
+        with accion_usuarios_col:
+            with st.container(key="admin_section_action"):
+                st.button(
+                    "Crear usuario",
+                    type="primary",
+                    key="btn_admin_open_create",
+                    use_container_width=True,
+                    on_click=abrir_creacion_usuario_admin,
+                )
         cuenta_creada_flash = st.session_state.pop("_admin_cuenta_creada", None)
         if isinstance(cuenta_creada_flash, dict):
             st.markdown(
@@ -11885,19 +11962,12 @@ elif es_rol_admin():
             total_inactivas = total_cuentas - total_activas
             total_gestores = int(metricas_cuentas[2] or 0)
             with st.container(key="admin_metrics"):
-                m_total, m_activas, m_inactivas, m_gestores = st.columns(4, gap="medium")
+                m_total, m_activas, m_inactivas = st.columns(3, gap="medium")
                 m_total.metric("Usuarios", total_cuentas)
                 m_activas.metric("Activas", total_activas)
                 m_inactivas.metric("Inactivas", total_inactivas)
-                m_gestores.metric("Administradores", total_gestores)
-            resumen_operativo = cargar_resumen_operativo_admin()
-            st.markdown('<div class="admin-metric-group-label">Resumen operativo</div>', unsafe_allow_html=True)
-            with st.container(key="admin_ops_metrics"):
-                om1, om2, om3, om4 = st.columns(4, gap="medium")
-                om1.metric("Cotizaciones", resumen_operativo["cotizaciones"])
-                om2.metric("Confirmadas vigentes", resumen_operativo["confirmadas"])
-                om3.metric("Paquetes", resumen_operativo["paquetes"])
-                om4.metric("Valor cotizado", f'${resumen_operativo["valor_cotizado"]:,.2f}')
+            if root and total_gestores:
+                st.caption(f"Personal con acceso administrativo: {total_gestores}")
         else:
             st.info("No hay cuentas para mostrar.")
 
@@ -11993,7 +12063,7 @@ elif es_rol_admin():
                         '</div>',
                         unsafe_allow_html=True,
                     )
-            with st.container(key="admin_user_workspace"):
+            with resumen_col, st.container(key="admin_user_workspace"):
                 st.markdown(
                     '<div class="admin-account-head">'
                     '<div class="admin-account-identity">'
@@ -12215,23 +12285,6 @@ elif es_rol_admin():
                         )
                         st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
                         st.rerun()
-
-        if filas:
-            with st.container(key="admin_directory"):
-                with st.expander(f"Directorio de usuarios · {len(filas)} cuentas"):
-                    st.dataframe(
-                        {
-                            "Casillero": [formatear_casillero(r[1]) for r in filas],
-                            "Nombre": [r[2] for r in filas],
-                            "DNI": [r[3] for r in filas],
-                            "Correo": [r[4] for r in filas],
-                            "Teléfono": [r[5] for r in filas],
-                            "Rol": [r[9] for r in filas],
-                            "Activo": ["Sí" if r[10] else "No" for r in filas],
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                    )
 
         with st.container(key="admin_create_area"):
             with st.expander(
