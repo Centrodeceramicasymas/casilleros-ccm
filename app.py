@@ -10403,9 +10403,15 @@ elif es_rol_admin():
                 background: #f3f6fa !important;
             }
             .app-header-blue {
+                background: #0b3a75 !important;
                 border-radius: 10px !important;
-                padding: 15px 20px !important;
+                padding: 13px 18px !important;
                 box-shadow: 0 10px 25px rgba(0, 54, 140, .16) !important;
+            }
+            .admin-header-panel .app-header-top {
+                margin-bottom: 8px !important;
+                padding-bottom: 9px !important;
+                border-bottom-color: rgba(255, 255, 255, .18) !important;
             }
             .admin-header-kicker {
                 margin-bottom: 4px;
@@ -10414,6 +10420,33 @@ elif es_rol_admin():
                 font-weight: 850;
                 letter-spacing: .08em;
                 text-transform: uppercase;
+            }
+            .admin-title-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+            }
+            .admin-access-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                flex: 0 0 auto;
+                padding: 5px 9px;
+                color: #dcfce7;
+                background: rgba(22, 163, 74, .18);
+                border: 1px solid rgba(134, 239, 172, .34);
+                border-radius: 999px;
+                font-size: .66rem;
+                font-weight: 800;
+            }
+            .admin-access-badge::before {
+                content: "";
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: #4ade80;
+                box-shadow: 0 0 0 3px rgba(74, 222, 128, .13);
             }
             .st-key-admin_nav {
                 margin: 14px 0 20px;
@@ -10458,7 +10491,7 @@ elif es_rol_admin():
                 gap: 14px !important;
             }
             .st-key-admin_metrics [data-testid="stMetric"] {
-                min-height: 84px;
+                min-height: 88px;
                 padding: 14px 16px !important;
                 background: #ffffff !important;
                 border: 1px solid #dbe3ee !important;
@@ -10468,6 +10501,15 @@ elif es_rol_admin():
             .st-key-admin_metrics [data-testid="stMetricValue"] {
                 color: #0757c8 !important;
                 font-size: 1.45rem !important;
+            }
+            .st-key-admin_metrics [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricValue"] {
+                color: #15803d !important;
+            }
+            .st-key-admin_metrics [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricValue"] {
+                color: #b45309 !important;
+            }
+            .st-key-admin_metrics [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricValue"] {
+                color: #6d28d9 !important;
             }
             .st-key-admin_directory {
                 margin: 4px 0 16px;
@@ -10487,6 +10529,25 @@ elif es_rol_admin():
                 min-height: 45px !important;
                 background: #ffffff !important;
                 border-radius: 8px !important;
+            }
+            .st-key-admin_selector {
+                margin-top: 3px;
+                padding: 14px 16px 12px;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 9px;
+                box-shadow: 0 5px 14px rgba(15, 23, 42, .04);
+            }
+            .admin-editor-title {
+                margin: 3px 0 4px;
+                color: #0f172a;
+                font-size: .96rem;
+                font-weight: 850;
+            }
+            .admin-editor-copy {
+                margin-bottom: 10px;
+                color: #64748b;
+                font-size: .74rem;
             }
             .admin-account-head {
                 display: flex;
@@ -10563,6 +10624,8 @@ elif es_rol_admin():
                 min-height: 46px;
                 margin-top: 14px;
                 font-weight: 850;
+                border-radius: 8px !important;
+                box-shadow: 0 5px 13px rgba(7, 87, 200, .18) !important;
             }
             .st-key-admin_delete_zone {
                 margin-top: 18px;
@@ -10635,6 +10698,22 @@ elif es_rol_admin():
                 width: 220px;
                 margin: 12px 0 0 auto;
             }
+            details:has(.st-key-adm_create_user) {
+                margin-top: 12px;
+                overflow: hidden;
+                background: #ffffff;
+                border: 1px solid #dbe3ee !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 12px rgba(15, 23, 42, .04);
+            }
+            details:has(.st-key-adm_create_user) summary {
+                min-height: 45px;
+                font-weight: 800;
+            }
+            .st-key-adm_create_user button {
+                min-height: 44px !important;
+                border-radius: 8px !important;
+            }
             .st-key-btn_logout_admin {
                 width: 180px;
                 margin: 24px 0 0 auto;
@@ -10658,8 +10737,10 @@ elif es_rol_admin():
                     font-size: .7rem !important;
                 }
                 .st-key-admin_user_workspace { padding: 12px; }
-                .admin-account-head { align-items: flex-start; }
+                .admin-account-head,
+                .admin-title-row { align-items: flex-start; }
                 .admin-account-badge { white-space: nowrap; }
+                .admin-access-badge { display: none; }
                 .st-key-admin_announcement_editor { padding: 13px; }
                 .st-key-admin_disable_announcement { width: 100%; }
                 .st-key-btn_logout_admin { width: 100%; }
@@ -10673,9 +10754,13 @@ elif es_rol_admin():
     admin_usuario = html.escape(str(st.session_state.get("usuario") or ""))
     st.markdown(
         html_encabezado_institucional(
-            '<div class="admin-header-kicker">Centro de control</div>'
+            '<div class="admin-header-kicker">Operaciones · Administración</div>'
+            '<div class="admin-title-row">'
             f'<div class="app-greeting-title">{titulo}</div>'
+            f'<span class="admin-access-badge">{"Acceso total" if root else "Acceso administrativo"}</span>'
+            '</div>'
             f'<div class="app-greeting-sub">{admin_nombre} • {admin_usuario}</div>',
+            extra_class="admin-header-panel",
             extra_style="margin-bottom:12px;",
         ),
         unsafe_allow_html=True,
@@ -10684,12 +10769,20 @@ elif es_rol_admin():
     opciones_admin = ["Usuarios", "Paquetes", "Tarifas", "Sistema"]
     if root:
         opciones_admin.insert(1, "Anuncios")
+    etiquetas_admin = {
+        "Usuarios": "👥 Usuarios",
+        "Anuncios": "📣 Anuncios",
+        "Paquetes": "📦 Paquetes",
+        "Tarifas": "⚙️ Tarifas",
+        "Sistema": "🗄️ Sistema",
+    }
     if st.session_state.get("admin_seccion") not in (None, *opciones_admin):
         st.session_state["admin_seccion"] = "Usuarios"
     with st.container(key="admin_nav"):
         admin_seccion = st.segmented_control(
             "Sección administrativa",
             options=opciones_admin,
+            format_func=lambda opcion: etiquetas_admin.get(opcion, opcion),
             default="Usuarios",
             label_visibility="collapsed",
             key="admin_seccion",
@@ -10726,33 +10819,25 @@ elif es_rol_admin():
         if filas:
             total_cuentas = len(filas)
             total_activas = sum(1 for r in filas if bool(r[10]))
+            total_inactivas = total_cuentas - total_activas
             total_gestores = sum(1 for r in filas if str(r[9] or "").lower() in ("admin", "superadmin"))
             with st.container(key="admin_metrics"):
-                m_total, m_activas, m_gestores = st.columns(3, gap="medium")
-                m_total.metric("Cuentas", total_cuentas)
+                m_total, m_activas, m_inactivas, m_gestores = st.columns(4, gap="medium")
+                m_total.metric("Usuarios", total_cuentas)
                 m_activas.metric("Activas", total_activas)
+                m_inactivas.metric("Inactivas", total_inactivas)
                 m_gestores.metric("Administradores", total_gestores)
-            with st.container(key="admin_directory"):
-                with st.expander(f"Directorio de usuarios · {total_cuentas} cuentas"):
-                    st.dataframe(
-                        {
-                            "Casillero": [formatear_casillero(r[1]) for r in filas],
-                            "Nombre": [r[2] for r in filas],
-                            "DNI": [r[3] for r in filas],
-                            "Correo": [r[4] for r in filas],
-                            "Teléfono": [r[5] for r in filas],
-                            "Rol": [r[9] for r in filas],
-                            "Activo": ["Sí" if r[10] else "No" for r in filas],
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                    )
         else:
             st.info("No hay cuentas para mostrar.")
 
         etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
         if etiquetas:
             with st.container(key="admin_selector"):
+                st.markdown(
+                    '<div class="admin-editor-title">Gestionar una cuenta</div>'
+                    '<div class="admin-editor-copy">Busque un usuario por casillero o nombre para revisar su configuración.</div>',
+                    unsafe_allow_html=True,
+                )
                 elegido = st.selectbox(
                     "Cuenta a gestionar",
                     etiquetas,
@@ -10935,6 +11020,23 @@ elif es_rol_admin():
                         )
                         st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
                         st.rerun()
+
+        if filas:
+            with st.container(key="admin_directory"):
+                with st.expander(f"Directorio de usuarios · {len(filas)} cuentas"):
+                    st.dataframe(
+                        {
+                            "Casillero": [formatear_casillero(r[1]) for r in filas],
+                            "Nombre": [r[2] for r in filas],
+                            "DNI": [r[3] for r in filas],
+                            "Correo": [r[4] for r in filas],
+                            "Teléfono": [r[5] for r in filas],
+                            "Rol": [r[9] for r in filas],
+                            "Activo": ["Sí" if r[10] else "No" for r in filas],
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
         with st.expander("➕ Crear una cuenta nueva"):
             st.caption("Registre al usuario y asigne su rol inicial. Los permisos podrán ajustarse después.")
