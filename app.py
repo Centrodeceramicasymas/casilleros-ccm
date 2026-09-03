@@ -1689,13 +1689,85 @@ def cargar_paquetes_db(casillero):
     with get_db() as conn:
         return conn.execute(
             """
-            SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion
+            SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion,
+                   cotizacion_id, tipo_contenedor, recibido_bodega, pago_confirmado,
+                   costo_manipulacion_usd, fecha_recepcion
             FROM paquetes
             WHERE codigo_casillero = ?
             ORDER BY fecha_actualizacion DESC
             """,
             (cas,),
         ).fetchall()
+
+
+def cotizaciones_habilitadas_por_operacion(paquetes):
+    """Cotizaciones cuyos documentos fueron liberados por recepción o pago."""
+    habilitadas = set()
+    for paquete in paquetes or []:
+        try:
+            cotizacion_id = int(paquete[5]) if paquete[5] is not None else 0
+        except (TypeError, ValueError, IndexError):
+            cotizacion_id = 0
+        recibido = bool(paquete[7]) if len(paquete) > 7 else False
+        pagado = bool(paquete[8]) if len(paquete) > 8 else False
+        if cotizacion_id and (recibido or pagado):
+            habilitadas.add(cotizacion_id)
+    return habilitadas
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_paquetes_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
+                   fecha_actualizacion, cotizacion_id, tipo_contenedor,
+                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion
+            FROM paquetes
+            ORDER BY fecha_actualizacion DESC
+            LIMIT 500
+            """
+        ).fetchall()
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def cargar_cotizaciones_confirmadas_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT id, codigo_casillero, total_usd, COALESCE(fecha_creacion, fecha)
+            FROM cotizaciones
+            WHERE IFNULL(confirmada, 0) = 1
+            ORDER BY fecha_creacion DESC, id DESC
+            LIMIT 500
+            """
+        ).fetchall()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cargar_resumen_operativo_admin():
+    with get_db() as conn:
+        cotizaciones = conn.execute(
+            """
+            SELECT COUNT(*),
+                   SUM(CASE WHEN IFNULL(confirmada, 0) = 1 THEN 1 ELSE 0 END),
+                   COALESCE(SUM(total_usd), 0)
+            FROM cotizaciones
+            """
+        ).fetchone()
+        paquetes = conn.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(costo_manipulacion_usd), 0)
+            FROM paquetes
+            """
+        ).fetchone()
+    return {
+        "cotizaciones": int((cotizaciones or (0,))[0] or 0),
+        "confirmadas": int((cotizaciones or (0, 0))[1] or 0),
+        "valor_cotizado": float((cotizaciones or (0, 0, 0))[2] or 0),
+        "paquetes": int((paquetes or (0,))[0] or 0),
+        "manipulacion": float((paquetes or (0, 0))[1] or 0),
+    }
 
 
 def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
@@ -1879,6 +1951,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
+        cargar_resumen_operativo_admin.clear()
     if actualizado:
         st.session_state.pop("ultimo_error_confirmacion", None)
         marcar_cotizacion_sesion_confirmada(cid, cas, fecha_confirmacion or ahora)
@@ -1984,6 +2057,7 @@ def emitir_tarifa_desde_snapshot():
             conn.commit()
         cargar_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
+        cargar_resumen_operativo_admin.clear()
     except Exception as exc:
         id_generado = None
         st.session_state["_ccm_emit_error"] = str(exc)
@@ -2074,6 +2148,7 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
         if eliminadas:
             cargar_cotizaciones_db.clear()
             cargar_confirmaciones_db.clear()
+            cargar_resumen_operativo_admin.clear()
         return eliminadas
     with get_db() as conn:
         cur = conn.cursor()
@@ -2548,7 +2623,6 @@ def pintar_guias_informativas(guias):
         + "</div>",
         unsafe_allow_html=True,
     )
-    ir_a("Mis Cotizaciones", hub="china")
 
 
 def ir_a_inicio():
@@ -3898,6 +3972,12 @@ def init_db():
                 codigo_casillero TEXT NOT NULL,
                 descripcion TEXT,
                 contenedor_id TEXT,
+                tipo_contenedor TEXT DEFAULT '40 HC',
+                cotizacion_id INTEGER,
+                recibido_bodega INTEGER NOT NULL DEFAULT 0,
+                pago_confirmado INTEGER NOT NULL DEFAULT 0,
+                costo_manipulacion_usd REAL NOT NULL DEFAULT 0,
+                fecha_recepcion TEXT,
                 estado TEXT NOT NULL,
                 fecha_actualizacion TEXT NOT NULL
             )
@@ -4046,10 +4126,46 @@ def asegurar_indices_rendimiento():
         return False
 
 
+def asegurar_esquema_paquetes_operativo():
+    """Añade los campos logísticos sin perder registros de versiones anteriores."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if USA_SUPABASE:
+            sentencias = (
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS tipo_contenedor TEXT DEFAULT '40 HC'",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS cotizacion_id BIGINT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS recibido_bodega BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS pago_confirmado BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS costo_manipulacion_usd DOUBLE PRECISION NOT NULL DEFAULT 0",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS fecha_recepcion TEXT",
+            )
+            for sentencia in sentencias:
+                cursor.execute(sentencia)
+        else:
+            cursor.execute("PRAGMA table_info(paquetes)")
+            columnas = {str(fila[1]) for fila in cursor.fetchall()}
+            faltantes = {
+                "tipo_contenedor": "ALTER TABLE paquetes ADD COLUMN tipo_contenedor TEXT DEFAULT '40 HC'",
+                "cotizacion_id": "ALTER TABLE paquetes ADD COLUMN cotizacion_id INTEGER",
+                "recibido_bodega": "ALTER TABLE paquetes ADD COLUMN recibido_bodega INTEGER NOT NULL DEFAULT 0",
+                "pago_confirmado": "ALTER TABLE paquetes ADD COLUMN pago_confirmado INTEGER NOT NULL DEFAULT 0",
+                "costo_manipulacion_usd": "ALTER TABLE paquetes ADD COLUMN costo_manipulacion_usd REAL NOT NULL DEFAULT 0",
+                "fecha_recepcion": "ALTER TABLE paquetes ADD COLUMN fecha_recepcion TEXT",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paquetes_cotizacion ON paquetes(cotizacion_id)"
+        )
+        conn.commit()
+
+
 @st.cache_resource(show_spinner=False)
 def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
     init_db()
+    asegurar_esquema_paquetes_operativo()
     asegurar_esquema_direcciones()
     asegurar_indices_rendimiento()
     return True
@@ -6354,6 +6470,113 @@ st.markdown(
         min-height: 0 !important;
         overflow: visible !important;
     }
+    .envios-title {
+        margin: 2px 0 3px;
+        color: #0f172a;
+        font-size: 1.15rem;
+        font-weight: 850;
+    }
+    .envios-copy {
+        margin-bottom: 14px;
+        color: #64748b;
+        font-size: .8rem;
+    }
+    .st-key-envios_metricas [data-testid="stHorizontalBlock"] { gap: 10px !important; }
+    .st-key-envios_metricas [data-testid="stMetric"] {
+        min-height: 76px;
+        padding: 11px 12px !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+    }
+    .envios-section-label {
+        margin: 20px 0 9px;
+        color: #475569;
+        font-size: .7rem;
+        font-weight: 850;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .shipment-card {
+        margin-bottom: 10px;
+        padding: 14px 15px;
+        background: #ffffff;
+        border: 1px solid #dbe3ee;
+        border-left: 4px solid #0757c8;
+        border-radius: 8px;
+        box-shadow: 0 5px 14px rgba(15, 23, 42, .05);
+    }
+    .shipment-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+    .shipment-tracking { color: #0f172a; font-size: .9rem; font-weight: 850; }
+    .shipment-status {
+        padding: 4px 8px;
+        color: #0757c8;
+        background: #eaf2ff;
+        border-radius: 999px;
+        font-size: .66rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .shipment-description { color: #334155; font-size: .78rem; line-height: 1.4; }
+    .shipment-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        margin-top: 9px;
+        color: #64748b;
+        font-size: .7rem;
+    }
+    .shipment-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .shipment-flag {
+        padding: 3px 7px;
+        color: #64748b;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        font-size: .64rem;
+        font-weight: 750;
+    }
+    .shipment-flag.ok { color: #166534; background: #ecfdf5; border-color: #bbf7d0; }
+    .shipment-empty {
+        padding: 20px 16px;
+        color: #64748b;
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        text-align: center;
+        font-size: .8rem;
+    }
+    .quote-shipment-card {
+        margin: 0 0 9px;
+        padding: 14px 15px;
+        background: #ffffff;
+        border: 1px solid #dbe3ee;
+        border-radius: 8px;
+    }
+    .quote-shipment-card.is-ready { border-left: 4px solid #16a34a; }
+    .quote-shipment-card.is-locked { border-left: 4px solid #94a3b8; background: #f8fafc; }
+    .quote-shipment-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+    .quote-shipment-id { color: #0f172a; font-weight: 850; }
+    .quote-shipment-state { color: #64748b; font-size: .7rem; font-weight: 800; }
+    .quote-shipment-card.is-ready .quote-shipment-state { color: #15803d; }
+    .quote-shipment-info { margin-top: 7px; color: #475569; font-size: .74rem; line-height: 1.45; }
+    [class*="st-key-docs_locked_"] {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 7px !important;
+        margin: 8px 0 14px !important;
+    }
+    [class*="st-key-docs_locked_"] button { min-height: 42px !important; }
     .st-key-vista_fichas {
         display: block !important;
         padding-bottom: 200px !important;
@@ -9474,12 +9697,15 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_historial"):
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
             pintar_banner_promocional_china(casillero)
+            documentos_operativos_habilitados = cotizaciones_habilitadas_por_operacion(
+                cargar_paquetes_db(casillero)
+            )
             st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
             pintar_guias_informativas(
                 [
                     ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
                     ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
-                    ("📦", "Seguimiento y documentos", "El seguimiento y los PDFs están disponibles en <b>Mis Envíos</b>.", "verde"),
+                    ("📦", "Seguimiento y documentos", "CCM los habilita al confirmar <b>recepción o pago</b>.", "verde"),
                 ]
             )
             # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
@@ -9491,8 +9717,8 @@ elif st.session_state["rol"] == "cliente":
                     f'<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border-left:5px solid #22c55e;'
                     f'border-radius:12px;padding:14px 16px;margin:10px 0 14px;color:#166534;">'
                     f'<div style="font-weight:800;font-size:1rem;">✅ CCM-COT-{int(confirmada_flash):05d} confirmada correctamente</div>'
-                    f'<div style="margin-top:4px;font-size:.9rem;">Sus documentos oficiales ya están disponibles. '
-                    f'<b>Pulse “📦 Ir a Envíos”</b> en la tarjeta para abrir el seguimiento.</div></div>',
+                    f'<div style="margin-top:4px;font-size:.9rem;">La tarifa quedó confirmada por 48 horas. '
+                    f'CCM habilitará los documentos al registrar la recepción o el pago.</div></div>',
                     unsafe_allow_html=True,
                 )
             elif error_confirmacion:
@@ -9546,25 +9772,28 @@ elif st.session_state["rol"] == "cliente":
                                 unsafe_allow_html=True,
                             )
 
-                        pdf_historial = generar_pdf_confirmacion_cotizacion(
-                            casillero=casillero,
-                            nombre=nombre_completo,
-                            telefono=tel_cli,
-                            ciudad=ciu_cli,
-                            tipo_carga="Cotización Histórica",
-                            al=al_c,
-                            an=an_c,
-                            la=la_c,
-                            peso_lb=pe_lb_c,
-                            peso_kg=pe_lb_c / 2.20462,
-                            vol_m3=vol_m3_c,
-                            vol_ft3=vol_m3_c * 35.3147,
-                            total_usd=tot_c,
-                            detalle_tarifa="Tarifa Calculada Sistema CCM",
-                            id_cot=id_cot_item,
-                            destino_entrega=destino_para_documentos(),
-                            fecha_emision=fec_c,
-                        )
+                        docs_habilitados_historial = int(id_cot_item) in documentos_operativos_habilitados
+                        pdf_historial = None
+                        if not consolidada or docs_habilitados_historial:
+                            pdf_historial = generar_pdf_confirmacion_cotizacion(
+                                casillero=casillero,
+                                nombre=nombre_completo,
+                                telefono=tel_cli,
+                                ciudad=ciu_cli,
+                                tipo_carga="Cotización Histórica",
+                                al=al_c,
+                                an=an_c,
+                                la=la_c,
+                                peso_lb=pe_lb_c,
+                                peso_kg=pe_lb_c / 2.20462,
+                                vol_m3=vol_m3_c,
+                                vol_ft3=vol_m3_c * 35.3147,
+                                total_usd=tot_c,
+                                detalle_tarifa="Tarifa Calculada Sistema CCM",
+                                id_cot=id_cot_item,
+                                destino_entrega=destino_para_documentos(),
+                                fecha_emision=fec_c,
+                            )
                         if consolidada:
                             es_foco_envios_guia = bool(
                                 guia_esta_activa()
@@ -9585,14 +9814,22 @@ elif st.session_state["rol"] == "cliente":
                                     on_click=ir_a_envios_de_cotizacion,
                                     args=(id_cot_item,),
                                 )
-                            st.download_button(
-                                f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
-                                pdf_historial,
-                                f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
-                                "application/pdf",
-                                key=f"dl_cot_{id_cot_item}",
-                                use_container_width=True,
-                            )
+                            if docs_habilitados_historial and pdf_historial is not None:
+                                st.download_button(
+                                    f"📥 Descargar PDF CCM-COT-{id_cot_item:05d}",
+                                    pdf_historial,
+                                    f"Comprobante_Cotizacion_CCM_COT_{id_cot_item:05d}.pdf",
+                                    "application/pdf",
+                                    key=f"dl_cot_{id_cot_item}",
+                                    use_container_width=True,
+                                )
+                            else:
+                                st.button(
+                                    "🔒 PDF pendiente de recepción o pago",
+                                    key=f"dl_cot_locked_{id_cot_item}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
                         else:
                             confirmar_ctx = (
                                 st.container(key=f"foco_confirmar_{id_cot_item}")
@@ -10177,30 +10414,59 @@ elif st.session_state["rol"] == "cliente":
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
-            pintar_banner_promocional_china(casillero)
-            pintar_guias_informativas(
-                [
-                    ("🛡️", "Vigencia confirmada", "Cada cotización confirmada se conserva por <b>48 horas</b>.", "azul"),
-                    ("📦", "Seguimiento activo", "Consulte aquí el estado de sus paquetes en tránsito.", "verde"),
-                    ("📄", "Documentos oficiales", "La Ficha y el PDF Tarifa están debajo de cada envío.", "naranja"),
-                ]
-            )
             paquetes = cargar_paquetes_db(casillero)
+            cotizaciones_habilitadas = cotizaciones_habilitadas_por_operacion(paquetes)
+            paquetes_en_transito = sum(1 for p in paquetes if str(p[3] or "") == "En Travesía Marítima")
+            paquetes_recibidos = sum(1 for p in paquetes if bool(p[7]))
+            st.markdown(
+                '<div class="envios-title">Mis envíos y documentos</div>'
+                '<div class="envios-copy">Seguimiento de carga administrado por CCM y documentos de cotizaciones confirmadas.</div>',
+                unsafe_allow_html=True,
+            )
+            with st.container(key="envios_metricas"):
+                em1, em2, em3, em4 = st.columns(4, gap="small")
+                em1.metric("Paquetes", len(paquetes))
+                em2.metric("En travesía", paquetes_en_transito)
+                em3.metric("Recibidos", paquetes_recibidos)
+                em4.metric("Docs. habilitados", len(cotizaciones_habilitadas))
 
             if paquetes:
-                st.markdown("#### 📦 Mis Paquetes en Tránsito")
+                st.markdown('<div class="envios-section-label">Seguimiento de paquetes</div>', unsafe_allow_html=True)
                 for p in paquetes:
+                    tracking_p = html.escape(str(p[0] or "Sin tracking"))
+                    descripcion_p = html.escape(str(p[1] or "Carga registrada"))
+                    contenedor_p = html.escape(str(p[2] or "Pendiente de asignar"))
+                    estado_p = html.escape(str(p[3] or "Sin estado"))
+                    actualizado_p = html.escape(str(p[4] or "—"))
+                    cotizacion_p = int(p[5]) if p[5] not in (None, "") else 0
+                    tipo_p = html.escape(str(p[6] or "Carga consolidada"))
+                    recibido_p = bool(p[7])
+                    pagado_p = bool(p[8])
+                    fecha_recepcion_p = html.escape(str(p[10] or ""))
+                    flag_recepcion = "ok" if recibido_p else ""
+                    flag_pago = "ok" if pagado_p else ""
                     st.markdown(
-                        f"""
-                    <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:10px; padding:12px; margin-bottom:8px;">
-                        <b>Tracking:</b> {p[0]} | <b>Contenedor:</b> {p[2]}<br>
-                        <b>Estado:</b> <span style="color:#004ac1; font-weight:bold;">{p[3]}</span><br>
-                        <small style="color:#64748b;">Actualizado: {p[4]}</small>
-                    </div>
-                    """,
+                        f'<article class="shipment-card">'
+                        f'<div class="shipment-card-head"><span class="shipment-tracking">📦 {tracking_p}</span>'
+                        f'<span class="shipment-status">{estado_p}</span></div>'
+                        f'<div class="shipment-description">{descripcion_p}</div>'
+                        f'<div class="shipment-meta"><span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
+                        f'<span>Actualizado: {actualizado_p}</span>'
+                        + (f'<span>Cotización: CCM-COT-{cotizacion_p:05d}</span>' if cotizacion_p else '')
+                        + (f'<span>Recepción: {fecha_recepcion_p}</span>' if fecha_recepcion_p else '')
+                        + f'</div><div class="shipment-flags">'
+                        f'<span class="shipment-flag {flag_recepcion}">{"✓ Recibido en China" if recibido_p else "Pendiente de recepción"}</span>'
+                        f'<span class="shipment-flag {flag_pago}">{"✓ Pago confirmado" if pagado_p else "Pago pendiente"}</span>'
+                        f'</div></article>',
                         unsafe_allow_html=True,
                     )
-            st.markdown("#### 📄 Documentos de cotizaciones confirmadas")
+            else:
+                st.markdown(
+                    '<div class="envios-section-label">Seguimiento de paquetes</div>'
+                    '<div class="shipment-empty">Aún no hay paquetes registrados por el almacén de China.</div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown('<div class="envios-section-label">Cotizaciones confirmadas y documentos</div>', unsafe_allow_html=True)
             cotizaciones_despacho = ordenar_cotizaciones_desc(
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
@@ -10227,8 +10493,7 @@ elif st.session_state["rol"] == "cliente":
                 for cot_env in envios_render:
                     id_e, al_e, an_e, la_e, pe_e, vol_e, tot_e, fec_e, conf_e = cot_env
                     es_foco = foco_envios and int(id_e) == foco_envios
-                    borde = "#004ac1" if es_foco else "#e2e8f0"
-                    fondo = "#eff6ff" if es_foco else "#f8fafc"
+                    documentos_habilitados = int(id_e) in cotizaciones_habilitadas
                     if es_foco:
                         st.markdown('<div id="cotizacion-envio-foco"></div>', unsafe_allow_html=True)
                         desplazar_a_ancla("cotizacion-envio-foco")
@@ -10236,75 +10501,84 @@ elif st.session_state["rol"] == "cliente":
                     estado_envio = texto_estado_cotizacion(
                         fec_e, conf_e, ahora_hn, confirmaciones_cotizaciones.get(int(id_e))
                     )
-                    aviso_seguimiento = (
-                        '<div style="margin:10px 0 8px;padding:8px 10px;border-radius:8px;'
-                        'background:rgba(0,74,193,.08);color:#003b99;font-weight:700;">'
-                        '📦 Esta cotización está lista para seguimiento. Descargue su Ficha y PDF Tarifa a continuación.'
-                        '</div>'
-                        if es_foco else ""
-                    )
+                    clase_documentos = "is-ready" if documentos_habilitados else "is-locked"
+                    texto_documentos = "✓ Documentos habilitados" if documentos_habilitados else "🔒 Pendiente de recepción o pago"
                     html_tarjeta_envio = (
-                        f'<div {id_ancla_env} style="background:{fondo};border:1.5px solid {borde};border-radius:12px;padding:14px;margin-bottom:8px;font-size:.88rem;box-shadow:0 3px 10px rgba(15,23,42,.06);">'
-                        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-                        f'<b style="color:#0f172a;">🔖 CCM-COT-{id_e:05d}</b>'
-                        '<span style="color:#004ac1;font-weight:800;">✅ Confirmada</span>'
-                        f'</div>{aviso_seguimiento}'
-                        f'<div style="color:#475569;margin-top:5px;">Fecha de emisión: {formatear_fecha_pantalla(fec_e)}</div>'
-                        f'<div style="color:#334155;margin-top:6px;">📐 <b>Medidas:</b> {al_e:.1f} × {an_e:.1f} × {la_e:.1f} cm &nbsp;|&nbsp; ⚖️ <b>Peso:</b> {pe_e:.1f} lbs &nbsp;|&nbsp; 💰 <b>Total:</b> ${tot_e:.2f} USD</div>'
-                        f'<div style="color:#1d4ed8;font-weight:700;margin-top:8px;">⏳ {estado_envio}</div>'
-                        '</div>'
+                        f'<article {id_ancla_env} class="quote-shipment-card {clase_documentos}">'
+                        f'<div class="quote-shipment-head"><span class="quote-shipment-id">CCM-COT-{id_e:05d}</span>'
+                        f'<span class="quote-shipment-state">{texto_documentos}</span></div>'
+                        f'<div class="quote-shipment-info">Confirmada · {formatear_fecha_pantalla(fec_e)}<br>'
+                        f'{al_e:.1f} × {an_e:.1f} × {la_e:.1f} cm · {pe_e:.1f} lb · '
+                        f'<b>${tot_e:.2f} USD</b><br>{html.escape(estado_envio)}</div>'
+                        f'</article>'
                     )
                     st.markdown(html_tarjeta_envio, unsafe_allow_html=True)
-                    pdf_ficha_env = generar_pdf_etiqueta_proveedor(
-                        casillero=casillero,
-                        nombre=nombre_completo,
-                        telefono=tel_cli,
-                        ciudad=ciu_cli,
-                        al=al_e,
-                        an=an_e,
-                        la=la_e,
-                        pe_lb=pe_e,
-                        pe_kg=pe_e / 2.20462,
-                        vol_m3=vol_e,
-                        destino_entrega=destino_para_documentos(),
-                        fecha_emision=fec_e,
-                    )
-                    pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
-                        casillero=casillero,
-                        nombre=nombre_completo,
-                        telefono=tel_cli,
-                        ciudad=ciu_cli,
-                        tipo_carga="Cotización Confirmada",
-                        al=al_e,
-                        an=an_e,
-                        la=la_e,
-                        peso_lb=pe_e,
-                        peso_kg=pe_e / 2.20462,
-                        vol_m3=vol_e,
-                        vol_ft3=vol_e * 35.3147,
-                        total_usd=tot_e,
-                        detalle_tarifa="Tarifa Calculada Sistema CCM",
-                        id_cot=id_e,
-                        destino_entrega=destino_para_documentos(),
-                        fecha_emision=fec_e,
-                    )
-                    with st.container(key=f"docs_env_{id_e}"):
-                        st.download_button(
-                            f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
-                            pdf_ficha_env,
-                            f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
-                            "application/pdf",
-                            key=f"dl_ficha_env_{id_e}",
-                            use_container_width=True,
+                    if documentos_habilitados:
+                        pdf_ficha_env = generar_pdf_etiqueta_proveedor(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            al=al_e,
+                            an=an_e,
+                            la=la_e,
+                            pe_lb=pe_e,
+                            pe_kg=pe_e / 2.20462,
+                            vol_m3=vol_e,
+                            destino_entrega=destino_para_documentos(),
+                            fecha_emision=fec_e,
                         )
-                        st.download_button(
-                            f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
-                            pdf_tarifa_env,
-                            f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
-                            "application/pdf",
-                            key=f"dl_tarifa_env_{id_e}",
-                            use_container_width=True,
+                        pdf_tarifa_env = generar_pdf_confirmacion_cotizacion(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            tipo_carga="Cotización Confirmada",
+                            al=al_e,
+                            an=an_e,
+                            la=la_e,
+                            peso_lb=pe_e,
+                            peso_kg=pe_e / 2.20462,
+                            vol_m3=vol_e,
+                            vol_ft3=vol_e * 35.3147,
+                            total_usd=tot_e,
+                            detalle_tarifa="Tarifa Calculada Sistema CCM",
+                            id_cot=id_e,
+                            destino_entrega=destino_para_documentos(),
+                            fecha_emision=fec_e,
                         )
+                        with st.container(key=f"docs_env_{id_e}"):
+                            st.download_button(
+                                f"🏷️ Descargar Ficha CCM-COT-{id_e:05d}",
+                                pdf_ficha_env,
+                                f"Ficha_Bodega_{casillero}_COT{id_e:05d}.pdf",
+                                "application/pdf",
+                                key=f"dl_ficha_env_{id_e}",
+                                use_container_width=True,
+                            )
+                            st.download_button(
+                                f"📥 PDF Tarifa CCM-COT-{id_e:05d}",
+                                pdf_tarifa_env,
+                                f"Comprobante_Tarifa_{casillero}_COT{id_e:05d}.pdf",
+                                "application/pdf",
+                                key=f"dl_tarifa_env_{id_e}",
+                                use_container_width=True,
+                            )
+                    else:
+                        with st.container(key=f"docs_locked_{id_e}"):
+                            st.button(
+                                "🏷️ Ficha de bodega pendiente",
+                                key=f"locked_ficha_{id_e}",
+                                disabled=True,
+                                use_container_width=True,
+                            )
+                            st.button(
+                                "📄 PDF Tarifa pendiente",
+                                key=f"locked_tarifa_{id_e}",
+                                disabled=True,
+                                use_container_width=True,
+                            )
+                            st.caption("CCM habilitará estos documentos al confirmar la recepción o el pago.")
                 if limite_envios < total_envios:
                     st.button(
                         f"Mostrar 10 documentos más ({limite_envios} de {total_envios})",
@@ -10319,9 +10593,11 @@ elif st.session_state["rol"] == "cliente":
 
     elif st.session_state["sub_tab_inicio"] == "Etiqueta":
         with st.container(key="vista_fichas"):
-            pintar_banner_promocional_china(casillero)
             st.markdown("#### 📋 Fichas")
-            st.caption("Ficha técnica de bodega Guangzhou de cada cotización consolidada.")
+            st.caption("Fichas de bodega habilitadas después de la recepción o confirmación del pago.")
+            fichas_habilitadas = cotizaciones_habilitadas_por_operacion(
+                cargar_paquetes_db(casillero)
+            )
             cotizaciones_ficha = ordenar_cotizaciones_desc(
                 [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
             )
@@ -10331,37 +10607,47 @@ elif st.session_state["rol"] == "cliente":
                 )
                 for cot_f in fichas_render:
                     id_f, al_f, an_f, la_f, pe_f, vol_f, tot_f, fec_f, conf_f = cot_f
+                    ficha_disponible = int(id_f) in fichas_habilitadas
                     st.markdown(
                         f"""
                     <div style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
                         <b>🔖 CCM-COT-{id_f:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_f)}<br>
-                        <small style="color:#475569;">📐 Medidas: {al_f:.1f}x{an_f:.1f}x{la_f:.1f} cm | Peso: {pe_f:.1f} lbs | 💰 Total: <b>${tot_f:.2f} USD</b></small>
+                        <small style="color:#475569;">📐 Medidas: {al_f:.1f}x{an_f:.1f}x{la_f:.1f} cm | Peso: {pe_f:.1f} lbs | 💰 Total: <b>${tot_f:.2f} USD</b></small><br>
+                        <small style="color:{'#15803d' if ficha_disponible else '#64748b'};font-weight:800;">{'✓ Ficha habilitada' if ficha_disponible else '🔒 Pendiente de recepción o pago'}</small>
                     </div>
                     """,
                         unsafe_allow_html=True,
                     )
-                    pdf_ficha_mod = generar_pdf_etiqueta_proveedor(
-                        casillero=casillero,
-                        nombre=nombre_completo,
-                        telefono=tel_cli,
-                        ciudad=ciu_cli,
-                        al=al_f,
-                        an=an_f,
-                        la=la_f,
-                        pe_lb=pe_f,
-                        pe_kg=pe_f / 2.20462,
-                        vol_m3=vol_f,
-                        destino_entrega=destino_para_documentos(),
-                        fecha_emision=fec_f,
-                    )
-                    st.download_button(
-                        f"🏷️ Descargar Ficha CCM-COT-{id_f:05d}",
-                        pdf_ficha_mod,
-                        f"Ficha_Bodega_{casillero}_COT{id_f:05d}.pdf",
-                        "application/pdf",
-                        key=f"dl_ficha_mod_{id_f}",
-                        use_container_width=True,
-                    )
+                    if ficha_disponible:
+                        pdf_ficha_mod = generar_pdf_etiqueta_proveedor(
+                            casillero=casillero,
+                            nombre=nombre_completo,
+                            telefono=tel_cli,
+                            ciudad=ciu_cli,
+                            al=al_f,
+                            an=an_f,
+                            la=la_f,
+                            pe_lb=pe_f,
+                            pe_kg=pe_f / 2.20462,
+                            vol_m3=vol_f,
+                            destino_entrega=destino_para_documentos(),
+                            fecha_emision=fec_f,
+                        )
+                        st.download_button(
+                            f"🏷️ Descargar Ficha CCM-COT-{id_f:05d}",
+                            pdf_ficha_mod,
+                            f"Ficha_Bodega_{casillero}_COT{id_f:05d}.pdf",
+                            "application/pdf",
+                            key=f"dl_ficha_mod_{id_f}",
+                            use_container_width=True,
+                        )
+                    else:
+                        st.button(
+                            "🔒 Ficha pendiente de recepción o pago",
+                            key=f"ficha_locked_{id_f}",
+                            disabled=True,
+                            use_container_width=True,
+                        )
                     st.markdown("<hr style='margin:8px 0;'>", unsafe_allow_html=True)
                 if limite_fichas < total_fichas:
                     st.button(
@@ -10530,13 +10816,19 @@ elif es_rol_admin():
                 color: #64748b;
                 font-size: .86rem;
             }
-            .st-key-admin_metrics {
+            .st-key-admin_metrics,
+            .st-key-admin_package_metrics,
+            .st-key-admin_ops_metrics {
                 margin-bottom: 14px;
             }
-            .st-key-admin_metrics [data-testid="stHorizontalBlock"] {
+            .st-key-admin_metrics [data-testid="stHorizontalBlock"],
+            .st-key-admin_package_metrics [data-testid="stHorizontalBlock"],
+            .st-key-admin_ops_metrics [data-testid="stHorizontalBlock"] {
                 gap: 14px !important;
             }
-            .st-key-admin_metrics [data-testid="stMetric"] {
+            .st-key-admin_metrics [data-testid="stMetric"],
+            .st-key-admin_package_metrics [data-testid="stMetric"],
+            .st-key-admin_ops_metrics [data-testid="stMetric"] {
                 min-height: 88px;
                 padding: 14px 16px !important;
                 background: #ffffff !important;
@@ -10544,7 +10836,9 @@ elif es_rol_admin():
                 border-radius: 8px !important;
                 box-shadow: 0 5px 14px rgba(15, 23, 42, .04) !important;
             }
-            .st-key-admin_metrics [data-testid="stMetricValue"] {
+            .st-key-admin_metrics [data-testid="stMetricValue"],
+            .st-key-admin_package_metrics [data-testid="stMetricValue"],
+            .st-key-admin_ops_metrics [data-testid="stMetricValue"] {
                 color: #0757c8 !important;
                 font-size: 1.45rem !important;
             }
@@ -10556,6 +10850,23 @@ elif es_rol_admin():
             }
             .st-key-admin_metrics [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricValue"] {
                 color: #6d28d9 !important;
+            }
+            .st-key-admin_package_metrics [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricValue"] {
+                color: #15803d !important;
+            }
+            .st-key-admin_package_metrics [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricValue"] {
+                color: #0757c8 !important;
+            }
+            .st-key-admin_package_metrics [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricValue"] {
+                color: #b45309 !important;
+            }
+            .admin-metric-group-label {
+                margin: 3px 0 8px;
+                color: #64748b;
+                font-size: .66rem;
+                font-weight: 850;
+                letter-spacing: .06em;
+                text-transform: uppercase;
             }
             .st-key-admin_directory {
                 margin: 4px 0 16px;
@@ -10720,6 +11031,22 @@ elif es_rol_admin():
                 border-radius: 10px;
                 box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
             }
+            .st-key-admin_package_editor {
+                padding: 18px 20px 20px;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 10px;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+            }
+            .st-key-admin_package_editor [data-baseweb="input"],
+            .st-key-admin_package_editor [data-baseweb="select"] > div {
+                border-radius: 8px !important;
+            }
+            .st-key-admin_pkg_guardar button {
+                min-height: 46px !important;
+                border-radius: 8px !important;
+                box-shadow: 0 5px 13px rgba(7, 87, 200, .18) !important;
+            }
             .st-key-admin_announcement_editor [data-baseweb="input"],
             .st-key-admin_announcement_editor [data-baseweb="select"] > div,
             .st-key-admin_announcement_editor [data-baseweb="textarea"] {
@@ -10801,6 +11128,7 @@ elif es_rol_admin():
                 .admin-account-badge { white-space: nowrap; }
                 .admin-access-badge { display: none; }
                 .st-key-admin_announcement_editor { padding: 13px; }
+                .st-key-admin_package_editor { padding: 13px; }
                 .st-key-admin_disable_announcement { width: 100%; }
                 .st-key-btn_logout_admin { width: 100%; }
             }
@@ -10886,6 +11214,14 @@ elif es_rol_admin():
                 m_activas.metric("Activas", total_activas)
                 m_inactivas.metric("Inactivas", total_inactivas)
                 m_gestores.metric("Administradores", total_gestores)
+            resumen_operativo = cargar_resumen_operativo_admin()
+            st.markdown('<div class="admin-metric-group-label">Resumen operativo</div>', unsafe_allow_html=True)
+            with st.container(key="admin_ops_metrics"):
+                om1, om2, om3, om4 = st.columns(4, gap="medium")
+                om1.metric("Cotizaciones", resumen_operativo["cotizaciones"])
+                om2.metric("Confirmadas vigentes", resumen_operativo["confirmadas"])
+                om3.metric("Paquetes", resumen_operativo["paquetes"])
+                om4.metric("Valor cotizado", f'${resumen_operativo["valor_cotizado"]:,.2f}')
         else:
             st.info("No hay cuentas para mostrar.")
 
@@ -11302,42 +11638,168 @@ elif es_rol_admin():
                         st.rerun()
 
     if admin_seccion == "Paquetes":
-        t_in = st.text_input("Tracking de China")
-        c_in = st.text_input("Casillero asignado", placeholder="Ej: CCM-15011985 o DNI del cliente")
-        d_in = st.text_input("Descripción de la carga", placeholder="Ej: 4 cajas de porcelanato 60x120")
-        cont_in = st.text_input("ID de contenedor", placeholder="Ej: CCM-CNT-014")
-        e_in = st.selectbox(
-            "Estado",
-            [
-                "En Bodega China",
-                "En Travesía Marítima",
-                "En Desaduanaje",
-                "Disponible en Bodega Central",
-                "Entregado",
-            ],
+        st.markdown(
+            '<div class="admin-section-heading">Control de carga y contenedores</div>'
+            '<div class="admin-section-copy">Registre la recepción, vincule una cotización y mantenga informado al cliente.</div>',
+            unsafe_allow_html=True,
         )
-        if st.button("Actualizar Paquete", type="primary"):
-            if t_in and c_in:
+        paquetes_admin = cargar_paquetes_admin()
+        total_paquetes_admin = len(paquetes_admin)
+        total_recibidos_admin = sum(1 for p in paquetes_admin if bool(p[8]))
+        total_transito_admin = sum(1 for p in paquetes_admin if str(p[4] or "") == "En Travesía Marítima")
+        costo_manipulacion_admin = sum(float(p[10] or 0) for p in paquetes_admin)
+        with st.container(key="admin_package_metrics"):
+            pm1, pm2, pm3, pm4 = st.columns(4, gap="medium")
+            pm1.metric("Paquetes", total_paquetes_admin)
+            pm2.metric("Recibidos en China", total_recibidos_admin)
+            pm3.metric("En travesía", total_transito_admin)
+            pm4.metric("Manipulación", f"${costo_manipulacion_admin:,.2f}")
+
+        cotizaciones_admin = cargar_cotizaciones_confirmadas_admin()
+        opciones_cotizacion = ["Sin asociar"]
+        cotizacion_por_etiqueta = {}
+        for cot_id_adm, cot_cas_adm, cot_total_adm, cot_fecha_adm in cotizaciones_admin:
+            etiqueta_cot = (
+                f"CCM-COT-{int(cot_id_adm):05d} · {formatear_casillero(cot_cas_adm)} · "
+                f"${float(cot_total_adm or 0):,.2f}"
+            )
+            opciones_cotizacion.append(etiqueta_cot)
+            cotizacion_por_etiqueta[etiqueta_cot] = (
+                int(cot_id_adm), formatear_casillero(cot_cas_adm), cot_fecha_adm
+            )
+
+        with st.container(key="admin_package_editor"):
+            st.markdown("#### Registrar o actualizar paquete")
+            st.caption("El tracking identifica el registro. Si ya existe, se actualizarán sus datos.")
+            seleccion_cot = st.selectbox(
+                "Cotización confirmada asociada",
+                opciones_cotizacion,
+                key="admin_pkg_cotizacion",
+            )
+            cot_seleccionada = cotizacion_por_etiqueta.get(seleccion_cot)
+            pkg1, pkg2 = st.columns(2, gap="medium")
+            with pkg1:
+                t_in = st.text_input("Tracking *", key="admin_pkg_tracking", placeholder="Ej. CN-84920317")
+            with pkg2:
+                c_in = st.text_input(
+                    "Casillero *",
+                    key="admin_pkg_casillero",
+                    value=cot_seleccionada[1] if cot_seleccionada else "",
+                    placeholder="Ej. CCM-15011985",
+                )
+            d_in = st.text_input(
+                "Descripción de la carga",
+                key="admin_pkg_descripcion",
+                placeholder="Ej. 4 cajas de porcelanato 60 × 120",
+            )
+            pkg3, pkg4 = st.columns([1.4, 1], gap="medium")
+            with pkg3:
+                cont_in = st.text_input(
+                    "ID del contenedor",
+                    key="admin_pkg_contenedor",
+                    placeholder="Ej. CCM-CNT-014",
+                )
+            with pkg4:
+                tipo_cont_in = st.selectbox(
+                    "Tipo de carga",
+                    ["40' High Cube", "40' estándar", "20' estándar", "Carga consolidada", "Palé"],
+                    key="admin_pkg_tipo_contenedor",
+                )
+            e_in = st.selectbox(
+                "Estado logístico",
+                [
+                    "En Bodega China",
+                    "Asignado a Contenedor",
+                    "En Travesía Marítima",
+                    "En Desaduanaje",
+                    "Disponible en Bodega Central",
+                    "Entregado",
+                ],
+                key="admin_pkg_estado",
+            )
+            pkg5, pkg6, pkg7 = st.columns([1, 1, 1.1], gap="medium")
+            with pkg5:
+                recibido_in = st.toggle("Recibido en China", key="admin_pkg_recibido")
+            with pkg6:
+                pago_in = st.toggle("Pago confirmado", key="admin_pkg_pago")
+            with pkg7:
+                costo_manipulacion_in = st.number_input(
+                    "Manipulación (USD)",
+                    min_value=0.0,
+                    max_value=1_000_000.0,
+                    value=0.0,
+                    step=0.50,
+                    format="%.2f",
+                    key="admin_pkg_costo_manipulacion",
+                )
+            st.caption("La recepción o el pago confirmado habilitan los documentos oficiales para el cliente.")
+            guardar_paquete = st.button(
+                "Guardar actualización logística",
+                type="primary",
+                key="admin_pkg_guardar",
+                use_container_width=True,
+            )
+
+        if guardar_paquete:
+            cas_paquete = formatear_casillero(c_in)
+            cot_id_paquete = cot_seleccionada[0] if cot_seleccionada else None
+            if not t_in.strip() or not cas_paquete:
+                st.warning("Ingrese el tracking y un casillero válido.")
+            elif cot_seleccionada and cas_paquete != cot_seleccionada[1]:
+                st.error("El casillero no coincide con la cotización seleccionada.")
+            else:
                 f_act = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                fecha_recepcion = f_act if recibido_in else None
                 with get_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute(
+                    conn.execute(
                         """
-                        INSERT INTO paquetes (tracking, codigo_casillero, descripcion, contenedor_id, estado, fecha_actualizacion)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO paquetes (
+                            tracking, codigo_casillero, descripcion, contenedor_id, tipo_contenedor,
+                            cotizacion_id, recibido_bodega, pago_confirmado, costo_manipulacion_usd,
+                            fecha_recepcion, estado, fecha_actualizacion
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(tracking) DO UPDATE SET
                             codigo_casillero = excluded.codigo_casillero,
                             descripcion = excluded.descripcion,
                             contenedor_id = excluded.contenedor_id,
+                            tipo_contenedor = excluded.tipo_contenedor,
+                            cotizacion_id = excluded.cotizacion_id,
+                            recibido_bodega = excluded.recibido_bodega,
+                            pago_confirmado = excluded.pago_confirmado,
+                            costo_manipulacion_usd = excluded.costo_manipulacion_usd,
+                            fecha_recepcion = excluded.fecha_recepcion,
                             estado = excluded.estado,
                             fecha_actualizacion = excluded.fecha_actualizacion
                         """,
-                        (t_in, formatear_casillero(c_in), d_in, cont_in, e_in, f_act),
+                        (
+                            t_in.strip(), cas_paquete, d_in.strip(), cont_in.strip(), tipo_cont_in,
+                            cot_id_paquete, bool(recibido_in), bool(pago_in), float(costo_manipulacion_in),
+                            fecha_recepcion, e_in, f_act,
+                        ),
                     )
                 cargar_paquetes_db.clear()
-                st.success("Paquete actualizado.")
-            else:
-                st.warning("Ingrese tracking y casillero.")
+                cargar_paquetes_admin.clear()
+                cargar_resumen_operativo_admin.clear()
+                st.success("Actualización logística guardada. El cliente verá el cambio al refrescar.")
+                st.rerun()
+
+        if paquetes_admin:
+            with st.expander(f"Inventario y seguimiento · {total_paquetes_admin} registros"):
+                st.dataframe(
+                    {
+                        "Tracking": [p[0] for p in paquetes_admin],
+                        "Casillero": [formatear_casillero(p[1]) for p in paquetes_admin],
+                        "Contenedor": [p[3] or "—" for p in paquetes_admin],
+                        "Tipo": [p[7] or "—" for p in paquetes_admin],
+                        "Estado": [p[4] for p in paquetes_admin],
+                        "Recibido": ["Sí" if p[8] else "No" for p in paquetes_admin],
+                        "Pago": ["Sí" if p[9] else "No" for p in paquetes_admin],
+                        "Costo": [f"${float(p[10] or 0):,.2f}" for p in paquetes_admin],
+                        "Actualizado": [p[5] for p in paquetes_admin],
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
     if admin_seccion == "Tarifas":
         st.markdown("#### Tarifas y constantes del cotizador")
@@ -11349,6 +11811,22 @@ elif es_rol_admin():
         n_div = st.number_input("Divisor peso volumétrico (kg/CBM)", min_value=1.0, value=float(get_tarifa("divisor_peso_volumetrico") or 390), step=1.0)
         n_tasa = st.number_input("Tasa USD/HNL", min_value=0.01, value=float(leer_config_moneda("TASA_USD_HNL", 24.85)), step=0.01)
         n_com = st.number_input("Comisión CCM (0-1)", min_value=0.0, max_value=1.0, value=float(leer_config_moneda("COMISION_CCM_PORCENTAJE", 0.10)), step=0.01)
+        st.markdown("##### Costos de manipulación en origen")
+        man1, man2 = st.columns(2, gap="medium")
+        with man1:
+            n_man_cbm = st.number_input(
+                "Manipulación por CBM (USD)",
+                min_value=0.0,
+                value=float(leer_config_moneda("MANIPULACION_CBM_USD", 0.0)),
+                step=0.50,
+            )
+        with man2:
+            n_man_pale = st.number_input(
+                "Manipulación por palé (USD)",
+                min_value=0.0,
+                value=float(leer_config_moneda("MANIPULACION_PALE_USD", 0.0)),
+                step=0.50,
+            )
         if st.button("Guardar tarifas y fórmulas", type="primary"):
             set_tarifa("tarifa_libra", n_lb)
             set_tarifa("tarifa_m3", n_m3)
@@ -11358,6 +11836,8 @@ elif es_rol_admin():
             set_tarifa("divisor_peso_volumetrico", n_div)
             set_config_sistema("TASA_USD_HNL", n_tasa, "Tasa USD a lempira")
             set_config_sistema("COMISION_CCM_PORCENTAJE", n_com, "Comisión CCM sobre FOB")
+            set_config_sistema("MANIPULACION_CBM_USD", n_man_cbm, "Costo operativo de manipulación por CBM en origen")
+            set_config_sistema("MANIPULACION_PALE_USD", n_man_pale, "Costo operativo de manipulación por palé en origen")
             st.success("Parámetros globales actualizados.")
 
     if admin_seccion == "Sistema":
