@@ -4486,6 +4486,9 @@ def asegurar_esquema_paquetes_operativo():
                 )
                 """
             )
+        # Confirma primero el DDL. Así una instalación que se interrumpió en una
+        # migración anterior conserva las columnas antes de poblar la bitácora.
+        conn.commit()
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_paquetes_cotizacion ON paquetes(cotizacion_id)"
         )
@@ -4495,9 +4498,9 @@ def asegurar_esquema_paquetes_operativo():
                 tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
                 nota_interna, fecha_evento, creado_por, visible_cliente
             )
-            SELECT p.tracking, p.codigo_casillero, p.estado, p.ubicacion_actual,
+            SELECT p.tracking, p.codigo_casillero, p.estado, NULL,
                    'Estado inicial migrado al nuevo seguimiento.', '',
-                   p.fecha_actualizacion, 'migración', p.visible_cliente
+                   p.fecha_actualizacion, 'migración', TRUE
             FROM paquetes p
             WHERE NOT EXISTS (
                 SELECT 1 FROM eventos_tracking e WHERE e.tracking = p.tracking
