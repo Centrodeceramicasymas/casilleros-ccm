@@ -4450,6 +4450,22 @@ def asegurar_esquema_paquetes_operativo():
                 )
                 """
             )
+            # CREATE TABLE IF NOT EXISTS no repara una tabla creada parcialmente.
+            # Cada columna se verifica también de forma individual.
+            sentencias_eventos = (
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS id BIGSERIAL",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS tracking TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS codigo_casillero TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS estado TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS ubicacion TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS mensaje_cliente TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS nota_interna TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS fecha_evento TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS creado_por TEXT",
+                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
+            )
+            for sentencia in sentencias_eventos:
+                cursor.execute(sentencia)
         else:
             cursor.execute("PRAGMA table_info(paquetes)")
             columnas = {str(fila[1]) for fila in cursor.fetchall()}
@@ -4486,27 +4502,54 @@ def asegurar_esquema_paquetes_operativo():
                 )
                 """
             )
+            cursor.execute("PRAGMA table_info(eventos_tracking)")
+            columnas_eventos = {str(fila[1]) for fila in cursor.fetchall()}
+            faltantes_eventos = {
+                "id": "ALTER TABLE eventos_tracking ADD COLUMN id INTEGER",
+                "tracking": "ALTER TABLE eventos_tracking ADD COLUMN tracking TEXT",
+                "codigo_casillero": "ALTER TABLE eventos_tracking ADD COLUMN codigo_casillero TEXT",
+                "estado": "ALTER TABLE eventos_tracking ADD COLUMN estado TEXT",
+                "ubicacion": "ALTER TABLE eventos_tracking ADD COLUMN ubicacion TEXT",
+                "mensaje_cliente": "ALTER TABLE eventos_tracking ADD COLUMN mensaje_cliente TEXT",
+                "nota_interna": "ALTER TABLE eventos_tracking ADD COLUMN nota_interna TEXT",
+                "fecha_evento": "ALTER TABLE eventos_tracking ADD COLUMN fecha_evento TEXT",
+                "creado_por": "ALTER TABLE eventos_tracking ADD COLUMN creado_por TEXT",
+                "visible_cliente": "ALTER TABLE eventos_tracking ADD COLUMN visible_cliente INTEGER NOT NULL DEFAULT 1",
+            }
+            for columna, sentencia in faltantes_eventos.items():
+                if columna not in columnas_eventos:
+                    cursor.execute(sentencia)
         # Confirma primero el DDL. Así una instalación que se interrumpió en una
         # migración anterior conserva las columnas antes de poblar la bitácora.
         conn.commit()
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_paquetes_cotizacion ON paquetes(cotizacion_id)"
         )
-        cursor.execute(
-            """
-            INSERT INTO eventos_tracking (
-                tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
-                nota_interna, fecha_evento, creado_por, visible_cliente
+        cursor.execute("SAVEPOINT ccm_backfill_tracking")
+        try:
+            cursor.execute(
+                """
+                INSERT INTO eventos_tracking (
+                    tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                    nota_interna, fecha_evento, creado_por, visible_cliente
+                )
+                SELECT p.tracking, p.codigo_casillero, p.estado, NULL,
+                       'Estado inicial migrado al nuevo seguimiento.', '',
+                       p.fecha_actualizacion, 'migración', TRUE
+                FROM paquetes p
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM eventos_tracking e WHERE e.tracking = p.tracking
+                )
+                """
             )
-            SELECT p.tracking, p.codigo_casillero, p.estado, NULL,
-                   'Estado inicial migrado al nuevo seguimiento.', '',
-                   p.fecha_actualizacion, 'migración', TRUE
-            FROM paquetes p
-            WHERE NOT EXISTS (
-                SELECT 1 FROM eventos_tracking e WHERE e.tracking = p.tracking
+        except Exception as exc:
+            cursor.execute("ROLLBACK TO SAVEPOINT ccm_backfill_tracking")
+            print(
+                f"[CCM migración] Se omitió el historial inicial de tracking: {exc}",
+                flush=True,
             )
-            """
-        )
+        finally:
+            cursor.execute("RELEASE SAVEPOINT ccm_backfill_tracking")
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_eventos_tracking_cliente "
             "ON eventos_tracking(codigo_casillero, tracking, fecha_evento DESC, id DESC)"
