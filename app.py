@@ -10142,6 +10142,21 @@ def pintar_control_cliente_360():
             .control360-head span { color:#64748b; font-size:.76rem; }
             .control360-badge { padding:5px 9px; color:#166534 !important; background:#dcfce7; border-radius:999px; font-weight:800; white-space:nowrap; }
             .control360-section { margin:14px 0 8px; color:#0f172a; font-size:.86rem; font-weight:850; }
+            .control360-profile { margin:10px 0 18px; overflow:hidden; background:#ffffff; border:1px solid #dbe3ee; border-radius:9px; box-shadow:0 5px 15px rgba(15,23,42,.04); }
+            .control360-profile-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 15px; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+            .control360-profile-title b { color:#0f172a; font-size:.88rem; }
+            .control360-profile-title span { color:#64748b; font-size:.7rem; font-weight:700; }
+            .control360-profile-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .control360-profile-item { min-width:0; padding:14px 16px; border-bottom:1px solid #edf1f5; }
+            .control360-profile-item:nth-child(odd) { border-right:1px solid #edf1f5; }
+            .control360-profile-label { display:block; margin-bottom:5px; color:#64748b; font-size:.66rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+            .control360-profile-value { display:block; overflow-wrap:anywhere; color:#0f172a; font-size:.86rem; font-weight:750; line-height:1.35; }
+            .control360-profile-value a { color:#0757c8 !important; -webkit-text-fill-color:#0757c8 !important; text-decoration:none; }
+            .control360-profile-value a:hover { text-decoration:underline; }
+            .control360-address { display:flex; align-items:flex-start; gap:10px; padding:13px 16px; color:#334155; background:#fbfdff; }
+            .control360-address-icon { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; color:#0757c8; background:#eaf3ff; border-radius:7px; font-size:.85rem; font-weight:900; }
+            .control360-address small { display:block; margin-bottom:3px; color:#64748b; font-size:.65rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+            .control360-address b { display:block; color:#0f172a; font-size:.82rem; line-height:1.4; }
             .st-key-control360_action { padding:14px; background:#f8fafc; border:1px solid #dbe3ee; border-radius:8px; }
             [data-testid="stTabs"] [data-baseweb="tab-list"] {
                 display:flex !important;
@@ -10191,6 +10206,8 @@ def pintar_control_cliente_360():
             @media(max-width:640px){
                 .control360-head{flex-direction:column}
                 .control360-badge{align-self:flex-start}
+                .control360-profile-grid{grid-template-columns:1fr}
+                .control360-profile-item:nth-child(odd){border-right:0}
                 [data-testid="stTabs"] [role="tab"] { flex:0 0 auto !important; min-width:112px !important; }
             }
         </style>
@@ -10271,13 +10288,32 @@ def pintar_control_cliente_360():
         ["Resumen", "Cotizaciones", "Envíos", "Casos", "Comunicaciones", "Seguridad"]
     )
     with tab_resumen:
-        st.markdown('<div class="control360-section">Datos de cuenta y entrega</div>', unsafe_allow_html=True)
-        r1, r2 = st.columns(2, gap="medium")
-        with r1:
-            st.info(f"**Identidad:** {dni or '—'}\n\n**Ubicación:** {ciudad or '—'}, {departamento or '—'}")
-        with r2:
-            st.info(f"**Correo:** {correo or '—'}\n\n**Teléfono:** {telefono or '—'}")
-        st.caption(f"Dirección principal: {direccion or 'No registrada'}")
+        correo_texto = str(correo or "—")
+        correo_href = "mailto:" + urllib.parse.quote(correo_texto, safe="@.+") if correo else ""
+        correo_html = (
+            f'<a href="{html.escape(correo_href)}">{html.escape(correo_texto)}</a>'
+            if correo else "—"
+        )
+        st.markdown(
+            '<section class="control360-profile">'
+            '<div class="control360-profile-title"><b>Datos de cuenta y entrega</b>'
+            '<span>Información registrada del cliente</span></div>'
+            '<div class="control360-profile-grid">'
+            '<div class="control360-profile-item"><span class="control360-profile-label">Identidad / DNI</span>'
+            f'<span class="control360-profile-value">{html.escape(str(dni or "No registrada"))}</span></div>'
+            '<div class="control360-profile-item"><span class="control360-profile-label">Ubicación</span>'
+            f'<span class="control360-profile-value">{html.escape(str(ciudad or "—"))}, {html.escape(str(departamento or "—"))}</span></div>'
+            '<div class="control360-profile-item"><span class="control360-profile-label">Correo electrónico</span>'
+            f'<span class="control360-profile-value">{correo_html}</span></div>'
+            '<div class="control360-profile-item"><span class="control360-profile-label">Teléfono / WhatsApp</span>'
+            f'<span class="control360-profile-value">{html.escape(str(telefono or "No registrado"))}</span></div>'
+            '</div>'
+            '<div class="control360-address"><span class="control360-address-icon">⌖</span><div>'
+            '<small>Dirección principal de entrega</small>'
+            f'<b>{html.escape(str(direccion or "No registrada"))}</b></div></div>'
+            '</section>',
+            unsafe_allow_html=True,
+        )
         if paquetes:
             st.markdown('<div class="control360-section">Actividad logística reciente</div>', unsafe_allow_html=True)
             st.dataframe(
