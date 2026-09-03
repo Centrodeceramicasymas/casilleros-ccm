@@ -1770,7 +1770,10 @@ def cargar_paquetes_db(casillero):
                    COALESCE(c.estado_pago, CASE WHEN p.pago_confirmado = TRUE THEN 'Confirmado' ELSE 'Pendiente' END),
                    COALESCE(c.estado_documentos, 'Bloqueados'), c.fecha_compromiso,
                    c.receptor_entrega, c.fecha_entrega, c.evidencia_entrega_url,
-                   COALESCE(c.incidencia_estado, 'Sin incidencia')
+                   COALESCE(c.incidencia_estado, 'Sin incidencia'), p.codigo_interno,
+                   COALESCE(p.cantidad_bultos, 1), COALESCE(p.bultos_verificados, 0),
+                   p.responsable_actual, p.zona_almacen, p.ultima_verificacion,
+                   COALESCE(p.estado_integridad, 'Pendiente')
             FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
             WHERE p.codigo_casillero = ? AND COALESCE(p.visible_cliente, TRUE) = TRUE
             ORDER BY p.fecha_actualizacion DESC
@@ -1797,6 +1800,33 @@ def cargar_eventos_tracking_db(casillero):
             """,
             (cas,),
         ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_trazabilidad_cliente_db(casillero):
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, secuencia, tipo_movimiento, estado_nuevo,
+                   mensaje_cliente, fecha_evento, hash_evento
+            FROM trazabilidad_paquetes
+            WHERE codigo_casillero = ? AND visible_cliente = TRUE
+            ORDER BY fecha_evento DESC, secuencia DESC
+            LIMIT 2000
+            """,
+            (cas,),
+        ).fetchall()
+
+
+def refrescar_seguimiento_cliente():
+    cargar_paquetes_db.clear()
+    cargar_eventos_tracking_db.clear()
+    cargar_trazabilidad_cliente_db.clear()
+    cargar_notificaciones_cliente.clear()
+    st.session_state["_seguimiento_actualizado_en"] = obtener_tiempo_honduras().strftime("%H:%M:%S")
 
 
 def cotizaciones_habilitadas_por_operacion(paquetes):
@@ -1844,11 +1874,43 @@ def cargar_paquetes_admin():
             SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
                    fecha_actualizacion, cotizacion_id, tipo_contenedor,
                    recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
-                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente
+                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
+                   COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                   COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
             FROM paquetes
             ORDER BY fecha_actualizacion DESC
             LIMIT 500
             """
+        ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def buscar_paquetes_admin(termino, limite=200):
+    texto = str(termino or "").strip().lower()
+    if not texto:
+        return cargar_paquetes_admin()
+    patron = f"%{texto}%"
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
+                   fecha_actualizacion, cotizacion_id, tipo_contenedor,
+                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
+                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
+                   COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                   COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+            FROM paquetes
+            WHERE LOWER(COALESCE(tracking, '')) LIKE ?
+               OR LOWER(COALESCE(codigo_interno, '')) LIKE ?
+               OR LOWER(COALESCE(codigo_casillero, '')) LIKE ?
+               OR LOWER(COALESCE(contenedor_id, '')) LIKE ?
+               OR LOWER(COALESCE(zona_almacen, '')) LIKE ?
+            ORDER BY fecha_actualizacion DESC
+            LIMIT ?
+            """,
+            (patron, patron, patron, patron, patron, int(limite)),
         ).fetchall()
 
 
@@ -1861,11 +1923,13 @@ def cargar_metricas_paquetes_admin():
             SELECT COUNT(*),
                    SUM(CASE WHEN recibido_bodega = TRUE THEN 1 ELSE 0 END),
                    SUM(CASE WHEN estado = 'En Travesía Marítima' THEN 1 ELSE 0 END),
-                   COALESCE(SUM(costo_manipulacion_usd), 0)
+                   COALESCE(SUM(costo_manipulacion_usd), 0),
+                   SUM(CASE WHEN COALESCE(estado_integridad, 'Pendiente') <> 'Verificado' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN estado IN ('Incidencia', 'Retenido') THEN 1 ELSE 0 END)
             FROM paquetes
             """
         ).fetchone()
-    return tuple(fila or (0, 0, 0, 0))
+    return tuple(fila or (0, 0, 0, 0, 0, 0))
 
 
 @st.cache_data(ttl=10, show_spinner=False)
@@ -1885,6 +1949,47 @@ def cargar_eventos_tracking_admin(tracking):
             """,
             (codigo,),
         ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_trazabilidad_paquete_db(tracking, solo_visible=False):
+    codigo = str(tracking or "").strip()
+    if not codigo:
+        return []
+    filtro = "AND visible_cliente = TRUE" if solo_visible else ""
+    with get_db() as conn:
+        return conn.execute(
+            f"""
+            SELECT secuencia, tipo_movimiento, estado_anterior, estado_nuevo,
+                   datos_anteriores_json, datos_nuevos_json, mensaje_cliente,
+                   nota_interna, visible_cliente, fecha_evento, creado_por,
+                   hash_anterior, hash_evento
+            FROM trazabilidad_paquetes
+            WHERE tracking = ? {filtro}
+            ORDER BY secuencia DESC
+            LIMIT 500
+            """,
+            (codigo,),
+        ).fetchall()
+
+
+def verificar_integridad_trazabilidad(tracking):
+    movimientos = list(reversed(cargar_trazabilidad_paquete_db(tracking, solo_visible=False)))
+    hash_previo = "ORIGEN"
+    for movimiento in movimientos:
+        secuencia, tipo, estado_anterior, estado_nuevo, anterior_json, nuevo_json, _, _, _, fecha, actor, hash_anterior, hash_evento = movimiento
+        contenido = "|".join(
+            (
+                str(tracking), str(secuencia), hash_previo, str(tipo),
+                str(estado_anterior or ""), str(estado_nuevo or ""),
+                str(anterior_json), str(nuevo_json), str(fecha), str(actor),
+            )
+        )
+        calculado = hashlib.sha256(contenido.encode("utf-8")).hexdigest()
+        if str(hash_anterior) != hash_previo or not hmac.compare_digest(str(hash_evento), calculado):
+            return False, int(secuencia), len(movimientos)
+        hash_previo = str(hash_evento)
+    return True, None, len(movimientos)
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -4923,6 +5028,180 @@ def asegurar_esquema_control_cliente():
         conn.commit()
 
 
+def registrar_trazabilidad_paquete(
+    cursor, tracking, casillero, tipo_movimiento, estado_anterior, estado_nuevo,
+    datos_anteriores, datos_nuevos, mensaje_cliente="", nota_interna="",
+    visible_cliente=True, creado_por=None, fecha_evento=None,
+):
+    """Añade un movimiento encadenado; nunca modifica movimientos anteriores."""
+    tracking_limpio = str(tracking or "").strip()
+    cas = formatear_casillero(casillero) if "formatear_casillero" in globals() else str(casillero or "").strip()
+    if not tracking_limpio or not cas:
+        raise ValueError("Tracking y casillero son obligatorios para registrar trazabilidad.")
+    cursor.execute(
+        "SELECT secuencia, hash_evento FROM trazabilidad_paquetes "
+        "WHERE tracking = ? ORDER BY secuencia DESC LIMIT 1",
+        (tracking_limpio,),
+    )
+    ultimo = cursor.fetchone()
+    secuencia = int(ultimo[0] or 0) + 1 if ultimo else 1
+    hash_anterior = str(ultimo[1] or "") if ultimo else "ORIGEN"
+    fecha = fecha_evento or obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    anterior_json = json.dumps(datos_anteriores or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    nuevo_json = json.dumps(datos_nuevos or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    actor = str(creado_por or st.session_state.get("usuario") or "sistema")
+    contenido_hash = "|".join(
+        (tracking_limpio, str(secuencia), hash_anterior, str(tipo_movimiento),
+         str(estado_anterior or ""), str(estado_nuevo or ""), anterior_json,
+         nuevo_json, str(fecha), actor)
+    )
+    hash_evento = hashlib.sha256(contenido_hash.encode("utf-8")).hexdigest()
+    cursor.execute(
+        """
+        INSERT INTO trazabilidad_paquetes (
+            tracking, codigo_casillero, secuencia, tipo_movimiento,
+            estado_anterior, estado_nuevo, datos_anteriores_json, datos_nuevos_json,
+            mensaje_cliente, nota_interna, visible_cliente, fecha_evento,
+            creado_por, hash_anterior, hash_evento
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            tracking_limpio, cas, secuencia, str(tipo_movimiento),
+            str(estado_anterior or ""), str(estado_nuevo or ""), anterior_json,
+            nuevo_json, str(mensaje_cliente or ""), str(nota_interna or ""),
+            bool(visible_cliente), fecha, actor, hash_anterior, hash_evento,
+        ),
+    )
+    return secuencia, hash_evento
+
+
+def asegurar_esquema_trazabilidad_absoluta():
+    """Amplía paquetes y crea el diario append-only usado contra extravíos."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if USA_SUPABASE:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'paquetes'"
+            )
+            columnas = {str(f[0]) for f in cursor.fetchall()}
+            faltantes = {
+                "codigo_interno": "ALTER TABLE public.paquetes ADD COLUMN codigo_interno TEXT",
+                "cantidad_bultos": "ALTER TABLE public.paquetes ADD COLUMN cantidad_bultos INTEGER NOT NULL DEFAULT 1",
+                "bultos_verificados": "ALTER TABLE public.paquetes ADD COLUMN bultos_verificados INTEGER NOT NULL DEFAULT 0",
+                "responsable_actual": "ALTER TABLE public.paquetes ADD COLUMN responsable_actual TEXT",
+                "zona_almacen": "ALTER TABLE public.paquetes ADD COLUMN zona_almacen TEXT",
+                "ultima_verificacion": "ALTER TABLE public.paquetes ADD COLUMN ultima_verificacion TEXT",
+                "version": "ALTER TABLE public.paquetes ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+                "estado_integridad": "ALTER TABLE public.paquetes ADD COLUMN estado_integridad TEXT NOT NULL DEFAULT 'Pendiente'",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.trazabilidad_paquetes (
+                    id BIGSERIAL PRIMARY KEY,
+                    tracking TEXT NOT NULL REFERENCES public.paquetes(tracking) ON DELETE RESTRICT,
+                    codigo_casillero TEXT NOT NULL,
+                    secuencia INTEGER NOT NULL,
+                    tipo_movimiento TEXT NOT NULL,
+                    estado_anterior TEXT,
+                    estado_nuevo TEXT,
+                    datos_anteriores_json TEXT NOT NULL,
+                    datos_nuevos_json TEXT NOT NULL,
+                    mensaje_cliente TEXT,
+                    nota_interna TEXT,
+                    visible_cliente BOOLEAN NOT NULL DEFAULT TRUE,
+                    fecha_evento TEXT NOT NULL,
+                    creado_por TEXT NOT NULL,
+                    hash_anterior TEXT NOT NULL,
+                    hash_evento TEXT NOT NULL,
+                    UNIQUE(tracking, secuencia),
+                    UNIQUE(hash_evento)
+                )
+                """
+            )
+        else:
+            cursor.execute("PRAGMA table_info(paquetes)")
+            columnas = {str(f[1]) for f in cursor.fetchall()}
+            faltantes = {
+                "codigo_interno": "ALTER TABLE paquetes ADD COLUMN codigo_interno TEXT",
+                "cantidad_bultos": "ALTER TABLE paquetes ADD COLUMN cantidad_bultos INTEGER NOT NULL DEFAULT 1",
+                "bultos_verificados": "ALTER TABLE paquetes ADD COLUMN bultos_verificados INTEGER NOT NULL DEFAULT 0",
+                "responsable_actual": "ALTER TABLE paquetes ADD COLUMN responsable_actual TEXT",
+                "zona_almacen": "ALTER TABLE paquetes ADD COLUMN zona_almacen TEXT",
+                "ultima_verificacion": "ALTER TABLE paquetes ADD COLUMN ultima_verificacion TEXT",
+                "version": "ALTER TABLE paquetes ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+                "estado_integridad": "ALTER TABLE paquetes ADD COLUMN estado_integridad TEXT NOT NULL DEFAULT 'Pendiente'",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trazabilidad_paquetes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tracking TEXT NOT NULL,
+                    codigo_casillero TEXT NOT NULL,
+                    secuencia INTEGER NOT NULL,
+                    tipo_movimiento TEXT NOT NULL,
+                    estado_anterior TEXT,
+                    estado_nuevo TEXT,
+                    datos_anteriores_json TEXT NOT NULL,
+                    datos_nuevos_json TEXT NOT NULL,
+                    mensaje_cliente TEXT,
+                    nota_interna TEXT,
+                    visible_cliente INTEGER NOT NULL DEFAULT 1,
+                    fecha_evento TEXT NOT NULL,
+                    creado_por TEXT NOT NULL,
+                    hash_anterior TEXT NOT NULL,
+                    hash_evento TEXT NOT NULL UNIQUE,
+                    UNIQUE(tracking, secuencia),
+                    FOREIGN KEY(tracking) REFERENCES paquetes(tracking) ON DELETE RESTRICT
+                )
+                """
+            )
+        paquetes_sin_folio = cursor.execute(
+            "SELECT tracking, codigo_casillero FROM paquetes "
+            "WHERE codigo_interno IS NULL OR TRIM(codigo_interno) = ''"
+        ).fetchall()
+        for tracking, casillero in paquetes_sin_folio:
+            folio = "CCM-PKG-" + hashlib.sha256(
+                f"{casillero}|{tracking}".encode("utf-8")
+            ).hexdigest()[:10].upper()
+            cursor.execute(
+                "UPDATE paquetes SET codigo_interno = ? WHERE tracking = ?",
+                (folio, tracking),
+            )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_paquetes_codigo_interno "
+            "ON paquetes(codigo_interno) WHERE codigo_interno IS NOT NULL"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trazabilidad_cliente_fecha "
+            "ON trazabilidad_paquetes(codigo_casillero, tracking, fecha_evento DESC)"
+        )
+        conn.commit()
+
+        paquetes_sin_origen = cursor.execute(
+            """
+            SELECT p.tracking, p.codigo_casillero, p.estado, p.fecha_actualizacion
+            FROM paquetes p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM trazabilidad_paquetes t WHERE t.tracking = p.tracking
+            )
+            """
+        ).fetchall()
+        for tracking, casillero, estado, fecha in paquetes_sin_origen:
+            registrar_trazabilidad_paquete(
+                cursor, tracking, casillero, "MIGRACION_ORIGEN", "", estado,
+                {}, {"estado": estado}, "Historial operativo incorporado al seguimiento.",
+                "Movimiento inicial creado por migración.", True, "migración", fecha,
+            )
+        conn.commit()
+
+
 @st.cache_resource(show_spinner=False)
 def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
@@ -4930,6 +5209,7 @@ def inicializar_persistencia():
     asegurar_esquema_cotizaciones()
     asegurar_esquema_paquetes_operativo()
     asegurar_esquema_control_cliente()
+    asegurar_esquema_trazabilidad_absoluta()
     asegurar_esquema_direcciones()
     asegurar_indices_rendimiento()
     return True
@@ -5412,6 +5692,7 @@ def _migrar_casillero_tablas(conn, origen, destino):
     for tabla in (
         "cotizaciones", "paquetes", "eventos_tracking", "direcciones_entrega",
         "carrito_catalogo", "permisos_usuario", "notificaciones_cliente", "casos_cliente",
+        "trazabilidad_paquetes",
     ):
         try:
             conn.execute(
@@ -6599,6 +6880,16 @@ def dialogo_editar_usuario_admin(usuario, root=False):
             if st.button("Eliminar cuenta", key=f"dlg_delete_{uid}", disabled=not confirmar):
                 with get_db() as conn:
                     cur = conn.cursor()
+                    cur.execute(
+                        "SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero=?",
+                        (cas_u,),
+                    )
+                    if int((cur.fetchone() or (0,))[0] or 0) > 0:
+                        st.error(
+                            "La cuenta tiene trazabilidad logística y no puede eliminarse. "
+                            "Desactívela para conservar la cadena de custodia."
+                        )
+                        st.stop()
                     for tabla in (
                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
                         "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
@@ -10529,6 +10820,12 @@ def pintar_control_cliente_360():
                     st.error("ETA, compromiso y entrega deben usar el formato AAAA-MM-DD.")
                 elif not permitir_retroceso and not transicion_logistica_valida(paquete[3], estado_env):
                     st.error("El nuevo estado retrocede el proceso. Active la autorización de corrección manual.")
+                elif estado_env == "Entregado" and not (
+                    receptor_entrega.strip() and fecha_entrega.strip() and evidencia_entrega.strip()
+                ):
+                    st.error("Para cerrar como Entregado debe registrar receptor, fecha y URL de evidencia.")
+                elif evidencia_entrega.strip() and not url_anuncio_segura(evidencia_entrega):
+                    st.error("La evidencia de entrega debe ser un enlace público HTTP o HTTPS válido.")
                 else:
                     fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                     pago_confirmado = estado_pago == "Confirmado"
@@ -10537,14 +10834,53 @@ def pintar_control_cliente_360():
                         cur = conn.cursor()
                         cur.execute(
                             """
+                            SELECT estado, ubicacion_actual, eta, proximo_paso, incidencia,
+                                   recibido_bodega, pago_confirmado, visible_cliente,
+                                   COALESCE(version, 1), COALESCE(cantidad_bultos, 1),
+                                   COALESCE(bultos_verificados, 0),
+                                   COALESCE(estado_integridad, 'Pendiente'), contenedor_id
+                            FROM paquetes WHERE tracking=? AND codigo_casillero=?
+                            """,
+                            (tracking, cas),
+                        )
+                        estado_previo_360 = cur.fetchone()
+                        if estado_previo_360 is None:
+                            st.error("El paquete ya no existe o fue reasignado. Actualice el expediente.")
+                            st.stop()
+                        if estado_env in ESTADOS_LOGISTICOS and not recibido_env:
+                            st.error("No puede avanzar un envío sin confirmar su recepción física.")
+                            st.stop()
+                        if (
+                            indice_estado_logistico(estado_env) >= indice_estado_logistico("En Consolidación")
+                            and (
+                                int(estado_previo_360[9] or 1) != int(estado_previo_360[10] or 0)
+                                or str(estado_previo_360[11] or "") != "Verificado"
+                            )
+                        ):
+                            st.error("Verifique físicamente todos los bultos desde Paquetes antes de avanzar.")
+                            st.stop()
+                        if (
+                            indice_estado_logistico(estado_env) >= indice_estado_logistico("Asignado a Contenedor")
+                            and not str(estado_previo_360[12] or "").strip()
+                        ):
+                            st.error("El envío necesita un contenedor asignado antes de avanzar.")
+                            st.stop()
+                        cur.execute(
+                            """
                             UPDATE paquetes SET estado=?, ubicacion_actual=?, eta=?, proximo_paso=?,
                                 incidencia=?, recibido_bodega=?, pago_confirmado=?, visible_cliente=?,
-                                fecha_actualizacion=? WHERE tracking=? AND codigo_casillero=?
+                                fecha_actualizacion=?, version=version+1
+                            WHERE tracking=? AND codigo_casillero=? AND version=?
                             """,
                             (estado_env, ubicacion_env.strip(), eta_env.strip(), proximo_env.strip(),
                              incidencia_env.strip(), bool(recibido_env), pago_confirmado,
-                             bool(visible_env), fecha, tracking, cas),
+                             bool(visible_env), fecha, tracking, cas, int(estado_previo_360[8] or 1)),
                         )
+                        if cur.rowcount != 1:
+                            st.error(
+                                "Otro operador modificó el envío. Recargue el expediente antes de guardar."
+                            )
+                            st.stop()
                         cur.execute(
                             """
                             INSERT INTO control_envios (
@@ -10574,6 +10910,29 @@ def pintar_control_cliente_360():
                              receptor_entrega.strip(), fecha_entrega.strip(), evidencia_entrega.strip(),
                              canal_env, st.session_state.get("usuario") or "superadmin", fecha),
                         )
+                        mensaje_traza_360 = mensaje_env.strip() or f"Estado confirmado: {estado_env}."
+                        registrar_trazabilidad_paquete(
+                            cur, tracking, cas, "CONTROL_360",
+                            estado_previo_360[0], estado_env,
+                            {
+                                "estado": estado_previo_360[0], "ubicacion": estado_previo_360[1],
+                                "eta": estado_previo_360[2], "proximo_paso": estado_previo_360[3],
+                                "incidencia": estado_previo_360[4], "recibido": bool(estado_previo_360[5]),
+                                "pago": bool(estado_previo_360[6]), "visible": bool(estado_previo_360[7]),
+                            },
+                            {
+                                "estado": estado_env, "ubicacion": ubicacion_env.strip(),
+                                "eta": eta_env.strip(), "proximo_paso": proximo_env.strip(),
+                                "incidencia": incidencia_env.strip(), "recibido": bool(recibido_env),
+                                "pago": pago_confirmado, "visible": bool(visible_env),
+                                "estado_pago": estado_pago, "documentos": estado_docs,
+                                "incidencia_estado": estado_inc, "receptor": receptor_entrega.strip(),
+                                "fecha_entrega": fecha_entrega.strip(),
+                            },
+                            mensaje_traza_360,
+                            f"Pago: {estado_pago}; documentos: {estado_docs}",
+                            bool(visible_env), st.session_state.get("usuario") or "superadmin", fecha,
+                        )
                         if mensaje_env.strip() or estado_env != paquete[3]:
                             cur.execute(
                                 """
@@ -10597,7 +10956,10 @@ def pintar_control_cliente_360():
                     )
                     cargar_paquetes_db.clear()
                     cargar_eventos_tracking_db.clear()
+                    cargar_trazabilidad_cliente_db.clear()
+                    cargar_trazabilidad_paquete_db.clear()
                     cargar_paquetes_admin.clear()
+                    buscar_paquetes_admin.clear()
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
@@ -12045,14 +12407,44 @@ elif st.session_state["rol"] == "cliente":
             eventos_por_tracking = {}
             for evento in eventos_tracking:
                 eventos_por_tracking.setdefault(str(evento[0] or ""), []).append(evento)
+            trazabilidad_cliente = cargar_trazabilidad_cliente_db(casillero)
+            trazabilidad_por_tracking = {}
+            for movimiento in trazabilidad_cliente:
+                trazabilidad_por_tracking.setdefault(str(movimiento[0] or ""), []).append(movimiento)
             cotizaciones_habilitadas = cotizaciones_habilitadas_por_operacion(paquetes)
             paquetes_en_transito = sum(1 for p in paquetes if str(p[3] or "") == "En Travesía Marítima")
             paquetes_recibidos = sum(1 for p in paquetes if bool(p[7]))
             st.markdown(
                 '<div class="envios-title">Mis envíos y documentos</div>'
-                '<div class="envios-copy">Seguimiento de carga administrado por CCM y documentos de cotizaciones confirmadas.</div>',
+                '<div class="envios-copy">Seguimiento operativo actualizado automáticamente y documentos de cotizaciones confirmadas.</div>',
                 unsafe_allow_html=True,
             )
+            sync1, sync2 = st.columns([1.5, 1], gap="small")
+            with sync1:
+                auto_actualizar = st.toggle(
+                    "Actualización automática cada 15 segundos",
+                    value=bool(st.session_state.get("envios_auto_actualizar", True)),
+                    key="envios_auto_actualizar",
+                )
+                ultima_sync = st.session_state.get("_seguimiento_actualizado_en") or obtener_tiempo_honduras().strftime("%H:%M:%S")
+                st.caption(f"Última consulta al sistema: {ultima_sync} · Hora de Honduras")
+            with sync2:
+                st.button(
+                    "Actualizar ahora", key="envios_refresh", type="primary",
+                    use_container_width=True, on_click=refrescar_seguimiento_cliente,
+                )
+            if auto_actualizar:
+                components.html(
+                    """
+                    <script>
+                    window.setTimeout(() => {
+                      const button = window.parent.document.querySelector('.st-key-envios_refresh button');
+                      if (button && !button.disabled) button.click();
+                    }, 15000);
+                    </script>
+                    """,
+                    height=0,
+                )
             with st.container(key="envios_metricas"):
                 em1, em2, em3, em4 = st.columns(4, gap="small")
                 em1.metric("Paquetes", len(paquetes))
@@ -12096,6 +12488,23 @@ elif st.session_state["rol"] == "cliente":
                     entrega_p = html.escape(str(p[20] or "")) if len(p) > 20 else ""
                     evidencia_p = url_anuncio_segura(p[21]) if len(p) > 21 else ""
                     incidencia_estado_p = html.escape(str(p[22] or "Sin incidencia")) if len(p) > 22 else "Sin incidencia"
+                    codigo_interno_p = html.escape(str(p[23] or "Pendiente de asignar")) if len(p) > 23 else "Pendiente de asignar"
+                    total_bultos_p = int(p[24] or 1) if len(p) > 24 else 1
+                    bultos_verificados_p = int(p[25] or 0) if len(p) > 25 else 0
+                    responsable_p = html.escape(str(p[26] or "Operador por asignar")) if len(p) > 26 else "Operador por asignar"
+                    zona_p = html.escape(str(p[27] or "Ubicación física pendiente")) if len(p) > 27 else "Ubicación física pendiente"
+                    ultima_verificacion_p = html.escape(str(p[28] or "Sin verificación")) if len(p) > 28 else "Sin verificación"
+                    integridad_p = html.escape(str(p[29] or "Pendiente")) if len(p) > 29 else "Pendiente"
+                    fecha_actualizacion_dt = parsear_fecha_cotizacion(p[4])
+                    horas_sin_actualizar = (
+                        max(0.0, (obtener_tiempo_honduras() - fecha_actualizacion_dt).total_seconds() / 3600.0)
+                        if fecha_actualizacion_dt else None
+                    )
+                    seguimiento_atrasado = bool(
+                        horas_sin_actualizar is not None
+                        and horas_sin_actualizar >= 24
+                        and str(p[3] or "") != "Entregado"
+                    )
                     progreso_p = porcentaje_estado_logistico(p[3])
                     flag_recepcion = "ok" if recibido_p else ""
                     flag_pago = "ok" if pagado_p else ""
@@ -12104,6 +12513,9 @@ elif st.session_state["rol"] == "cliente":
                         f'<div class="shipment-card-head"><span class="shipment-tracking">📦 {tracking_p}</span>'
                         f'<span class="shipment-status">{estado_p}</span></div>'
                         f'<div class="shipment-description">{descripcion_p}</div>'
+                        f'<div class="shipment-meta"><span>Folio interno: <b>{codigo_interno_p}</b></span>'
+                        f'<span>Bultos: <b>{bultos_verificados_p}/{total_bultos_p}</b></span>'
+                        f'<span>Custodia: <b>{responsable_p}</b></span><span>Zona: <b>{zona_p}</b></span></div>'
                         f'<div class="shipment-meta"><span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
                         f'<span>📍 {ubicacion_p}</span><span>ETA: {eta_p}</span>'
                         f'<span>Actualizado: {actualizado_p}</span>'
@@ -12123,6 +12535,12 @@ elif st.session_state["rol"] == "cliente":
                         + (f' · Compromiso: <b>{compromiso_p}</b>' if compromiso_p else '')
                         + (f' · Entregado a: <b>{receptor_p}</b> ({entrega_p})' if receptor_p or entrega_p else '')
                         + '</div>'
+                        + f'<div style="margin-top:6px;color:#475569;font-size:.74rem;">Control físico: <b>{integridad_p}</b> · Última verificación: {ultima_verificacion_p}</div>'
+                        + (
+                            f'<div style="margin-top:9px;padding:8px 10px;background:#fffbeb;border-left:3px solid #d97706;color:#92400e;font-size:.76rem;">'
+                            f'Este envío lleva {int(horas_sin_actualizar)} horas sin actualización operativa. CCM debe verificar su ubicación.</div>'
+                            if seguimiento_atrasado else ''
+                        )
                         + f'</article>',
                         unsafe_allow_html=True,
                     )
@@ -12131,12 +12549,22 @@ elif st.session_state["rol"] == "cliente":
                             "Ver evidencia de entrega", evidencia_p,
                             use_container_width=True,
                         )
+                    movimientos_paquete = trazabilidad_por_tracking.get(str(p[0] or ""), [])
                     eventos_paquete = eventos_por_tracking.get(str(p[0] or ""), [])
                     with st.expander(
-                        f"Ver recorrido y actualizaciones · {len(eventos_paquete)} evento(s)",
+                        f"Ver recorrido verificable · {len(movimientos_paquete) or len(eventos_paquete)} movimiento(s)",
                         expanded=False,
                     ):
-                        if eventos_paquete:
+                        if movimientos_paquete:
+                            for movimiento in movimientos_paquete[:30]:
+                                _, secuencia, tipo_mov, estado_mov, mensaje_mov, fecha_mov, hash_mov = movimiento
+                                st.markdown(
+                                    f"**#{int(secuencia):03d} · {html.escape(str(estado_mov or tipo_mov))}**  \n"
+                                    f"{html.escape(str(fecha_mov or ''))} · {html.escape(str(tipo_mov or 'Actualización'))}  \n"
+                                    f"{html.escape(str(mensaje_mov or 'Movimiento confirmado por CCM.'))}  \n"
+                                    f"`Verificación {str(hash_mov or '')[:12]}`"
+                                )
+                        elif eventos_paquete:
                             for evento in eventos_paquete[:20]:
                                 _, estado_evt, ubicacion_evt, mensaje_evt, fecha_evt, _ = evento
                                 st.markdown(
@@ -13594,6 +14022,16 @@ elif es_rol_admin():
                             ):
                                 with get_db() as conn:
                                     cur = conn.cursor()
+                                    cur.execute(
+                                        "SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero = ?",
+                                        (cas_u,),
+                                    )
+                                    if int((cur.fetchone() or (0,))[0] or 0) > 0:
+                                        st.error(
+                                            "La cuenta tiene movimientos logísticos y no puede eliminarse. "
+                                            "Desactívela para preservar la trazabilidad."
+                                        )
+                                        st.stop()
                                     for tabla in (
                                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
                                         "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
@@ -13937,12 +14375,18 @@ elif es_rol_admin():
         total_recibidos_admin = int(metricas_paquetes[1] or 0)
         total_transito_admin = int(metricas_paquetes[2] or 0)
         costo_manipulacion_admin = float(metricas_paquetes[3] or 0)
+        total_sin_verificar_admin = int(metricas_paquetes[4] or 0)
+        total_incidencias_admin = int(metricas_paquetes[5] or 0)
         with st.container(key="admin_package_metrics"):
             pm1, pm2, pm3, pm4 = st.columns(4, gap="medium")
             pm1.metric("Paquetes", total_paquetes_admin)
             pm2.metric("Recibidos en China", total_recibidos_admin)
             pm3.metric("En travesía", total_transito_admin)
             pm4.metric("Manipulación", f"${costo_manipulacion_admin:,.2f}")
+        with st.container(key="admin_risk_metrics"):
+            pr1, pr2 = st.columns(2, gap="medium")
+            pr1.metric("Pendientes de verificación física", total_sin_verificar_admin)
+            pr2.metric("Incidencias o retenciones", total_incidencias_admin)
 
         cotizaciones_admin = cargar_cotizaciones_confirmadas_admin()
         opciones_cotizacion = ["Sin asociar"]
@@ -13959,10 +14403,17 @@ elif es_rol_admin():
 
         with st.container(key="admin_package_editor"):
             st.markdown("#### Registrar o actualizar paquete")
-            st.caption("Seleccione un registro para editarlo sin perder sus asociaciones ni datos previos.")
+            st.caption("Busque por tracking, folio, casillero, contenedor o ubicación antes de editar.")
+            filtro_paquete_admin = st.text_input(
+                "Buscar paquete", key="admin_pkg_busqueda",
+                placeholder="Tracking, folio interno, casillero, contenedor o zona",
+            ).strip().lower()
+            paquetes_editor = paquetes_admin
+            if filtro_paquete_admin:
+                paquetes_editor = buscar_paquetes_admin(filtro_paquete_admin)
             opcion_registro = st.selectbox(
                 "Registro",
-                ["Nuevo paquete"] + [str(p[0]) for p in paquetes_admin],
+                ["Nuevo paquete"] + [str(p[0]) for p in paquetes_editor],
                 key="admin_pkg_registro_editar",
             )
             paquete_editar = next(
@@ -14009,11 +14460,43 @@ elif es_rol_admin():
                     disabled=bool(paquete_editar),
                 )
             d_in = st.text_input(
-                "Descripción de la carga",
+                "Descripción de la carga *",
                 value=str(paquete_editar[2] or "") if paquete_editar else "",
                 key=f"admin_pkg_descripcion_{sufijo_editor}",
                 placeholder="Ej. 4 cajas de porcelanato 60 × 120",
             )
+            control1, control2, control3 = st.columns([1, 1, 1.4], gap="medium")
+            with control1:
+                cantidad_bultos_in = st.number_input(
+                    "Bultos declarados *", min_value=1, max_value=100000,
+                    value=int(paquete_editar[19] or 1) if paquete_editar else 1,
+                    step=1, key=f"admin_pkg_bultos_{sufijo_editor}",
+                )
+            with control2:
+                bultos_verificados_in = st.number_input(
+                    "Bultos verificados *", min_value=0, max_value=100000,
+                    value=int(paquete_editar[20] or 0) if paquete_editar else 0,
+                    step=1, key=f"admin_pkg_bultos_ok_{sufijo_editor}",
+                )
+            with control3:
+                estado_integridad_actual = str(paquete_editar[24] or "Pendiente") if paquete_editar else "Pendiente"
+                estados_integridad = ["Pendiente", "Verificado", "Diferencia detectada", "Dañado", "En investigación"]
+                estado_integridad_in = st.selectbox(
+                    "Control físico", estados_integridad,
+                    index=estados_integridad.index(estado_integridad_actual) if estado_integridad_actual in estados_integridad else 0,
+                    key=f"admin_pkg_integridad_{sufijo_editor}",
+                )
+            custodia1, custodia2 = st.columns(2, gap="medium")
+            with custodia1:
+                responsable_actual_in = st.text_input(
+                    "Responsable actual *", value=str(paquete_editar[21] or "") if paquete_editar else "",
+                    key=f"admin_pkg_responsable_{sufijo_editor}", placeholder="Nombre del operador o equipo",
+                )
+            with custodia2:
+                zona_almacen_in = st.text_input(
+                    "Zona física / posición *", value=str(paquete_editar[22] or "") if paquete_editar else "",
+                    key=f"admin_pkg_zona_{sufijo_editor}", placeholder="Ej. CHN-A3-R02",
+                )
             pkg3, pkg4 = st.columns([1.4, 1], gap="medium")
             with pkg3:
                 cont_in = st.text_input(
@@ -14121,17 +14604,42 @@ elif es_rol_admin():
         if guardar_paquete:
             cas_paquete = formatear_casillero(c_in)
             cot_id_paquete = cot_seleccionada[0] if cot_seleccionada else None
-            if not t_in.strip() or not cas_paquete:
-                campos_faltantes = []
-                if not t_in.strip():
-                    campos_faltantes.append("tracking")
-                if not cas_paquete:
-                    campos_faltantes.append("casillero")
+            tracking_entrada = str(t_in or "").strip()
+            campos_faltantes = []
+            if not tracking_entrada:
+                campos_faltantes.append("tracking")
+            if not cas_paquete:
+                campos_faltantes.append("casillero")
+            if not d_in.strip():
+                campos_faltantes.append("descripción")
+            if not ubicacion_in.strip():
+                campos_faltantes.append("ubicación actual")
+            if not responsable_actual_in.strip():
+                campos_faltantes.append("responsable actual")
+            if not zona_almacen_in.strip():
+                campos_faltantes.append("zona física")
+            if campos_faltantes:
                 st.warning(
                     "No se guardó el paquete. Complete "
                     + " y ".join(campos_faltantes)
                     + " con información válida y vuelva a intentarlo."
                 )
+            elif int(bultos_verificados_in) > int(cantidad_bultos_in):
+                st.error("Los bultos verificados no pueden superar los bultos declarados.")
+            elif estado_integridad_in == "Verificado" and int(bultos_verificados_in) != int(cantidad_bultos_in):
+                st.error("Para marcar el control como Verificado, todos los bultos deben estar comprobados.")
+            elif e_in in ESTADOS_LOGISTICOS and not recibido_in:
+                st.error("Confirme la recepción física en China antes de asignar un estado logístico normal.")
+            elif (
+                indice_estado_logistico(e_in) >= indice_estado_logistico("En Consolidación")
+                and (
+                    estado_integridad_in != "Verificado"
+                    or int(bultos_verificados_in) != int(cantidad_bultos_in)
+                )
+            ):
+                st.error("Verifique todos los bultos antes de consolidar o movilizar la carga.")
+            elif indice_estado_logistico(e_in) >= indice_estado_logistico("Asignado a Contenedor") and not cont_in.strip():
+                st.error("Asigne un contenedor antes de avanzar el paquete a esa etapa logística.")
             elif cot_seleccionada and cas_paquete != cot_seleccionada[1]:
                 st.error("El casillero no coincide con la cotización seleccionada.")
             else:
@@ -14146,23 +14654,43 @@ elif es_rol_admin():
                 if not eta_valida:
                     st.error("La llegada estimada debe usar el formato AAAA-MM-DD.")
                 else:
-                    tracking_limpio = t_in.strip()
+                    tracking_limpio = tracking_entrada if paquete_editar else tracking_entrada.upper()
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute(
+                            "SELECT 1 FROM usuarios WHERE codigo_casillero = ? AND rol = 'cliente' AND activo = TRUE",
+                            (cas_paquete,),
+                        )
+                        if cur.fetchone() is None:
+                            st.error("El casillero no pertenece a un cliente activo registrado.")
+                            st.stop()
+                        cur.execute(
                             """
                             SELECT estado, ubicacion_actual, eta, proximo_paso, incidencia,
-                                   recibido_bodega, pago_confirmado, codigo_casillero, cotizacion_id
-                            FROM paquetes WHERE tracking = ?
+                                   recibido_bodega, pago_confirmado, codigo_casillero, cotizacion_id,
+                                   COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                                   COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                                   COALESCE(estado_integridad, 'Pendiente'), descripcion, contenedor_id,
+                                   ultima_verificacion, tracking
+                            FROM paquetes WHERE UPPER(TRIM(tracking)) = UPPER(TRIM(?))
                             """,
                             (tracking_limpio,),
                         )
                         anterior = cur.fetchone()
+                        if anterior:
+                            tracking_limpio = str(anterior[19])
                         estado_anterior = str(anterior[0] or "") if anterior else ""
                         if anterior and formatear_casillero(anterior[7]) != cas_paquete:
                             st.error(
                                 "Este tracking ya pertenece a otro casillero y no puede reasignarse "
                                 "desde una actualización normal."
+                            )
+                            st.stop()
+                        version_esperada = int(paquete_editar[17] or 1) if paquete_editar else 1
+                        if anterior and int(anterior[9] or 1) != version_esperada:
+                            st.error(
+                                "Otro operador actualizó este paquete mientras estaba abierto. "
+                                "Recargue el registro para evitar sobrescribir cambios recientes."
                             )
                             st.stop()
                         if not transicion_logistica_valida(estado_anterior, e_in):
@@ -14175,14 +14703,25 @@ elif es_rol_admin():
                         pago_final = bool(pago_in or (anterior and anterior[6]))
                         fecha_recepcion = f_act if recibido_final else None
                         proximo_paso = proximo_paso_in.strip() or proximo_estado_logistico(e_in)
+                        codigo_interno = (
+                            str(anterior[10] or "") if anterior else ""
+                        ) or "CCM-PKG-" + hashlib.sha256(
+                            f"{cas_paquete}|{tracking_limpio}".encode("utf-8")
+                        ).hexdigest()[:10].upper()
+                        ultima_verificacion = (
+                            f_act if int(bultos_verificados_in) > 0 or estado_integridad_in == "Verificado"
+                            else str(anterior[18] or "") if anterior else None
+                        )
                         cur.execute(
                             """
                             INSERT INTO paquetes (
                                 tracking, codigo_casillero, descripcion, contenedor_id, tipo_contenedor,
                                 cotizacion_id, recibido_bodega, pago_confirmado, costo_manipulacion_usd,
                                 fecha_recepcion, ubicacion_actual, eta, proximo_paso, incidencia,
-                                visible_cliente, estado, fecha_actualizacion
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                visible_cliente, estado, fecha_actualizacion, codigo_interno,
+                                cantidad_bultos, bultos_verificados, responsable_actual, zona_almacen,
+                                ultima_verificacion, estado_integridad, version
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(tracking) DO UPDATE SET
                                 codigo_casillero = excluded.codigo_casillero,
                                 descripcion = excluded.descripcion,
@@ -14199,48 +14738,92 @@ elif es_rol_admin():
                                 incidencia = excluded.incidencia,
                                 visible_cliente = excluded.visible_cliente,
                                 estado = excluded.estado,
-                                fecha_actualizacion = excluded.fecha_actualizacion
+                                fecha_actualizacion = excluded.fecha_actualizacion,
+                                codigo_interno = COALESCE(paquetes.codigo_interno, excluded.codigo_interno),
+                                cantidad_bultos = excluded.cantidad_bultos,
+                                bultos_verificados = excluded.bultos_verificados,
+                                responsable_actual = excluded.responsable_actual,
+                                zona_almacen = excluded.zona_almacen,
+                                ultima_verificacion = COALESCE(excluded.ultima_verificacion, paquetes.ultima_verificacion),
+                                estado_integridad = excluded.estado_integridad,
+                                version = paquetes.version + 1
+                            WHERE paquetes.version = excluded.version
                             """,
                             (
                                 tracking_limpio, cas_paquete, d_in.strip(), cont_in.strip(), tipo_cont_in,
                                 cot_id_paquete, recibido_final, pago_final, float(costo_manipulacion_in),
                                 fecha_recepcion, ubicacion_in.strip(), eta_limpia, proximo_paso,
                                 incidencia_in.strip(), bool(visible_cliente_in), e_in, f_act,
+                                codigo_interno, int(cantidad_bultos_in), int(bultos_verificados_in),
+                                responsable_actual_in.strip(), zona_almacen_in.strip(),
+                                ultima_verificacion, estado_integridad_in, version_esperada,
                             ),
-                        ),
-                        valores_anteriores = tuple(anterior[:5]) if anterior else None
-                        valores_nuevos = (
-                            e_in, ubicacion_in.strip(), eta_limpia, proximo_paso, incidencia_in.strip()
                         )
-                        registrar_evento = (
-                            anterior is None
-                            or valores_anteriores != valores_nuevos
-                            or bool(
-                                anterior
-                                and cot_id_paquete is not None
-                                and int(anterior[8] or 0) != int(cot_id_paquete)
+                        if anterior and cur.rowcount != 1:
+                            st.error(
+                                "Otro operador guardó cambios en este paquete. "
+                                "Recargue el registro antes de volver a intentarlo."
                             )
-                            or bool(mensaje_cliente_in.strip())
+                            st.stop()
+                        datos_anteriores = {
+                            "estado": anterior[0], "ubicacion": anterior[1], "eta": anterior[2],
+                            "proximo_paso": anterior[3], "incidencia": anterior[4],
+                            "recibido": bool(anterior[5]), "pago": bool(anterior[6]),
+                            "cotizacion_id": anterior[8], "bultos": anterior[11],
+                            "bultos_verificados": anterior[12], "responsable": anterior[13],
+                            "zona": anterior[14], "integridad": anterior[15],
+                            "descripcion": anterior[16], "contenedor": anterior[17],
+                        } if anterior else {}
+                        datos_nuevos = {
+                            "estado": e_in, "ubicacion": ubicacion_in.strip(), "eta": eta_limpia,
+                            "proximo_paso": proximo_paso, "incidencia": incidencia_in.strip(),
+                            "recibido": recibido_final, "pago": pago_final,
+                            "cotizacion_id": cot_id_paquete or (anterior[8] if anterior else None),
+                            "bultos": int(cantidad_bultos_in),
+                            "bultos_verificados": int(bultos_verificados_in),
+                            "responsable": responsable_actual_in.strip(),
+                            "zona": zona_almacen_in.strip(), "integridad": estado_integridad_in,
+                            "descripcion": d_in.strip(), "contenedor": cont_in.strip(),
+                            "codigo_interno": codigo_interno,
+                        }
+                        mensaje_evento = mensaje_cliente_in.strip() or f"Estado confirmado: {e_in}."
+                        tipo_movimiento = "ALTA" if anterior is None else (
+                            "VERIFICACION_FISICA"
+                            if datos_anteriores.get("bultos_verificados") != int(bultos_verificados_in)
+                            else "ACTUALIZACION_OPERATIVA"
                         )
-                        if registrar_evento:
-                            mensaje_evento = mensaje_cliente_in.strip() or f"Estado actualizado: {e_in}."
-                            cur.execute(
-                                """
-                                INSERT INTO eventos_tracking (
-                                    tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
-                                    nota_interna, fecha_evento, creado_por, visible_cliente
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    tracking_limpio, cas_paquete, e_in, ubicacion_in.strip(),
-                                    mensaje_evento, nota_interna_in.strip(), f_act,
-                                    st.session_state.get("usuario") or "superadmin",
-                                    bool(visible_cliente_in),
-                                ),
-                            )
+                        registrar_trazabilidad_paquete(
+                            cur, tracking_limpio, cas_paquete, tipo_movimiento,
+                            estado_anterior, e_in, datos_anteriores, datos_nuevos,
+                            mensaje_evento, nota_interna_in.strip(), bool(visible_cliente_in),
+                            st.session_state.get("usuario") or "superadmin", f_act,
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO eventos_tracking (
+                                tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                                nota_interna, fecha_evento, creado_por, visible_cliente
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                tracking_limpio, cas_paquete, e_in, ubicacion_in.strip(),
+                                mensaje_evento, nota_interna_in.strip(), f_act,
+                                st.session_state.get("usuario") or "superadmin",
+                                bool(visible_cliente_in),
+                            ),
+                        )
+                    crear_notificacion_cliente(
+                        cas_paquete, f"Actualización de {tracking_limpio}", mensaje_evento,
+                        tipo="Seguimiento",
+                        prioridad="Urgente" if e_in in ESTADOS_LOGISTICOS_ESPECIALES else "Normal",
+                        tracking=tracking_limpio,
+                    )
                     cargar_paquetes_db.clear()
                     cargar_eventos_tracking_db.clear()
+                    cargar_trazabilidad_cliente_db.clear()
+                    cargar_trazabilidad_paquete_db.clear()
                     cargar_paquetes_admin.clear()
+                    buscar_paquetes_admin.clear()
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
@@ -14252,6 +14835,7 @@ elif es_rol_admin():
                 st.dataframe(
                     {
                         "Tracking": [p[0] for p in paquetes_admin],
+                        "Folio interno": [p[18] or "Pendiente" for p in paquetes_admin],
                         "Casillero": [formatear_casillero(p[1]) for p in paquetes_admin],
                         "Contenedor": [p[3] or "—" for p in paquetes_admin],
                         "Tipo": [p[7] or "—" for p in paquetes_admin],
@@ -14264,6 +14848,11 @@ elif es_rol_admin():
                         "ETA": [p[13] or "—" for p in paquetes_admin],
                         "Próximo paso": [p[14] or "—" for p in paquetes_admin],
                         "Incidencia": [p[15] or "—" for p in paquetes_admin],
+                        "Bultos": [f"{int(p[20] or 0)}/{int(p[19] or 1)}" for p in paquetes_admin],
+                        "Integridad": [p[24] or "Pendiente" for p in paquetes_admin],
+                        "Responsable": [p[21] or "—" for p in paquetes_admin],
+                        "Zona": [p[22] or "—" for p in paquetes_admin],
+                        "Verificación": [p[23] or "—" for p in paquetes_admin],
                         "Visible": ["Sí" if p[16] else "No" for p in paquetes_admin],
                     },
                     use_container_width=True,
@@ -14275,6 +14864,37 @@ elif es_rol_admin():
                 key="admin_tracking_auditoria",
             )
             eventos_admin = cargar_eventos_tracking_admin(tracking_auditoria)
+            trazabilidad_admin = cargar_trazabilidad_paquete_db(tracking_auditoria)
+            integridad_ok, secuencia_error, total_movimientos = verificar_integridad_trazabilidad(
+                tracking_auditoria
+            )
+            if integridad_ok:
+                st.info(
+                    f"Trazabilidad verificada: {total_movimientos} movimiento(s) encadenados sin alteraciones."
+                )
+            else:
+                st.error(
+                    f"La cadena de trazabilidad presenta una inconsistencia desde el movimiento #{secuencia_error}."
+                )
+            with st.expander(
+                f"Trazabilidad absoluta · {len(trazabilidad_admin)} movimiento(s)", expanded=False
+            ):
+                if trazabilidad_admin:
+                    st.dataframe(
+                        {
+                            "Secuencia": [int(t[0]) for t in trazabilidad_admin],
+                            "Fecha": [t[9] for t in trazabilidad_admin],
+                            "Movimiento": [t[1] for t in trazabilidad_admin],
+                            "Anterior": [t[2] or "—" for t in trazabilidad_admin],
+                            "Nuevo": [t[3] or "—" for t in trazabilidad_admin],
+                            "Operador": [t[10] for t in trazabilidad_admin],
+                            "Visible": ["Sí" if t[8] else "No" for t in trazabilidad_admin],
+                            "Huella": [str(t[12])[:12] for t in trazabilidad_admin],
+                        },
+                        use_container_width=True, hide_index=True,
+                    )
+                else:
+                    st.caption("Este paquete todavía no tiene movimientos de trazabilidad.")
             with st.expander(
                 f"Bitácora de {tracking_auditoria} · {len(eventos_admin)} evento(s)",
                 expanded=False,
