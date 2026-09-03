@@ -11380,13 +11380,71 @@ elif es_rol_admin():
                 background: #ffffff !important;
                 border-radius: 8px !important;
             }
+            .st-key-admin_management_mode {
+                max-width: 420px;
+                margin: 4px 0 12px;
+            }
+            .st-key-admin_management_mode [data-testid="stSegmentedControl"],
+            .st-key-admin_management_mode [role="radiogroup"] {
+                padding: 4px;
+                background: #e9eef5;
+                border-radius: 8px;
+            }
+            .st-key-admin_management_mode button,
+            .st-key-admin_management_mode label {
+                min-height: 38px !important;
+                border-radius: 6px !important;
+                font-size: .78rem !important;
+                font-weight: 800 !important;
+            }
             .st-key-admin_selector {
                 margin-top: 3px;
-                padding: 14px 16px 12px;
+                height: 100%;
+                padding: 14px 16px;
                 background: #ffffff;
                 border: 1px solid #dbe3ee;
                 border-radius: 9px;
                 box-shadow: 0 5px 14px rgba(15, 23, 42, .04);
+            }
+            .st-key-admin_selected_summary {
+                height: 100%;
+                padding: 15px 18px;
+                background: #f8fafc;
+                border: 1px solid #dbe3ee;
+                border-left: 3px solid #0757c8;
+                border-radius: 8px;
+            }
+            .admin-selected-kicker {
+                color: #64748b;
+                font-size: .65rem;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .admin-selected-name {
+                margin-top: 5px;
+                color: #0f172a;
+                font-size: 1rem;
+                font-weight: 850;
+            }
+            .admin-selected-meta {
+                margin-top: 5px;
+                color: #64748b;
+                font-size: .76rem;
+            }
+            .admin-selected-access {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 11px;
+            }
+            .admin-selected-access span {
+                padding: 4px 7px;
+                color: #334155;
+                background: #ffffff;
+                border: 1px solid #dbe3ee;
+                border-radius: 5px;
+                font-size: .66rem;
+                font-weight: 750;
             }
             .admin-editor-title {
                 margin: 3px 0 4px;
@@ -11506,11 +11564,15 @@ elif es_rol_admin():
                 font-weight: 650;
             }
             .st-key-admin_save_bar {
+                position: sticky;
+                bottom: 8px;
+                z-index: 20;
                 margin-top: 18px;
                 padding: 12px 14px;
                 background: #f8fafc;
-                border-top: 1px solid #dbe3ee;
-                border-radius: 0 0 8px 8px;
+                border: 1px solid #dbe3ee;
+                border-radius: 8px;
+                box-shadow: 0 8px 20px rgba(15, 23, 42, .10);
             }
             .st-key-admin_save_bar [data-testid="stCaptionContainer"] { color: #64748b; }
             .st-key-admin_perm_hubs,
@@ -11708,6 +11770,8 @@ elif es_rol_admin():
                     line-height: 1.15 !important;
                 }
                 .st-key-admin_user_workspace { padding: 12px; }
+                .st-key-admin_management_mode { max-width: none; }
+                .st-key-admin_selected_summary { margin-top: 8px; }
                 .admin-account-head,
                 .admin-title-row { align-items: flex-start; }
                 .admin-account-head { flex-direction: column; }
@@ -11837,20 +11901,69 @@ elif es_rol_admin():
         else:
             st.info("No hay cuentas para mostrar.")
 
+        with st.container(key="admin_management_mode"):
+            modo_gestion_usuario = st.segmented_control(
+                "Acción de usuarios",
+                ["Editar cuenta", "Crear cuenta"],
+                default="Editar cuenta" if filas else "Crear cuenta",
+                key="admin_user_mode",
+                label_visibility="collapsed",
+            )
+        if modo_gestion_usuario == "Crear cuenta":
+            st.markdown(
+                """
+                <style>
+                    .st-key-admin_selector_row,
+                    .st-key-admin_user_workspace,
+                    .st-key-admin_directory { display: none !important; }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                """
+                <style>.st-key-admin_create_area { display: none !important; }</style>
+                """,
+                unsafe_allow_html=True,
+            )
+
         etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
         if etiquetas:
-            with st.container(key="admin_selector"):
-                st.markdown(
-                    '<div class="admin-editor-title">Gestionar una cuenta</div>'
-                    '<div class="admin-editor-copy">Busque un usuario por casillero o nombre para revisar su configuración.</div>',
-                    unsafe_allow_html=True,
-                )
-                elegido = st.selectbox(
-                    "Cuenta a gestionar",
-                    etiquetas,
-                    key="admin_sel_user",
-                    help="Seleccione una cuenta para editar su perfil, permisos o credenciales.",
-                )
+            with st.container(key="admin_selector_row"):
+                selector_col, resumen_col = st.columns([0.34, 0.66], gap="medium")
+                with selector_col:
+                    with st.container(key="admin_selector"):
+                        st.markdown(
+                            '<div class="admin-editor-title">Seleccionar usuario</div>'
+                            '<div class="admin-editor-copy">Busque por nombre, casillero, DNI o correo.</div>',
+                            unsafe_allow_html=True,
+                        )
+                        busqueda_usuario = st.text_input(
+                            "Buscar usuario",
+                            key="admin_user_search",
+                            placeholder="Nombre, casillero, DNI o correo",
+                            label_visibility="collapsed",
+                        ).strip().lower()
+                        registros_filtrados = [
+                            (fila, etiqueta)
+                            for fila, etiqueta in zip(filas, etiquetas)
+                            if not busqueda_usuario
+                            or busqueda_usuario in " ".join(str(valor or "") for valor in fila[:6]).lower()
+                            or busqueda_usuario in etiqueta.lower()
+                        ]
+                        opciones_usuario = [etiqueta for _, etiqueta in registros_filtrados]
+                        if not opciones_usuario:
+                            st.caption("Sin coincidencias. Se mantiene el directorio completo.")
+                            opciones_usuario = etiquetas
+                        if st.session_state.get("admin_sel_user") not in opciones_usuario:
+                            st.session_state["admin_sel_user"] = opciones_usuario[0]
+                        elegido = st.selectbox(
+                            "Cuenta a gestionar",
+                            opciones_usuario,
+                            key="admin_sel_user",
+                            label_visibility="collapsed",
+                        )
             idx = etiquetas.index(elegido)
             u = filas[idx]
             uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = u
@@ -11860,6 +11973,26 @@ elif es_rol_admin():
             partes_usuario = [p for p in str(nom_u or "").split() if p]
             iniciales_usuario = "".join(p[0].upper() for p in partes_usuario[:2]) or "US"
             clase_estado_cuenta = "" if bool(act_u) else " is-inactive"
+            permisos_activos = sum(
+                bool(perm.get(clave))
+                for clave in (
+                    "hub_china", "hub_eeuu", "hub_honduras", "mod_cotizador",
+                    "mod_catalogo", "mod_cotizaciones", "mod_envios", "mod_fichas",
+                )
+            )
+            with resumen_col:
+                with st.container(key="admin_selected_summary"):
+                    st.markdown(
+                        '<div class="admin-selected-kicker">Cuenta seleccionada</div>'
+                        f'<div class="admin-selected-name">{html.escape(str(nom_u or "Sin nombre"))}</div>'
+                        f'<div class="admin-selected-meta">{html.escape(formatear_casillero(cas_u))} · '
+                        f'{html.escape(str(cor_u or "Sin correo"))}</div>'
+                        '<div class="admin-selected-access">'
+                        f'<span>{html.escape(str(rol_u or "cliente").title())}</span>'
+                        f'<span>{estado_cuenta}</span><span>{permisos_activos}/8 accesos activos</span>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
             with st.container(key="admin_user_workspace"):
                 st.markdown(
                     '<div class="admin-account-head">'
@@ -12101,7 +12234,10 @@ elif es_rol_admin():
                     )
 
         with st.container(key="admin_create_area"):
-            with st.expander("Crear una cuenta nueva"):
+            with st.expander(
+                "Crear una cuenta nueva",
+                expanded=(modo_gestion_usuario == "Crear cuenta"),
+            ):
                 st.markdown(
                     '<div class="admin-create-intro"><b>Alta de cliente</b><br>'
                     'Complete la identidad, contacto y acceso. El casillero se generará automáticamente desde el DNI.</div>',
