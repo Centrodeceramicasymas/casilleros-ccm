@@ -4905,22 +4905,12 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
         c = conn.cursor()
         c.execute(
             """
-            INSERT INTO permisos_usuario (
-                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
-                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(codigo_casillero) DO UPDATE SET
-                hub_china = excluded.hub_china,
-                hub_eeuu = excluded.hub_eeuu,
-                hub_honduras = excluded.hub_honduras,
-                mod_cotizador = excluded.mod_cotizador,
-                mod_catalogo = excluded.mod_catalogo,
-                mod_cotizaciones = excluded.mod_cotizaciones,
-                mod_envios = excluded.mod_envios,
-                mod_fichas = excluded.mod_fichas
+            UPDATE permisos_usuario SET
+                hub_china=?, hub_eeuu=?, hub_honduras=?, mod_cotizador=?,
+                mod_catalogo=?, mod_cotizaciones=?, mod_envios=?, mod_fichas=?
+            WHERE codigo_casillero=?
             """,
             (
-                cas,
                 bool(vals["hub_china"]),
                 bool(vals["hub_eeuu"]),
                 bool(vals["hub_honduras"]),
@@ -4929,8 +4919,24 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
                 bool(vals["mod_cotizaciones"]),
                 bool(vals["mod_envios"]),
                 bool(vals["mod_fichas"]),
+                cas,
             ),
         )
+        if c.rowcount == 0:
+            c.execute(
+                """
+                INSERT INTO permisos_usuario (
+                    codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                    mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cas, bool(vals["hub_china"]), bool(vals["hub_eeuu"]),
+                    bool(vals["hub_honduras"]), bool(vals["mod_cotizador"]),
+                    bool(vals["mod_catalogo"]), bool(vals["mod_cotizaciones"]),
+                    bool(vals["mod_envios"]), bool(vals["mod_fichas"]),
+                ),
+            )
     st.session_state.pop(f"_ccm_permisos_{cas}", None)
 
 
@@ -4948,10 +4954,15 @@ def abrir_permisos_todos_los_usuarios():
 
 
 def permisos_de(casillero=None):
-    cas = formatear_casillero(casillero or st.session_state.get("casillero", ""))
+    cas_sesion = formatear_casillero(st.session_state.get("casillero", ""))
+    cas = formatear_casillero(casillero or cas_sesion)
     base = permisos_denegados()
     if not cas:
         return base
+    # Los roles administrativos se autorizan por rol. Solo se consulta la tabla
+    # cuando el panel está revisando explícitamente los permisos de un cliente.
+    if es_rol_admin() and (casillero is None or cas == cas_sesion):
+        return permisos_default(st.session_state.get("rol"))
     clave_cache = f"_ccm_permisos_{cas}"
     en_cache = st.session_state.get(clave_cache)
     if isinstance(en_cache, dict):
@@ -4988,11 +4999,16 @@ def permisos_de(casillero=None):
         return permisos
     except Exception as exc:
         print(f"[CCM permisos] No se pudieron validar permisos para {cas}: {exc}", flush=True)
-        st.session_state["_ccm_error_permisos"] = True
+        if es_rol_admin():
+            st.session_state["_ccm_error_permisos_admin"] = True
+        else:
+            st.session_state["_ccm_error_permisos"] = True
         return base
 
 
 def usuario_puede_hub(hub_id, casillero=None):
+    if es_rol_admin() and casillero is None:
+        return True
     if PERMISOS_ABIERTOS_TEMPORAL:
         return True
     col = HUB_PERMISO_COL.get(hub_id)
@@ -5002,6 +5018,8 @@ def usuario_puede_hub(hub_id, casillero=None):
 
 
 def usuario_puede_modulo(mod_id, casillero=None):
+    if es_rol_admin() and casillero is None:
+        return True
     if PERMISOS_ABIERTOS_TEMPORAL:
         return True
     col = MODULO_PERMISO_COL.get(mod_id)
@@ -5012,36 +5030,37 @@ def usuario_puede_modulo(mod_id, casillero=None):
 
 def guardar_permisos(casillero, datos):
     cas = formatear_casillero(casillero)
+    valores = (
+        bool(datos.get("hub_china", 0)),
+        bool(datos.get("hub_eeuu", 0)),
+        bool(datos.get("hub_honduras", 0)),
+        bool(datos.get("mod_cotizador", 0)),
+        bool(datos.get("mod_catalogo", 0)),
+        bool(datos.get("mod_cotizaciones", 0)),
+        bool(datos.get("mod_envios", 0)),
+        bool(datos.get("mod_fichas", 0)),
+    )
     with get_db() as conn:
         c = conn.cursor()
         c.execute(
             """
-            INSERT INTO permisos_usuario (
-                codigo_casillero, hub_china, hub_eeuu, hub_honduras,
-                mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(codigo_casillero) DO UPDATE SET
-                hub_china = excluded.hub_china,
-                hub_eeuu = excluded.hub_eeuu,
-                hub_honduras = excluded.hub_honduras,
-                mod_cotizador = excluded.mod_cotizador,
-                mod_catalogo = excluded.mod_catalogo,
-                mod_cotizaciones = excluded.mod_cotizaciones,
-                mod_envios = excluded.mod_envios,
-                mod_fichas = excluded.mod_fichas
+            UPDATE permisos_usuario SET
+                hub_china=?, hub_eeuu=?, hub_honduras=?, mod_cotizador=?,
+                mod_catalogo=?, mod_cotizaciones=?, mod_envios=?, mod_fichas=?
+            WHERE codigo_casillero=?
             """,
-            (
-                cas,
-                bool(datos.get("hub_china", 0)),
-                bool(datos.get("hub_eeuu", 0)),
-                bool(datos.get("hub_honduras", 0)),
-                bool(datos.get("mod_cotizador", 0)),
-                bool(datos.get("mod_catalogo", 0)),
-                bool(datos.get("mod_cotizaciones", 0)),
-                bool(datos.get("mod_envios", 0)),
-                bool(datos.get("mod_fichas", 0)),
-            ),
+            (*valores, cas),
         )
+        if c.rowcount == 0:
+            c.execute(
+                """
+                INSERT INTO permisos_usuario (
+                    codigo_casillero, hub_china, hub_eeuu, hub_honduras,
+                    mod_cotizador, mod_catalogo, mod_cotizaciones, mod_envios, mod_fichas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (cas, *valores),
+            )
     st.session_state.pop(f"_ccm_permisos_{cas}", None)
 
 
@@ -11139,6 +11158,9 @@ elif st.session_state["rol"] == "cliente":
 # ---------------------------------------------------------
 elif es_rol_admin():
     root = es_superadmin()
+    # Una alerta de permisos del portal de clientes nunca debe sobrevivir al
+    # cambio hacia una sesión administrativa.
+    st.session_state.pop("_ccm_error_permisos", None)
     st.markdown(
         """
         <style>
@@ -11623,6 +11645,11 @@ elif es_rol_admin():
         ),
         unsafe_allow_html=True,
     )
+    if st.session_state.pop("_ccm_error_permisos_admin", False):
+        st.warning(
+            "No se pudieron cargar los permisos del cliente seleccionado. "
+            "No se aplicó ningún cambio."
+        )
 
     opciones_admin = ["Usuarios", "Paquetes"]
     if root:
