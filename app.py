@@ -4419,26 +4419,40 @@ def asegurar_esquema_paquetes_operativo():
     with get_db() as conn:
         cursor = conn.cursor()
         if USA_SUPABASE:
-            sentencias = (
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS tipo_contenedor TEXT DEFAULT '40 HC'",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS cotizacion_id BIGINT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS recibido_bodega BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS pago_confirmado BOOLEAN NOT NULL DEFAULT FALSE",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS costo_manipulacion_usd DOUBLE PRECISION NOT NULL DEFAULT 0",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS fecha_recepcion TEXT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS ubicacion_actual TEXT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS eta TEXT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS proximo_paso TEXT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS incidencia TEXT",
-                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
-            )
-            for sentencia in sentencias:
-                cursor.execute(sentencia)
             cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS eventos_tracking (
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'paquetes'
+                """
+            )
+            columnas_paquetes = {str(fila[0]) for fila in cursor.fetchall()}
+            faltantes_paquetes = {
+                "tipo_contenedor": "ALTER TABLE public.paquetes ADD COLUMN tipo_contenedor TEXT DEFAULT '40 HC'",
+                "cotizacion_id": "ALTER TABLE public.paquetes ADD COLUMN cotizacion_id BIGINT",
+                "recibido_bodega": "ALTER TABLE public.paquetes ADD COLUMN recibido_bodega BOOLEAN NOT NULL DEFAULT FALSE",
+                "pago_confirmado": "ALTER TABLE public.paquetes ADD COLUMN pago_confirmado BOOLEAN NOT NULL DEFAULT FALSE",
+                "costo_manipulacion_usd": "ALTER TABLE public.paquetes ADD COLUMN costo_manipulacion_usd DOUBLE PRECISION NOT NULL DEFAULT 0",
+                "fecha_recepcion": "ALTER TABLE public.paquetes ADD COLUMN fecha_recepcion TEXT",
+                "ubicacion_actual": "ALTER TABLE public.paquetes ADD COLUMN ubicacion_actual TEXT",
+                "eta": "ALTER TABLE public.paquetes ADD COLUMN eta TEXT",
+                "proximo_paso": "ALTER TABLE public.paquetes ADD COLUMN proximo_paso TEXT",
+                "incidencia": "ALTER TABLE public.paquetes ADD COLUMN incidencia TEXT",
+                "visible_cliente": "ALTER TABLE public.paquetes ADD COLUMN visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
+            }
+            for columna, sentencia in faltantes_paquetes.items():
+                if columna not in columnas_paquetes:
+                    cursor.execute(sentencia)
+            cursor.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'eventos_tracking'"
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    """
+                    CREATE TABLE public.eventos_tracking (
                     id BIGSERIAL PRIMARY KEY,
-                    tracking TEXT NOT NULL REFERENCES paquetes(tracking) ON DELETE CASCADE,
+                    tracking TEXT NOT NULL REFERENCES public.paquetes(tracking) ON DELETE CASCADE,
                     codigo_casillero TEXT NOT NULL,
                     estado TEXT NOT NULL,
                     ubicacion TEXT,
@@ -4448,24 +4462,33 @@ def asegurar_esquema_paquetes_operativo():
                     creado_por TEXT,
                     visible_cliente BOOLEAN NOT NULL DEFAULT TRUE
                 )
-                """
-            )
+                    """
+                )
             # CREATE TABLE IF NOT EXISTS no repara una tabla creada parcialmente.
             # Cada columna se verifica también de forma individual.
-            sentencias_eventos = (
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS id BIGSERIAL",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS tracking TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS codigo_casillero TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS estado TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS ubicacion TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS mensaje_cliente TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS nota_interna TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS fecha_evento TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS creado_por TEXT",
-                "ALTER TABLE eventos_tracking ADD COLUMN IF NOT EXISTS visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'eventos_tracking'
+                """
             )
-            for sentencia in sentencias_eventos:
-                cursor.execute(sentencia)
+            columnas_eventos = {str(fila[0]) for fila in cursor.fetchall()}
+            faltantes_eventos = {
+                "id": "ALTER TABLE public.eventos_tracking ADD COLUMN id BIGSERIAL",
+                "tracking": "ALTER TABLE public.eventos_tracking ADD COLUMN tracking TEXT",
+                "codigo_casillero": "ALTER TABLE public.eventos_tracking ADD COLUMN codigo_casillero TEXT",
+                "estado": "ALTER TABLE public.eventos_tracking ADD COLUMN estado TEXT",
+                "ubicacion": "ALTER TABLE public.eventos_tracking ADD COLUMN ubicacion TEXT",
+                "mensaje_cliente": "ALTER TABLE public.eventos_tracking ADD COLUMN mensaje_cliente TEXT",
+                "nota_interna": "ALTER TABLE public.eventos_tracking ADD COLUMN nota_interna TEXT",
+                "fecha_evento": "ALTER TABLE public.eventos_tracking ADD COLUMN fecha_evento TEXT",
+                "creado_por": "ALTER TABLE public.eventos_tracking ADD COLUMN creado_por TEXT",
+                "visible_cliente": "ALTER TABLE public.eventos_tracking ADD COLUMN visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
+            }
+            for columna, sentencia in faltantes_eventos.items():
+                if columna not in columnas_eventos:
+                    cursor.execute(sentencia)
         else:
             cursor.execute("PRAGMA table_info(paquetes)")
             columnas = {str(fila[1]) for fila in cursor.fetchall()}
