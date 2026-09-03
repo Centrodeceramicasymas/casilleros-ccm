@@ -1074,12 +1074,61 @@ VIGENCIA_COTIZACION = timedelta(hours=VIGENCIA_COTIZACION_HORAS)
 VIGENCIA_COTIZACION_CONFIRMADA_HORAS = 48
 VIGENCIA_COTIZACION_CONFIRMADA = timedelta(hours=VIGENCIA_COTIZACION_CONFIRMADA_HORAS)
 HISTORIAL_COTIZACIONES_MAX = 500
+ESTADOS_LOGISTICOS = (
+    "En Bodega China",
+    "En Inspección",
+    "En Consolidación",
+    "Asignado a Contenedor",
+    "En Travesía Marítima",
+    "Arribó a Puerto Honduras",
+    "En Desaduanaje",
+    "Disponible en Bodega Central",
+    "Listo para Retirar",
+    "Entregado",
+)
+ESTADOS_LOGISTICOS_ESPECIALES = ("Incidencia", "Retenido")
 FORMATOS_FECHA_COTIZACION = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S.%f",
     "%d/%m/%Y %I:%M:%S %p",
     "%d/%m/%Y %H:%M:%S",
 )
+
+
+def indice_estado_logistico(estado):
+    try:
+        return ESTADOS_LOGISTICOS.index(str(estado or ""))
+    except ValueError:
+        return -1
+
+
+def porcentaje_estado_logistico(estado):
+    indice = indice_estado_logistico(estado)
+    if indice < 0:
+        return 0
+    return round((indice / max(1, len(ESTADOS_LOGISTICOS) - 1)) * 100)
+
+
+def proximo_estado_logistico(estado):
+    indice = indice_estado_logistico(estado)
+    if 0 <= indice < len(ESTADOS_LOGISTICOS) - 1:
+        return ESTADOS_LOGISTICOS[indice + 1]
+    if indice == len(ESTADOS_LOGISTICOS) - 1:
+        return "Proceso completado"
+    return "Revisión del operador"
+
+
+def transicion_logistica_valida(estado_anterior, estado_nuevo):
+    """Impide retrocesos accidentales; una incidencia puede abrirse o resolverse."""
+    anterior = str(estado_anterior or "").strip()
+    nuevo = str(estado_nuevo or "").strip()
+    if not anterior or anterior == nuevo:
+        return True
+    if anterior in ESTADOS_LOGISTICOS_ESPECIALES or nuevo in ESTADOS_LOGISTICOS_ESPECIALES:
+        return True
+    indice_anterior = indice_estado_logistico(anterior)
+    indice_nuevo = indice_estado_logistico(nuevo)
+    return indice_anterior < 0 or indice_nuevo >= indice_anterior
 
 
 def obtener_tiempo_honduras():
@@ -1344,9 +1393,10 @@ VISTAS_MODULO = set(MODULOS_POR_ID.keys())
 MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo", "Mis Cotizaciones")
 MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
 ROLES_ADMIN = ("admin", "superadmin")
-DNI_SUPERADMIN = "1301199800990"
-NOMBRE_SUPERADMIN = "Domingo Heriberto Ardon"
-CORREO_SUPERADMIN = "heribertoardon1998@gmail.com"
+DNI_SUPERADMIN = str(os.environ.get("SUPERADMIN_DNI") or "").strip()
+NOMBRE_SUPERADMIN = str(os.environ.get("SUPERADMIN_NAME") or "Superusuario CCM").strip()
+CORREO_SUPERADMIN = str(os.environ.get("SUPERADMIN_EMAIL") or "").strip().lower()
+TELEFONO_SUPERADMIN = str(os.environ.get("SUPERADMIN_PHONE") or "").strip()
 
 
 def leer_clave_inicial_superadmin():
@@ -1387,10 +1437,9 @@ def es_cotizacion_confirmada(valor):
 
 def cotizacion_visible_historial(fecha_raw, confirmada, ahora=None, fecha_confirmacion=None):
     if es_cotizacion_confirmada(confirmada):
-        # Las filas históricas anteriores a esta regla no tenían fecha de
-        # confirmación; su fecha de emisión es el respaldo seguro para no
-        # mantenerlas visibles indefinidamente.
-        return cotizacion_confirmada_vigente(fecha_confirmacion or fecha_raw, ahora)
+        # La vigencia comercial puede terminar, pero el comprobante confirmado
+        # debe permanecer visible como parte del historial del cliente.
+        return True
     return cotizacion_vigente(fecha_raw, ahora)
 
 
@@ -1700,10 +1749,31 @@ def cargar_paquetes_db(casillero):
             """
             SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion,
                    cotizacion_id, tipo_contenedor, recibido_bodega, pago_confirmado,
-                   costo_manipulacion_usd, fecha_recepcion
+                   costo_manipulacion_usd, fecha_recepcion, ubicacion_actual, eta,
+                   proximo_paso, incidencia, visible_cliente
             FROM paquetes
-            WHERE codigo_casillero = ?
+            WHERE codigo_casillero = ? AND COALESCE(visible_cliente, TRUE) = TRUE
             ORDER BY fecha_actualizacion DESC
+            LIMIT 500
+            """,
+            (cas,),
+        ).fetchall()
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cargar_eventos_tracking_db(casillero):
+    """Eventos visibles del casillero para construir una línea de tiempo real."""
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, estado, ubicacion, mensaje_cliente, fecha_evento, creado_por
+            FROM eventos_tracking
+            WHERE codigo_casillero = ? AND COALESCE(visible_cliente, TRUE) = TRUE
+            ORDER BY fecha_evento DESC, id DESC
+            LIMIT 1000
             """,
             (cas,),
         ).fetchall()
@@ -1731,11 +1801,47 @@ def cargar_paquetes_admin():
             """
             SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
                    fecha_actualizacion, cotizacion_id, tipo_contenedor,
-                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion
+                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
+                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente
             FROM paquetes
             ORDER BY fecha_actualizacion DESC
             LIMIT 500
             """
+        ).fetchall()
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cargar_metricas_paquetes_admin():
+    """Métricas sobre toda la tabla, independientes del límite del inventario."""
+    with get_db() as conn:
+        fila = conn.execute(
+            """
+            SELECT COUNT(*),
+                   SUM(CASE WHEN recibido_bodega = TRUE THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN estado = 'En Travesía Marítima' THEN 1 ELSE 0 END),
+                   COALESCE(SUM(costo_manipulacion_usd), 0)
+            FROM paquetes
+            """
+        ).fetchone()
+    return tuple(fila or (0, 0, 0, 0))
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_eventos_tracking_admin(tracking):
+    codigo = str(tracking or "").strip()
+    if not codigo:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT fecha_evento, estado, ubicacion, mensaje_cliente, nota_interna,
+                   creado_por, visible_cliente
+            FROM eventos_tracking
+            WHERE tracking = ?
+            ORDER BY fecha_evento DESC, id DESC
+            LIMIT 200
+            """,
+            (codigo,),
         ).fetchall()
 
 
@@ -1746,7 +1852,7 @@ def cargar_cotizaciones_confirmadas_admin():
             """
             SELECT id, codigo_casillero, total_usd, COALESCE(fecha_creacion, fecha)
             FROM cotizaciones
-            WHERE IFNULL(confirmada, 0) = 1
+            WHERE IFNULL(confirmada, 0) = 1 AND COALESCE(estado, 'confirmada') <> 'vencida'
             ORDER BY fecha_creacion DESC, id DESC
             LIMIT 500
             """
@@ -1893,6 +1999,8 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     if not cas:
         st.session_state["ultimo_error_confirmacion"] = "Casillero inválido."
         return False
+    variantes = coincidencias_casillero(cas)
+    marcadores = ",".join("?" * len(variantes))
     _, ahora = estampa_tiempo_honduras()
     actualizado = False
     fecha_confirmacion = None
@@ -1917,21 +2025,22 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
             # fila antes de actualizar evita que variaciones CCM-/sin prefijo
             # impidan confirmar una tarifa que ya fue mostrada al cliente.
             cur.execute(
-                "SELECT codigo_casillero, IFNULL(confirmada, 0), fecha_confirmacion "
-                "FROM cotizaciones WHERE id = ?",
-                (cid,),
+                f"SELECT codigo_casillero, IFNULL(confirmada, 0), fecha_confirmacion "
+                f"FROM cotizaciones WHERE id = ? AND codigo_casillero IN ({marcadores})",
+                (cid, *variantes),
             )
             fila = cur.fetchone()
             if fila is None:
-                raise sqlite3.OperationalError(f"No existe la cotización con id={cid}")
+                raise sqlite3.OperationalError("La cotización no existe o no pertenece a este casillero.")
             codigo_guardado, ya_confirmada, fecha_guardada = fila
             cur.execute(
-                """
+                f"""
                 UPDATE cotizaciones
-                SET confirmada = TRUE, fecha_confirmacion = ?
-                WHERE id = ? AND COALESCE(confirmada, FALSE) = FALSE
+                SET confirmada = TRUE, fecha_confirmacion = ?, estado = 'confirmada'
+                WHERE id = ? AND codigo_casillero IN ({marcadores})
+                  AND COALESCE(confirmada, FALSE) = FALSE
                 """,
-                (ahora, cid),
+                (ahora, cid, *variantes),
             )
             conn.commit()
             actualizado = cur.rowcount > 0
@@ -1947,19 +2056,20 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
                 )
     except sqlite3.Error as exc:
         detalle = f"Error SQLite al confirmar CCM-COT-{cid:05d}: {exc}"
-        print(detalle)
-        st.session_state["ultimo_error_confirmacion"] = detalle
+        print(detalle, flush=True)
+        st.session_state["ultimo_error_confirmacion"] = "La base de datos no pudo completar la operación."
         actualizado = False
     except Exception as exc:
         detalle = f"Error al confirmar CCM-COT-{cid:05d}: {exc}"
-        print(detalle)
-        st.session_state["ultimo_error_confirmacion"] = detalle
+        print(detalle, flush=True)
+        st.session_state["ultimo_error_confirmacion"] = "Ocurrió un error inesperado al confirmar."
         actualizado = False
     finally:
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
+        cargar_cotizaciones_confirmadas_admin.clear()
         cargar_resumen_operativo_admin.clear()
     if actualizado:
         st.session_state.pop("ultimo_error_confirmacion", None)
@@ -2037,6 +2147,20 @@ def emitir_tarifa_desde_snapshot():
         return
     ahora_emision, f_hoy_sql = estampa_tiempo_honduras()
     f_hoy_doc = ahora_emision.strftime("%d/%m/%Y %I:%M:%S %p")
+    snapshot_tarifa = json.dumps(
+        {
+            "tipo_carga": snap.get("tipo_carga"),
+            "dimensiones_cm": [snap.get("al"), snap.get("an"), snap.get("la")],
+            "peso_lb": snap.get("peso_lb"),
+            "volumen_m3": snap.get("vol_m3"),
+            "total_usd": snap.get("total_usd"),
+            "detalle": snap.get("detalle_tarifa"),
+            "destino": snap.get("destino"),
+            "fecha": f_hoy_sql,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     id_generado = None
     try:
         with get_db() as conn:
@@ -2045,9 +2169,10 @@ def emitir_tarifa_desde_snapshot():
                 """
                 INSERT INTO cotizaciones (
                     codigo_casillero, alto_cm, ancho_cm, largo_cm, peso_lb, volumen_m3, volumen_ft3,
-                    total_usd, fecha, confirmada, fecha_creacion
+                    total_usd, fecha, confirmada, fecha_creacion, estado, tipo_carga,
+                    detalle_tarifa, destino_entrega, tarifa_snapshot_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?, 'emitida', ?, ?, ?, ?)
                 """,
                 (
                     casillero,
@@ -2060,6 +2185,10 @@ def emitir_tarifa_desde_snapshot():
                     snap.get("total_usd"),
                     f_hoy_sql,
                     f_hoy_sql,
+                    snap.get("tipo_carga"),
+                    snap.get("detalle_tarifa"),
+                    snap.get("destino"),
+                    snapshot_tarifa,
                 ),
             )
             id_generado = cur.lastrowid
@@ -2068,11 +2197,17 @@ def emitir_tarifa_desde_snapshot():
         cargar_confirmaciones_db.clear()
         cargar_resumen_operativo_admin.clear()
     except Exception as exc:
-        id_generado = None
-        st.session_state["_ccm_emit_error"] = str(exc)
+        registrar_error_datos(exc, "Emisión de cotización")
+        st.session_state["_ccm_emit_error"] = (
+            "No fue posible guardar la cotización. No se generó ningún documento; "
+            "intente nuevamente."
+        )
+        return
     if not id_generado:
-        id_generado = int(st.session_state.get("_seq_cot") or 900000) + 1
-        st.session_state["_seq_cot"] = id_generado
+        st.session_state["_ccm_emit_error"] = (
+            "La base de datos no devolvió el número de cotización. Intente nuevamente."
+        )
+        return
     registro = {
         "id": int(id_generado),
         "codigo_casillero": casillero,
@@ -2121,6 +2256,7 @@ def emitir_tarifa_desde_snapshot():
 
 
 def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
+    """Marca cotizaciones vencidas sin destruir su historial operativo."""
     ahora = ahora or obtener_tiempo_honduras()
     if USA_SUPABASE:
         limite_pendiente = (ahora - VIGENCIA_COTIZACION).strftime("%Y-%m-%d %H:%M:%S")
@@ -2139,8 +2275,10 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
                 return 0
             cur.execute(
                 f"""
-                DELETE FROM cotizaciones
-                WHERE (
+                UPDATE cotizaciones
+                SET estado = 'vencida'
+                WHERE COALESCE(estado, '') <> 'vencida'
+                AND ((
                     COALESCE(confirmada, FALSE) = FALSE
                     AND {expresion_pendiente} ~ ?
                     AND {expresion_pendiente} < ?
@@ -2148,7 +2286,7 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
                     COALESCE(confirmada, FALSE) = TRUE
                     AND {expresion_confirmada} ~ ?
                     AND {expresion_confirmada} < ?
-                )
+                ))
                 """,
                 (patron_iso, limite_pendiente, patron_iso, limite_confirmada),
             )
@@ -2157,29 +2295,35 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
         if eliminadas:
             cargar_cotizaciones_db.clear()
             cargar_confirmaciones_db.clear()
+            cargar_cotizaciones_confirmadas_admin.clear()
             cargar_resumen_operativo_admin.clear()
         return eliminadas
     with get_db() as conn:
         cur = conn.cursor()
         try:
             cur.execute(
-                "SELECT id, fecha, fecha_confirmacion, IFNULL(confirmada, 0) FROM cotizaciones"
+                "SELECT id, fecha, fecha_confirmacion, IFNULL(confirmada, 0), estado FROM cotizaciones"
             )
         except sqlite3.OperationalError:
             return 0
-        ids_borrar = []
-        for cid, fecha, fecha_confirmacion, confirmada in cur.fetchall():
+        ids_vencidos = []
+        for cid, fecha, fecha_confirmacion, confirmada, estado in cur.fetchall():
+            if str(estado or "") == "vencida":
+                continue
             if es_cotizacion_confirmada(confirmada):
                 vencida = not cotizacion_confirmada_vigente(fecha_confirmacion or fecha, ahora)
             else:
                 vencida = not cotizacion_vigente(fecha, ahora)
             if vencida:
-                ids_borrar.append(cid)
-        if not ids_borrar:
+                ids_vencidos.append(cid)
+        if not ids_vencidos:
             return 0
-        cur.executemany("DELETE FROM cotizaciones WHERE id = ?", [(cid,) for cid in ids_borrar])
+        cur.executemany(
+            "UPDATE cotizaciones SET estado = 'vencida' WHERE id = ? AND estado <> 'vencida'",
+            [(cid,) for cid in ids_vencidos],
+        )
         conn.commit()
-        return len(ids_borrar)
+        return len(ids_vencidos)
 
 
 @st.cache_resource(show_spinner=False)
@@ -3800,7 +3944,8 @@ def estado_intentos_acceso():
 
 
 def clave_intento_acceso(identificador):
-    normalizado = normalizar_correo(identificador)
+    bruto = str(identificador or "").strip()
+    normalizado = normalizar_correo(bruto) if "@" in bruto else formatear_casillero(bruto).upper()
     return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
 
 
@@ -3857,6 +4002,7 @@ def get_db():
     # Evita que una escritura breve de otro ciclo de Streamlit haga que el
     # botón parezca no responder; SQLite espera hasta 30 segundos por el lock.
     conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -3954,7 +4100,12 @@ def init_db():
                 fecha TEXT NOT NULL,
                 confirmada INTEGER NOT NULL DEFAULT 0,
                 fecha_confirmacion TEXT,
-                fecha_creacion TEXT
+                fecha_creacion TEXT,
+                estado TEXT NOT NULL DEFAULT 'emitida',
+                tipo_carga TEXT,
+                detalle_tarifa TEXT,
+                destino_entrega TEXT,
+                tarifa_snapshot_json TEXT
             )
             """
         )
@@ -3966,6 +4117,11 @@ def init_db():
             c.execute("ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT")
         if "fecha_creacion" not in columnas_cot:
             c.execute("ALTER TABLE cotizaciones ADD COLUMN fecha_creacion TEXT")
+        if "estado" not in columnas_cot:
+            c.execute("ALTER TABLE cotizaciones ADD COLUMN estado TEXT NOT NULL DEFAULT 'emitida'")
+        for columna_cot in ("tipo_carga", "detalle_tarifa", "destino_entrega", "tarifa_snapshot_json"):
+            if columna_cot not in columnas_cot:
+                c.execute(f"ALTER TABLE cotizaciones ADD COLUMN {columna_cot} TEXT")
         c.execute(
             """
             UPDATE cotizaciones
@@ -3987,8 +4143,31 @@ def init_db():
                 pago_confirmado INTEGER NOT NULL DEFAULT 0,
                 costo_manipulacion_usd REAL NOT NULL DEFAULT 0,
                 fecha_recepcion TEXT,
+                ubicacion_actual TEXT,
+                eta TEXT,
+                proximo_paso TEXT,
+                incidencia TEXT,
+                visible_cliente INTEGER NOT NULL DEFAULT 1,
                 estado TEXT NOT NULL,
-                fecha_actualizacion TEXT NOT NULL
+                fecha_actualizacion TEXT NOT NULL,
+                FOREIGN KEY(cotizacion_id) REFERENCES cotizaciones(id) ON DELETE RESTRICT
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS eventos_tracking (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tracking TEXT NOT NULL,
+                codigo_casillero TEXT NOT NULL,
+                estado TEXT NOT NULL,
+                ubicacion TEXT,
+                mensaje_cliente TEXT,
+                nota_interna TEXT,
+                fecha_evento TEXT NOT NULL,
+                creado_por TEXT,
+                visible_cliente INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY(tracking) REFERENCES paquetes(tracking) ON DELETE CASCADE
             )
             """
         )
@@ -4159,6 +4338,17 @@ def asegurar_esquema_cotizaciones():
                 cursor.execute(
                     "ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT"
                 )
+            if "estado" not in columnas:
+                cursor.execute(
+                    "ALTER TABLE cotizaciones ADD COLUMN estado TEXT NOT NULL DEFAULT 'emitida'"
+                )
+            for columna_texto in (
+                "tipo_carga", "detalle_tarifa", "destino_entrega", "tarifa_snapshot_json"
+            ):
+                if columna_texto not in columnas:
+                    cursor.execute(
+                        f"ALTER TABLE cotizaciones ADD COLUMN {columna_texto} TEXT"
+                    )
             if "fecha_creacion" not in columnas:
                 tipo_fecha = columnas.get("fecha", "text")
                 tipos_permitidos = {
@@ -4179,6 +4369,17 @@ def asegurar_esquema_cotizaciones():
                         WHERE fecha_creacion IS NULL
                         """
                     )
+            cursor.execute(
+                """
+                UPDATE cotizaciones
+                SET estado = CASE
+                    WHEN COALESCE(confirmada, FALSE) = TRUE THEN 'confirmada'
+                    ELSE 'emitida'
+                END
+                WHERE estado IS NULL OR BTRIM(estado) = ''
+                   OR (COALESCE(confirmada, FALSE) = TRUE AND estado = 'emitida')
+                """
+            )
         else:
             cursor.execute("PRAGMA table_info(cotizaciones)")
             columnas = {str(fila[1]) for fila in cursor.fetchall()}
@@ -4186,6 +4387,11 @@ def asegurar_esquema_cotizaciones():
                 "confirmada": "ALTER TABLE cotizaciones ADD COLUMN confirmada INTEGER NOT NULL DEFAULT 0",
                 "fecha_confirmacion": "ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT",
                 "fecha_creacion": "ALTER TABLE cotizaciones ADD COLUMN fecha_creacion TEXT",
+                "estado": "ALTER TABLE cotizaciones ADD COLUMN estado TEXT NOT NULL DEFAULT 'emitida'",
+                "tipo_carga": "ALTER TABLE cotizaciones ADD COLUMN tipo_carga TEXT",
+                "detalle_tarifa": "ALTER TABLE cotizaciones ADD COLUMN detalle_tarifa TEXT",
+                "destino_entrega": "ALTER TABLE cotizaciones ADD COLUMN destino_entrega TEXT",
+                "tarifa_snapshot_json": "ALTER TABLE cotizaciones ADD COLUMN tarifa_snapshot_json TEXT",
             }
             for columna, sentencia in faltantes.items():
                 if columna not in columnas:
@@ -4195,6 +4401,14 @@ def asegurar_esquema_cotizaciones():
                 UPDATE cotizaciones
                 SET fecha_creacion = fecha
                 WHERE fecha_creacion IS NULL OR TRIM(fecha_creacion) = ''
+                """
+            )
+            cursor.execute(
+                """
+                UPDATE cotizaciones
+                SET estado = CASE WHEN IFNULL(confirmada, 0) = 1 THEN 'confirmada' ELSE 'emitida' END
+                WHERE estado IS NULL OR TRIM(estado) = ''
+                   OR (IFNULL(confirmada, 0) = 1 AND estado = 'emitida')
                 """
             )
         conn.commit()
@@ -4212,9 +4426,30 @@ def asegurar_esquema_paquetes_operativo():
                 "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS pago_confirmado BOOLEAN NOT NULL DEFAULT FALSE",
                 "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS costo_manipulacion_usd DOUBLE PRECISION NOT NULL DEFAULT 0",
                 "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS fecha_recepcion TEXT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS ubicacion_actual TEXT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS eta TEXT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS proximo_paso TEXT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS incidencia TEXT",
+                "ALTER TABLE paquetes ADD COLUMN IF NOT EXISTS visible_cliente BOOLEAN NOT NULL DEFAULT TRUE",
             )
             for sentencia in sentencias:
                 cursor.execute(sentencia)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS eventos_tracking (
+                    id BIGSERIAL PRIMARY KEY,
+                    tracking TEXT NOT NULL REFERENCES paquetes(tracking) ON DELETE CASCADE,
+                    codigo_casillero TEXT NOT NULL,
+                    estado TEXT NOT NULL,
+                    ubicacion TEXT,
+                    mensaje_cliente TEXT,
+                    nota_interna TEXT,
+                    fecha_evento TEXT NOT NULL,
+                    creado_por TEXT,
+                    visible_cliente BOOLEAN NOT NULL DEFAULT TRUE
+                )
+                """
+            )
         else:
             cursor.execute("PRAGMA table_info(paquetes)")
             columnas = {str(fila[1]) for fila in cursor.fetchall()}
@@ -4225,12 +4460,53 @@ def asegurar_esquema_paquetes_operativo():
                 "pago_confirmado": "ALTER TABLE paquetes ADD COLUMN pago_confirmado INTEGER NOT NULL DEFAULT 0",
                 "costo_manipulacion_usd": "ALTER TABLE paquetes ADD COLUMN costo_manipulacion_usd REAL NOT NULL DEFAULT 0",
                 "fecha_recepcion": "ALTER TABLE paquetes ADD COLUMN fecha_recepcion TEXT",
+                "ubicacion_actual": "ALTER TABLE paquetes ADD COLUMN ubicacion_actual TEXT",
+                "eta": "ALTER TABLE paquetes ADD COLUMN eta TEXT",
+                "proximo_paso": "ALTER TABLE paquetes ADD COLUMN proximo_paso TEXT",
+                "incidencia": "ALTER TABLE paquetes ADD COLUMN incidencia TEXT",
+                "visible_cliente": "ALTER TABLE paquetes ADD COLUMN visible_cliente INTEGER NOT NULL DEFAULT 1",
             }
             for columna, sentencia in faltantes.items():
                 if columna not in columnas:
                     cursor.execute(sentencia)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS eventos_tracking (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tracking TEXT NOT NULL,
+                    codigo_casillero TEXT NOT NULL,
+                    estado TEXT NOT NULL,
+                    ubicacion TEXT,
+                    mensaje_cliente TEXT,
+                    nota_interna TEXT,
+                    fecha_evento TEXT NOT NULL,
+                    creado_por TEXT,
+                    visible_cliente INTEGER NOT NULL DEFAULT 1,
+                    FOREIGN KEY(tracking) REFERENCES paquetes(tracking) ON DELETE CASCADE
+                )
+                """
+            )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_paquetes_cotizacion ON paquetes(cotizacion_id)"
+        )
+        cursor.execute(
+            """
+            INSERT INTO eventos_tracking (
+                tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                nota_interna, fecha_evento, creado_por, visible_cliente
+            )
+            SELECT p.tracking, p.codigo_casillero, p.estado, p.ubicacion_actual,
+                   'Estado inicial migrado al nuevo seguimiento.', '',
+                   p.fecha_actualizacion, 'migración', p.visible_cliente
+            FROM paquetes p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM eventos_tracking e WHERE e.tracking = p.tracking
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_eventos_tracking_cliente "
+            "ON eventos_tracking(codigo_casillero, tracking, fecha_evento DESC, id DESC)"
         )
         conn.commit()
 
@@ -4701,7 +4977,10 @@ def guardar_permisos(casillero, datos):
 
 
 def _migrar_casillero_tablas(conn, origen, destino):
-    for tabla in ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo", "permisos_usuario"):
+    for tabla in (
+        "cotizaciones", "paquetes", "eventos_tracking", "direcciones_entrega",
+        "carrito_catalogo", "permisos_usuario",
+    ):
         try:
             conn.execute(
                 f"UPDATE {tabla} SET codigo_casillero = ? WHERE codigo_casillero = ?",
@@ -4715,7 +4994,7 @@ def _migrar_casillero_tablas(conn, origen, destino):
 def asegurar_superadmin():
     # Solo puede crear la cuenta raíz cuando un administrador configuró una
     # clave de bootstrap privada. Nunca sobreescribe la contraseña existente.
-    if not CLAVE_INICIAL_SUPERADMIN:
+    if not (CLAVE_INICIAL_SUPERADMIN and DNI_SUPERADMIN and CORREO_SUPERADMIN):
         return
     cas_root = generar_codigo_casillero_dni(DNI_SUPERADMIN)
     hash_root = hash_pwd(CLAVE_INICIAL_SUPERADMIN)
@@ -4768,7 +5047,7 @@ def asegurar_superadmin():
                     NOMBRE_SUPERADMIN,
                     DNI_SUPERADMIN,
                     CORREO_SUPERADMIN,
-                    "+504 9577-1099",
+                    TELEFONO_SUPERADMIN or "No configurado",
                     "Intibucá",
                     "San Juan",
                     "Oficina Central CCM",
@@ -10490,6 +10769,10 @@ elif st.session_state["rol"] == "cliente":
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
             paquetes = cargar_paquetes_db(casillero)
+            eventos_tracking = cargar_eventos_tracking_db(casillero)
+            eventos_por_tracking = {}
+            for evento in eventos_tracking:
+                eventos_por_tracking.setdefault(str(evento[0] or ""), []).append(evento)
             cotizaciones_habilitadas = cotizaciones_habilitadas_por_operacion(paquetes)
             paquetes_en_transito = sum(1 for p in paquetes if str(p[3] or "") == "En Travesía Marítima")
             paquetes_recibidos = sum(1 for p in paquetes if bool(p[7]))
@@ -10505,9 +10788,21 @@ elif st.session_state["rol"] == "cliente":
                 em3.metric("Recibidos", paquetes_recibidos)
                 em4.metric("Docs. habilitados", len(cotizaciones_habilitadas))
 
-            if paquetes:
+            filtro_tracking = st.text_input(
+                "Buscar por tracking, descripción o contenedor",
+                key="filtro_tracking_cliente",
+                placeholder="Ej. CN-84920317",
+            ).strip().lower()
+            paquetes_mostrar = paquetes
+            if filtro_tracking:
+                paquetes_mostrar = [
+                    p for p in paquetes
+                    if filtro_tracking in " ".join(str(v or "") for v in p[:7]).lower()
+                ]
+
+            if paquetes_mostrar:
                 st.markdown('<div class="envios-section-label">Seguimiento de paquetes</div>', unsafe_allow_html=True)
-                for p in paquetes:
+                for p in paquetes_mostrar:
                     tracking_p = html.escape(str(p[0] or "Sin tracking"))
                     descripcion_p = html.escape(str(p[1] or "Carga registrada"))
                     contenedor_p = html.escape(str(p[2] or "Pendiente de asignar"))
@@ -10518,6 +10813,11 @@ elif st.session_state["rol"] == "cliente":
                     recibido_p = bool(p[7])
                     pagado_p = bool(p[8])
                     fecha_recepcion_p = html.escape(str(p[10] or ""))
+                    ubicacion_p = html.escape(str(p[11] or "Ubicación pendiente"))
+                    eta_p = html.escape(str(p[12] or "Por confirmar"))
+                    proximo_paso_p = html.escape(str(p[13] or proximo_estado_logistico(p[3])))
+                    incidencia_p = html.escape(str(p[14] or ""))
+                    progreso_p = porcentaje_estado_logistico(p[3])
                     flag_recepcion = "ok" if recibido_p else ""
                     flag_pago = "ok" if pagado_p else ""
                     st.markdown(
@@ -10526,19 +10826,46 @@ elif st.session_state["rol"] == "cliente":
                         f'<span class="shipment-status">{estado_p}</span></div>'
                         f'<div class="shipment-description">{descripcion_p}</div>'
                         f'<div class="shipment-meta"><span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
+                        f'<span>📍 {ubicacion_p}</span><span>ETA: {eta_p}</span>'
                         f'<span>Actualizado: {actualizado_p}</span>'
                         + (f'<span>Cotización: CCM-COT-{cotizacion_p:05d}</span>' if cotizacion_p else '')
                         + (f'<span>Recepción: {fecha_recepcion_p}</span>' if fecha_recepcion_p else '')
                         + f'</div><div class="shipment-flags">'
                         f'<span class="shipment-flag {flag_recepcion}">{"✓ Recibido en China" if recibido_p else "Pendiente de recepción"}</span>'
                         f'<span class="shipment-flag {flag_pago}">{"✓ Pago confirmado" if pagado_p else "Pago pendiente"}</span>'
-                        f'</div></article>',
+                        f'</div>'
+                        f'<div style="margin-top:12px;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
+                        f'<div style="width:{progreso_p}%;height:100%;background:#157347;"></div></div>'
+                        f'<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-size:.76rem;color:#475569;">'
+                        f'<span>Progreso {progreso_p}%</span><span>Próximo paso: <b>{proximo_paso_p}</b></span></div>'
+                        + (f'<div style="margin-top:10px;padding:9px 11px;background:#fff7ed;border-left:3px solid #ea580c;color:#9a3412;font-size:.8rem;"><b>Atención:</b> {incidencia_p}</div>' if incidencia_p else '')
+                        + f'</article>',
                         unsafe_allow_html=True,
                     )
+                    eventos_paquete = eventos_por_tracking.get(str(p[0] or ""), [])
+                    with st.expander(
+                        f"Ver recorrido y actualizaciones · {len(eventos_paquete)} evento(s)",
+                        expanded=False,
+                    ):
+                        if eventos_paquete:
+                            for evento in eventos_paquete[:20]:
+                                _, estado_evt, ubicacion_evt, mensaje_evt, fecha_evt, _ = evento
+                                st.markdown(
+                                    f"**{html.escape(str(estado_evt or 'Actualización'))}**  \n"
+                                    f"{html.escape(str(fecha_evt or ''))} · "
+                                    f"{html.escape(str(ubicacion_evt or 'Ubicación no indicada'))}  \n"
+                                    f"{html.escape(str(mensaje_evt or 'Sin detalle adicional.'))}"
+                                )
+                        else:
+                            st.caption("La próxima actualización del operador aparecerá en esta línea de tiempo.")
             else:
                 st.markdown(
                     '<div class="envios-section-label">Seguimiento de paquetes</div>'
-                    '<div class="shipment-empty">Aún no hay paquetes registrados por el almacén de China.</div>',
+                    + (
+                        '<div class="shipment-empty">No hay envíos que coincidan con la búsqueda.</div>'
+                        if filtro_tracking
+                        else '<div class="shipment-empty">Aún no hay paquetes registrados por el almacén de China.</div>'
+                    ),
                     unsafe_allow_html=True,
                 )
             st.markdown('<div class="envios-section-label">Cotizaciones confirmadas y documentos</div>', unsafe_allow_html=True)
@@ -11228,9 +11555,9 @@ elif es_rol_admin():
         unsafe_allow_html=True,
     )
 
-    opciones_admin = ["Usuarios", "Paquetes", "Tarifas", "Sistema"]
+    opciones_admin = ["Usuarios", "Paquetes"]
     if root:
-        opciones_admin.insert(1, "Anuncios")
+        opciones_admin = ["Usuarios", "Anuncios", "Paquetes", "Tarifas", "Sistema"]
     etiquetas_admin = {
         "Usuarios": "👥 Usuarios",
         "Anuncios": "📣 Anuncios",
@@ -11277,12 +11604,22 @@ elif es_rol_admin():
                     """
                 )
             filas = c.fetchall()
+            filtro_metricas = "" if root else "WHERE rol = 'cliente'"
+            c.execute(
+                f"""
+                SELECT COUNT(*),
+                       SUM(CASE WHEN activo = TRUE THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN rol IN ('admin', 'superadmin') THEN 1 ELSE 0 END)
+                FROM usuarios {filtro_metricas}
+                """
+            )
+            metricas_cuentas = c.fetchone() or (0, 0, 0)
 
         if filas:
-            total_cuentas = len(filas)
-            total_activas = sum(1 for r in filas if bool(r[10]))
+            total_cuentas = int(metricas_cuentas[0] or 0)
+            total_activas = int(metricas_cuentas[1] or 0)
             total_inactivas = total_cuentas - total_activas
-            total_gestores = sum(1 for r in filas if str(r[9] or "").lower() in ("admin", "superadmin"))
+            total_gestores = int(metricas_cuentas[2] or 0)
             with st.container(key="admin_metrics"):
                 m_total, m_activas, m_inactivas, m_gestores = st.columns(4, gap="medium")
                 m_total.metric("Usuarios", total_cuentas)
@@ -11443,13 +11780,24 @@ elif es_rol_admin():
                             ):
                                 with get_db() as conn:
                                     cur = conn.cursor()
-                                    for tabla in ("permisos_usuario", "direcciones_entrega", "carrito_catalogo", "cotizaciones", "paquetes"):
+                                    for tabla in (
+                                        "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
+                                        "eventos_tracking", "paquetes", "cotizaciones",
+                                    ):
                                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
                                     cur.execute(
                                         "DELETE FROM config_sistema WHERE clave = ?",
                                         (clave_omision_anuncio(cas_u),),
                                     )
                                     cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
+                                cargar_paquetes_db.clear()
+                                cargar_eventos_tracking_db.clear()
+                                cargar_paquetes_admin.clear()
+                                cargar_metricas_paquetes_admin.clear()
+                                cargar_eventos_tracking_admin.clear()
+                                cargar_cotizaciones_db.clear()
+                                cargar_cotizaciones_confirmadas_admin.clear()
+                                cargar_resumen_operativo_admin.clear()
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
 
@@ -11719,10 +12067,11 @@ elif es_rol_admin():
             unsafe_allow_html=True,
         )
         paquetes_admin = cargar_paquetes_admin()
-        total_paquetes_admin = len(paquetes_admin)
-        total_recibidos_admin = sum(1 for p in paquetes_admin if bool(p[8]))
-        total_transito_admin = sum(1 for p in paquetes_admin if str(p[4] or "") == "En Travesía Marítima")
-        costo_manipulacion_admin = sum(float(p[10] or 0) for p in paquetes_admin)
+        metricas_paquetes = cargar_metricas_paquetes_admin()
+        total_paquetes_admin = int(metricas_paquetes[0] or 0)
+        total_recibidos_admin = int(metricas_paquetes[1] or 0)
+        total_transito_admin = int(metricas_paquetes[2] or 0)
+        costo_manipulacion_admin = float(metricas_paquetes[3] or 0)
         with st.container(key="admin_package_metrics"):
             pm1, pm2, pm3, pm4 = st.columns(4, gap="medium")
             pm1.metric("Paquetes", total_paquetes_admin)
@@ -11745,73 +12094,158 @@ elif es_rol_admin():
 
         with st.container(key="admin_package_editor"):
             st.markdown("#### Registrar o actualizar paquete")
-            st.caption("El tracking identifica el registro. Si ya existe, se actualizarán sus datos.")
+            st.caption("Seleccione un registro para editarlo sin perder sus asociaciones ni datos previos.")
+            opcion_registro = st.selectbox(
+                "Registro",
+                ["Nuevo paquete"] + [str(p[0]) for p in paquetes_admin],
+                key="admin_pkg_registro_editar",
+            )
+            paquete_editar = next(
+                (p for p in paquetes_admin if str(p[0]) == opcion_registro),
+                None,
+            )
+            sufijo_editor = hashlib.sha256(opcion_registro.encode("utf-8")).hexdigest()[:10]
+            indice_cotizacion = 0
+            if paquete_editar and paquete_editar[6] is not None:
+                for indice_opcion, etiqueta_opcion in enumerate(opciones_cotizacion):
+                    datos_opcion = cotizacion_por_etiqueta.get(etiqueta_opcion)
+                    if datos_opcion and int(datos_opcion[0]) == int(paquete_editar[6]):
+                        indice_cotizacion = indice_opcion
+                        break
             seleccion_cot = st.selectbox(
                 "Cotización confirmada asociada",
                 opciones_cotizacion,
-                key="admin_pkg_cotizacion",
+                index=indice_cotizacion,
+                key=f"admin_pkg_cotizacion_{sufijo_editor}",
             )
             cot_seleccionada = cotizacion_por_etiqueta.get(seleccion_cot)
+            clave_casillero_editor = f"admin_pkg_casillero_{sufijo_editor}"
+            if cot_seleccionada and not paquete_editar:
+                st.session_state[clave_casillero_editor] = cot_seleccionada[1]
             pkg1, pkg2 = st.columns(2, gap="medium")
             with pkg1:
-                t_in = st.text_input("Tracking *", key="admin_pkg_tracking", placeholder="Ej. CN-84920317")
+                t_in = st.text_input(
+                    "Tracking *",
+                    value=str(paquete_editar[0]) if paquete_editar else "",
+                    key=f"admin_pkg_tracking_{sufijo_editor}",
+                    placeholder="Ej. CN-84920317",
+                    disabled=bool(paquete_editar),
+                )
             with pkg2:
                 c_in = st.text_input(
                     "Casillero *",
-                    key="admin_pkg_casillero",
-                    value=cot_seleccionada[1] if cot_seleccionada else "",
+                    key=clave_casillero_editor,
+                    value=(
+                        cot_seleccionada[1]
+                        if cot_seleccionada
+                        else formatear_casillero(paquete_editar[1]) if paquete_editar else ""
+                    ),
                     placeholder="Ej. CCM-15011985",
+                    disabled=bool(paquete_editar),
                 )
             d_in = st.text_input(
                 "Descripción de la carga",
-                key="admin_pkg_descripcion",
+                value=str(paquete_editar[2] or "") if paquete_editar else "",
+                key=f"admin_pkg_descripcion_{sufijo_editor}",
                 placeholder="Ej. 4 cajas de porcelanato 60 × 120",
             )
             pkg3, pkg4 = st.columns([1.4, 1], gap="medium")
             with pkg3:
                 cont_in = st.text_input(
                     "ID del contenedor",
-                    key="admin_pkg_contenedor",
+                    value=str(paquete_editar[3] or "") if paquete_editar else "",
+                    key=f"admin_pkg_contenedor_{sufijo_editor}",
                     placeholder="Ej. CCM-CNT-014",
                 )
             with pkg4:
+                tipos_carga = ["40' High Cube", "40' estándar", "20' estándar", "Carga consolidada", "Palé"]
+                tipo_actual = str(paquete_editar[7] or "") if paquete_editar else ""
                 tipo_cont_in = st.selectbox(
                     "Tipo de carga",
-                    ["40' High Cube", "40' estándar", "20' estándar", "Carga consolidada", "Palé"],
-                    key="admin_pkg_tipo_contenedor",
+                    tipos_carga,
+                    index=tipos_carga.index(tipo_actual) if tipo_actual in tipos_carga else 0,
+                    key=f"admin_pkg_tipo_contenedor_{sufijo_editor}",
                 )
+            estados_disponibles = list(ESTADOS_LOGISTICOS) + list(ESTADOS_LOGISTICOS_ESPECIALES)
+            estado_actual_editor = str(paquete_editar[4] or "") if paquete_editar else ""
             e_in = st.selectbox(
                 "Estado logístico",
-                [
-                    "En Bodega China",
-                    "Asignado a Contenedor",
-                    "En Travesía Marítima",
-                    "En Desaduanaje",
-                    "Disponible en Bodega Central",
-                    "Entregado",
-                ],
-                key="admin_pkg_estado",
+                estados_disponibles,
+                index=estados_disponibles.index(estado_actual_editor) if estado_actual_editor in estados_disponibles else 0,
+                key=f"admin_pkg_estado_{sufijo_editor}",
+            )
+            pkg_ubicacion, pkg_eta = st.columns(2, gap="medium")
+            with pkg_ubicacion:
+                ubicacion_in = st.text_input(
+                    "Ubicación actual",
+                    value=str(paquete_editar[12] or "") if paquete_editar else "",
+                    key=f"admin_pkg_ubicacion_{sufijo_editor}",
+                    placeholder="Ej. Puerto de Shanghái, China",
+                )
+            with pkg_eta:
+                eta_in = st.text_input(
+                    "Llegada estimada",
+                    value=str(paquete_editar[13] or "") if paquete_editar else "",
+                    key=f"admin_pkg_eta_{sufijo_editor}",
+                    placeholder="AAAA-MM-DD",
+                )
+            proximo_paso_in = st.text_input(
+                "Próximo paso visible",
+                value=str(paquete_editar[14] or "") if paquete_editar else "",
+                key=f"admin_pkg_proximo_paso_{sufijo_editor}",
+                placeholder=proximo_estado_logistico(e_in),
+            )
+            mensaje_cliente_in = st.text_area(
+                "Mensaje de actualización para el cliente",
+                key=f"admin_pkg_mensaje_cliente_{sufijo_editor}",
+                placeholder="Ej. La carga fue inspeccionada y está lista para consolidación.",
+                height=80,
+            )
+            incidencia_in = st.text_area(
+                "Incidencia o acción requerida",
+                value=str(paquete_editar[15] or "") if paquete_editar else "",
+                key=f"admin_pkg_incidencia_{sufijo_editor}",
+                placeholder="Déjelo vacío cuando el envío no tenga incidencias.",
+                height=70,
+            )
+            nota_interna_in = st.text_area(
+                "Nota interna (no visible para el cliente)",
+                key=f"admin_pkg_nota_interna_{sufijo_editor}",
+                height=70,
             )
             pkg5, pkg6, pkg7 = st.columns([1, 1, 1.1], gap="medium")
             with pkg5:
-                recibido_in = st.toggle("Recibido en China", key="admin_pkg_recibido")
+                recibido_in = st.toggle(
+                    "Recibido en China",
+                    value=bool(paquete_editar[8]) if paquete_editar else False,
+                    key=f"admin_pkg_recibido_{sufijo_editor}",
+                )
             with pkg6:
-                pago_in = st.toggle("Pago confirmado", key="admin_pkg_pago")
+                pago_in = st.toggle(
+                    "Pago confirmado",
+                    value=bool(paquete_editar[9]) if paquete_editar else False,
+                    key=f"admin_pkg_pago_{sufijo_editor}",
+                )
             with pkg7:
                 costo_manipulacion_in = st.number_input(
                     "Manipulación (USD)",
                     min_value=0.0,
                     max_value=1_000_000.0,
-                    value=0.0,
+                    value=float(paquete_editar[10] or 0) if paquete_editar else 0.0,
                     step=0.50,
                     format="%.2f",
-                    key="admin_pkg_costo_manipulacion",
+                    key=f"admin_pkg_costo_manipulacion_{sufijo_editor}",
                 )
             st.caption("La recepción o el pago confirmado habilitan los documentos oficiales para el cliente.")
+            visible_cliente_in = st.toggle(
+                "Visible en el portal del cliente",
+                value=bool(paquete_editar[16]) if paquete_editar else True,
+                key=f"admin_pkg_visible_cliente_{sufijo_editor}",
+            )
             guardar_paquete = st.button(
                 "Guardar actualización logística",
                 type="primary",
-                key="admin_pkg_guardar",
+                key=f"admin_pkg_guardar_{sufijo_editor}",
                 use_container_width=True,
             )
 
@@ -11824,39 +12258,116 @@ elif es_rol_admin():
                 st.error("El casillero no coincide con la cotización seleccionada.")
             else:
                 f_act = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-                fecha_recepcion = f_act if recibido_in else None
-                with get_db() as conn:
-                    conn.execute(
-                        """
-                        INSERT INTO paquetes (
-                            tracking, codigo_casillero, descripcion, contenedor_id, tipo_contenedor,
-                            cotizacion_id, recibido_bodega, pago_confirmado, costo_manipulacion_usd,
-                            fecha_recepcion, estado, fecha_actualizacion
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(tracking) DO UPDATE SET
-                            codigo_casillero = excluded.codigo_casillero,
-                            descripcion = excluded.descripcion,
-                            contenedor_id = excluded.contenedor_id,
-                            tipo_contenedor = excluded.tipo_contenedor,
-                            cotizacion_id = excluded.cotizacion_id,
-                            recibido_bodega = excluded.recibido_bodega,
-                            pago_confirmado = excluded.pago_confirmado,
-                            costo_manipulacion_usd = excluded.costo_manipulacion_usd,
-                            fecha_recepcion = excluded.fecha_recepcion,
-                            estado = excluded.estado,
-                            fecha_actualizacion = excluded.fecha_actualizacion
-                        """,
-                        (
-                            t_in.strip(), cas_paquete, d_in.strip(), cont_in.strip(), tipo_cont_in,
-                            cot_id_paquete, bool(recibido_in), bool(pago_in), float(costo_manipulacion_in),
-                            fecha_recepcion, e_in, f_act,
+                eta_limpia = eta_in.strip()
+                eta_valida = True
+                if eta_limpia:
+                    try:
+                        datetime.strptime(eta_limpia, "%Y-%m-%d")
+                    except ValueError:
+                        eta_valida = False
+                if not eta_valida:
+                    st.error("La llegada estimada debe usar el formato AAAA-MM-DD.")
+                else:
+                    tracking_limpio = t_in.strip()
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            """
+                            SELECT estado, ubicacion_actual, eta, proximo_paso, incidencia,
+                                   recibido_bodega, pago_confirmado, codigo_casillero, cotizacion_id
+                            FROM paquetes WHERE tracking = ?
+                            """,
+                            (tracking_limpio,),
+                        )
+                        anterior = cur.fetchone()
+                        estado_anterior = str(anterior[0] or "") if anterior else ""
+                        if anterior and formatear_casillero(anterior[7]) != cas_paquete:
+                            st.error(
+                                "Este tracking ya pertenece a otro casillero y no puede reasignarse "
+                                "desde una actualización normal."
+                            )
+                            st.stop()
+                        if not transicion_logistica_valida(estado_anterior, e_in):
+                            st.error(
+                                f"No se permite retroceder de “{estado_anterior}” a “{e_in}”. "
+                                "Use Incidencia si necesita corregir o revisar el proceso."
+                            )
+                            st.stop()
+                        recibido_final = bool(recibido_in or (anterior and anterior[5]))
+                        pago_final = bool(pago_in or (anterior and anterior[6]))
+                        fecha_recepcion = f_act if recibido_final else None
+                        proximo_paso = proximo_paso_in.strip() or proximo_estado_logistico(e_in)
+                        cur.execute(
+                            """
+                            INSERT INTO paquetes (
+                                tracking, codigo_casillero, descripcion, contenedor_id, tipo_contenedor,
+                                cotizacion_id, recibido_bodega, pago_confirmado, costo_manipulacion_usd,
+                                fecha_recepcion, ubicacion_actual, eta, proximo_paso, incidencia,
+                                visible_cliente, estado, fecha_actualizacion
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(tracking) DO UPDATE SET
+                                codigo_casillero = excluded.codigo_casillero,
+                                descripcion = excluded.descripcion,
+                                contenedor_id = excluded.contenedor_id,
+                                tipo_contenedor = excluded.tipo_contenedor,
+                                cotizacion_id = COALESCE(excluded.cotizacion_id, paquetes.cotizacion_id),
+                                recibido_bodega = excluded.recibido_bodega,
+                                pago_confirmado = excluded.pago_confirmado,
+                                costo_manipulacion_usd = excluded.costo_manipulacion_usd,
+                                fecha_recepcion = COALESCE(paquetes.fecha_recepcion, excluded.fecha_recepcion),
+                                ubicacion_actual = excluded.ubicacion_actual,
+                                eta = excluded.eta,
+                                proximo_paso = excluded.proximo_paso,
+                                incidencia = excluded.incidencia,
+                                visible_cliente = excluded.visible_cliente,
+                                estado = excluded.estado,
+                                fecha_actualizacion = excluded.fecha_actualizacion
+                            """,
+                            (
+                                tracking_limpio, cas_paquete, d_in.strip(), cont_in.strip(), tipo_cont_in,
+                                cot_id_paquete, recibido_final, pago_final, float(costo_manipulacion_in),
+                                fecha_recepcion, ubicacion_in.strip(), eta_limpia, proximo_paso,
+                                incidencia_in.strip(), bool(visible_cliente_in), e_in, f_act,
+                            ),
                         ),
-                    )
-                cargar_paquetes_db.clear()
-                cargar_paquetes_admin.clear()
-                cargar_resumen_operativo_admin.clear()
-                st.success("Actualización logística guardada. El cliente verá el cambio al refrescar.")
-                st.rerun()
+                        valores_anteriores = tuple(anterior[:5]) if anterior else None
+                        valores_nuevos = (
+                            e_in, ubicacion_in.strip(), eta_limpia, proximo_paso, incidencia_in.strip()
+                        )
+                        registrar_evento = (
+                            anterior is None
+                            or valores_anteriores != valores_nuevos
+                            or bool(
+                                anterior
+                                and cot_id_paquete is not None
+                                and int(anterior[8] or 0) != int(cot_id_paquete)
+                            )
+                            or bool(mensaje_cliente_in.strip())
+                        )
+                        if registrar_evento:
+                            mensaje_evento = mensaje_cliente_in.strip() or f"Estado actualizado: {e_in}."
+                            cur.execute(
+                                """
+                                INSERT INTO eventos_tracking (
+                                    tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                                    nota_interna, fecha_evento, creado_por, visible_cliente
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    tracking_limpio, cas_paquete, e_in, ubicacion_in.strip(),
+                                    mensaje_evento, nota_interna_in.strip(), f_act,
+                                    st.session_state.get("usuario") or "superadmin",
+                                    bool(visible_cliente_in),
+                                ),
+                            )
+                    cargar_paquetes_db.clear()
+                    cargar_eventos_tracking_db.clear()
+                    cargar_paquetes_admin.clear()
+                    cargar_metricas_paquetes_admin.clear()
+                    cargar_eventos_tracking_admin.clear()
+                    cargar_resumen_operativo_admin.clear()
+                    st.success("Actualización logística guardada y registrada en la bitácora.")
+                    st.rerun()
 
         if paquetes_admin:
             with st.expander(f"Inventario y seguimiento · {total_paquetes_admin} registros"):
@@ -11871,10 +12382,41 @@ elif es_rol_admin():
                         "Pago": ["Sí" if p[9] else "No" for p in paquetes_admin],
                         "Costo": [f"${float(p[10] or 0):,.2f}" for p in paquetes_admin],
                         "Actualizado": [p[5] for p in paquetes_admin],
+                        "Ubicación": [p[12] or "—" for p in paquetes_admin],
+                        "ETA": [p[13] or "—" for p in paquetes_admin],
+                        "Próximo paso": [p[14] or "—" for p in paquetes_admin],
+                        "Incidencia": [p[15] or "—" for p in paquetes_admin],
+                        "Visible": ["Sí" if p[16] else "No" for p in paquetes_admin],
                     },
                     use_container_width=True,
                     hide_index=True,
                 )
+            tracking_auditoria = st.selectbox(
+                "Consultar bitácora de un tracking",
+                [p[0] for p in paquetes_admin],
+                key="admin_tracking_auditoria",
+            )
+            eventos_admin = cargar_eventos_tracking_admin(tracking_auditoria)
+            with st.expander(
+                f"Bitácora de {tracking_auditoria} · {len(eventos_admin)} evento(s)",
+                expanded=False,
+            ):
+                if eventos_admin:
+                    st.dataframe(
+                        {
+                            "Fecha": [e[0] for e in eventos_admin],
+                            "Estado": [e[1] for e in eventos_admin],
+                            "Ubicación": [e[2] or "—" for e in eventos_admin],
+                            "Mensaje cliente": [e[3] or "—" for e in eventos_admin],
+                            "Nota interna": [e[4] or "—" for e in eventos_admin],
+                            "Operador": [e[5] or "—" for e in eventos_admin],
+                            "Visible": ["Sí" if e[6] else "No" for e in eventos_admin],
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("Este tracking aún no tiene eventos registrados.")
 
     if admin_seccion == "Tarifas":
         st.markdown("#### Tarifas y constantes del cotizador")
@@ -11943,6 +12485,11 @@ elif es_rol_admin():
                 "SELECT clave, valor, descripcion FROM config_sistema "
                 "WHERE clave NOT LIKE 'ANUNCIO_OMITIDO_%' ORDER BY clave"
             ).fetchall()
+        claves_sensibles = ("secret", "token", "password", "passwd", "database_url", "api_key")
+        filas_cfg = [
+            fila for fila in filas_cfg
+            if not any(fragmento in str(fila[0] or "").lower() for fragmento in claves_sensibles)
+        ]
         st.markdown("##### config_sistema (prioridad sobre secrets.toml)")
         for clave, valor, desc in filas_cfg:
             nv = st.text_input(f"{clave}", value=str(valor), help=desc or "", key=f"sys_{clave}")
