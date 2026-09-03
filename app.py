@@ -4126,6 +4126,46 @@ def asegurar_indices_rendimiento():
         return False
 
 
+def asegurar_esquema_cotizaciones():
+    """Migra cotizaciones antiguas antes de leer confirmaciones o crear índices."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if USA_SUPABASE:
+            sentencias = (
+                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS confirmada BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS fecha_confirmacion TEXT",
+                "ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS fecha_creacion TEXT",
+            )
+            for sentencia in sentencias:
+                cursor.execute(sentencia)
+            cursor.execute(
+                """
+                UPDATE cotizaciones
+                SET fecha_creacion = fecha::text
+                WHERE fecha_creacion IS NULL OR BTRIM(fecha_creacion::text) = ''
+                """
+            )
+        else:
+            cursor.execute("PRAGMA table_info(cotizaciones)")
+            columnas = {str(fila[1]) for fila in cursor.fetchall()}
+            faltantes = {
+                "confirmada": "ALTER TABLE cotizaciones ADD COLUMN confirmada INTEGER NOT NULL DEFAULT 0",
+                "fecha_confirmacion": "ALTER TABLE cotizaciones ADD COLUMN fecha_confirmacion TEXT",
+                "fecha_creacion": "ALTER TABLE cotizaciones ADD COLUMN fecha_creacion TEXT",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+            cursor.execute(
+                """
+                UPDATE cotizaciones
+                SET fecha_creacion = fecha
+                WHERE fecha_creacion IS NULL OR TRIM(fecha_creacion) = ''
+                """
+            )
+        conn.commit()
+
+
 def asegurar_esquema_paquetes_operativo():
     """Añade los campos logísticos sin perder registros de versiones anteriores."""
     with get_db() as conn:
@@ -4165,6 +4205,7 @@ def asegurar_esquema_paquetes_operativo():
 def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
     init_db()
+    asegurar_esquema_cotizaciones()
     asegurar_esquema_paquetes_operativo()
     asegurar_esquema_direcciones()
     asegurar_indices_rendimiento()
