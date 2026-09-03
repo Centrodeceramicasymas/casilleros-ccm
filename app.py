@@ -9709,6 +9709,101 @@ st.markdown(
         -webkit-text-fill-color: #991b1b !important;
     }
 
+    /* Mensajes de resultado: visibles y consistentes en cliente y administración. */
+    div[data-testid="stAlert"] {
+        width: 100% !important;
+        min-height: 72px !important;
+        margin: 12px 0 16px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background: #ffffff !important;
+        border: 1px solid #dbe3ee !important;
+        border-left-width: 5px !important;
+        border-radius: 9px !important;
+        box-shadow: 0 7px 18px rgba(15, 23, 42, .08) !important;
+    }
+    div[data-testid="stAlert"] > div,
+    div[data-testid="stAlert"] [data-baseweb="notification"] {
+        width: 100% !important;
+        min-height: 70px !important;
+        padding: 13px 15px !important;
+        align-items: flex-start !important;
+        background: transparent !important;
+    }
+    div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+        width: 100% !important;
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
+        font-size: .84rem !important;
+        font-weight: 650 !important;
+        line-height: 1.45 !important;
+    }
+    div[data-testid="stAlert"] [data-testid="stMarkdownContainer"]::before {
+        display: block;
+        margin-bottom: 3px;
+        color: #0f172a;
+        -webkit-text-fill-color: #0f172a;
+        font-size: .78rem;
+        font-weight: 900;
+        letter-spacing: .01em;
+    }
+    div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+        margin: 0 !important;
+        color: inherit !important;
+        -webkit-text-fill-color: inherit !important;
+        font-size: inherit !important;
+        font-weight: inherit !important;
+        line-height: inherit !important;
+        background: transparent !important;
+    }
+    div[data-testid="stAlert"] svg {
+        width: 22px !important;
+        height: 22px !important;
+        margin-top: 1px !important;
+        flex: 0 0 22px !important;
+        opacity: 1 !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) {
+        border-color: #bbf7d0 !important;
+        border-left-color: #16a34a !important;
+        background: #f0fdf4 !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) [data-testid="stMarkdownContainer"]::before {
+        content: "Cambio guardado correctamente";
+        color: #166534;
+        -webkit-text-fill-color: #166534;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) {
+        border-color: #fde68a !important;
+        border-left-color: #d97706 !important;
+        background: #fffbeb !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) [data-testid="stMarkdownContainer"]::before {
+        content: "Revise la información";
+        color: #92400e;
+        -webkit-text-fill-color: #92400e;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) {
+        border-color: #fecaca !important;
+        border-left-color: #dc2626 !important;
+        background: #fef2f2 !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) [data-testid="stMarkdownContainer"]::before {
+        content: "No se pudo completar la acción";
+        color: #991b1b;
+        -webkit-text-fill-color: #991b1b;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) {
+        border-color: #bfdbfe !important;
+        border-left-color: #0757c8 !important;
+        background: #eff6ff !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) [data-testid="stMarkdownContainer"]::before {
+        content: "Información";
+        color: #1d4ed8;
+        -webkit-text-fill-color: #1d4ed8;
+    }
+
     .reg-confirm-card {
         background: #ecfdf5;
         border: 2px solid #16a34a;
@@ -14027,7 +14122,16 @@ elif es_rol_admin():
             cas_paquete = formatear_casillero(c_in)
             cot_id_paquete = cot_seleccionada[0] if cot_seleccionada else None
             if not t_in.strip() or not cas_paquete:
-                st.warning("Ingrese el tracking y un casillero válido.")
+                campos_faltantes = []
+                if not t_in.strip():
+                    campos_faltantes.append("tracking")
+                if not cas_paquete:
+                    campos_faltantes.append("casillero")
+                st.warning(
+                    "No se guardó el paquete. Complete "
+                    + " y ".join(campos_faltantes)
+                    + " con información válida y vuelva a intentarlo."
+                )
             elif cot_seleccionada and cas_paquete != cot_seleccionada[1]:
                 st.error("El casillero no coincide con la cotización seleccionada.")
             else:
