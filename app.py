@@ -12825,6 +12825,57 @@ elif es_rol_admin():
             .st-key-admin_package_editor [data-baseweb="select"] > div {
                 border-radius: 8px !important;
             }
+            [class*="st-key-admin_pkg_recibido_"] [data-testid="stSegmentedControl"],
+            [class*="st-key-admin_pkg_pago_"] [data-testid="stSegmentedControl"] {
+                width: 100% !important;
+                padding: 4px !important;
+                gap: 4px !important;
+                background: #e9eef5 !important;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 8px !important;
+            }
+            [class*="st-key-admin_pkg_recibido_"] [role="radiogroup"],
+            [class*="st-key-admin_pkg_pago_"] [role="radiogroup"] {
+                display: flex !important;
+                width: 100% !important;
+                gap: 4px !important;
+            }
+            [class*="st-key-admin_pkg_recibido_"] [data-testid="stSegmentedControl"] button,
+            [class*="st-key-admin_pkg_pago_"] [data-testid="stSegmentedControl"] button,
+            [class*="st-key-admin_pkg_recibido_"] [role="radiogroup"] > label,
+            [class*="st-key-admin_pkg_pago_"] [role="radiogroup"] > label {
+                flex: 1 1 50% !important;
+                min-height: 38px !important;
+                color: #334155 !important;
+                -webkit-text-fill-color: #334155 !important;
+                background: #ffffff !important;
+                border: 1px solid #d7e0eb !important;
+                border-radius: 6px !important;
+                font-size: .74rem !important;
+                font-weight: 800 !important;
+                opacity: 1 !important;
+            }
+            [class*="st-key-admin_pkg_recibido_"] [aria-pressed="true"],
+            [class*="st-key-admin_pkg_recibido_"] label:has(input:checked) {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+                background: #15803d !important;
+                border-color: #15803d !important;
+            }
+            [class*="st-key-admin_pkg_pago_"] [aria-pressed="true"],
+            [class*="st-key-admin_pkg_pago_"] label:has(input:checked) {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+                background: #0757c8 !important;
+                border-color: #0757c8 !important;
+            }
+            [class*="st-key-admin_pkg_recibido_"] [aria-pressed="true"] *,
+            [class*="st-key-admin_pkg_recibido_"] label:has(input:checked) *,
+            [class*="st-key-admin_pkg_pago_"] [aria-pressed="true"] *,
+            [class*="st-key-admin_pkg_pago_"] label:has(input:checked) * {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
             .st-key-admin_pkg_guardar button {
                 min-height: 46px !important;
                 border-radius: 8px !important;
@@ -13934,17 +13985,21 @@ elif es_rol_admin():
             )
             pkg5, pkg6, pkg7 = st.columns([1, 1, 1.1], gap="medium")
             with pkg5:
-                recibido_in = st.toggle(
-                    "Recibido en China",
-                    value=bool(paquete_editar[8]) if paquete_editar else False,
+                recibido_estado_in = st.segmented_control(
+                    "Recepción en China",
+                    options=["Pendiente", "Recibido"],
+                    default="Recibido" if paquete_editar and bool(paquete_editar[8]) else "Pendiente",
                     key=f"admin_pkg_recibido_{sufijo_editor}",
                 )
+                recibido_in = recibido_estado_in == "Recibido"
             with pkg6:
-                pago_in = st.toggle(
-                    "Pago confirmado",
-                    value=bool(paquete_editar[9]) if paquete_editar else False,
+                pago_estado_in = st.segmented_control(
+                    "Estado del pago",
+                    options=["Pendiente", "Confirmado"],
+                    default="Confirmado" if paquete_editar and bool(paquete_editar[9]) else "Pendiente",
                     key=f"admin_pkg_pago_{sufijo_editor}",
                 )
+                pago_in = pago_estado_in == "Confirmado"
             with pkg7:
                 costo_manipulacion_in = st.number_input(
                     "Manipulación (USD)",
