@@ -10449,29 +10449,75 @@ elif es_rol_admin():
                 box-shadow: 0 0 0 3px rgba(74, 222, 128, .13);
             }
             .st-key-admin_nav {
-                margin: 14px 0 20px;
-                padding: 6px;
-                background: #ffffff;
-                border: 1px solid #dbe3ee;
+                margin: 14px 0 22px;
+                padding: 8px;
+                background: #eef3f8;
+                border: 1px solid #d8e1ec;
                 border-radius: 10px;
-                box-shadow: 0 5px 16px rgba(15, 23, 42, .05);
+                box-shadow: inset 0 1px 2px rgba(15, 23, 42, .03);
             }
-            .st-key-admin_nav [data-testid="stSegmentedControl"] {
+            .st-key-admin_nav [data-testid="stSegmentedControl"],
+            .st-key-admin_nav [role="radiogroup"],
+            .st-key-admin_nav [data-baseweb="button-group"] {
+                display: flex !important;
+                flex-direction: row !important;
+                align-items: stretch !important;
+                width: 100% !important;
+                gap: 8px !important;
                 background: transparent;
                 border: 0;
                 border-radius: 7px;
                 padding: 0;
             }
-            .st-key-admin_nav [data-testid="stSegmentedControl"] button {
-                min-height: 44px;
-                border-radius: 7px !important;
-                font-weight: 750;
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label,
+            .st-key-admin_nav [role="radiogroup"] > label,
+            .st-key-admin_nav [data-baseweb="radio"] {
+                flex: 1 1 0 !important;
+                min-width: 0 !important;
+                min-height: 48px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 7px !important;
+                color: #475569 !important;
+                background: #ffffff !important;
+                border: 1px solid #d7e0eb !important;
+                border-radius: 8px !important;
+                box-shadow: 0 2px 5px rgba(15, 23, 42, .04) !important;
+                font-size: .8rem !important;
+                font-weight: 780 !important;
+                white-space: nowrap !important;
+                cursor: pointer !important;
+                transition: background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease !important;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button:hover,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:hover,
+            .st-key-admin_nav [data-baseweb="radio"]:hover {
+                color: #0757c8 !important;
+                border-color: #8cb5e9 !important;
+                background: #f8fbff !important;
+                box-shadow: 0 4px 10px rgba(7, 87, 200, .09) !important;
             }
             .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-pressed="true"],
-            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked) {
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-checked="true"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[data-state="on"],
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked),
+            .st-key-admin_nav [role="radiogroup"] > label:has(input:checked),
+            .st-key-admin_nav [data-baseweb="radio"]:has(input:checked) {
                 color: #ffffff !important;
                 background: #0757c8 !important;
-                box-shadow: 0 4px 11px rgba(7, 87, 200, .20) !important;
+                border-color: #0757c8 !important;
+                box-shadow: 0 5px 12px rgba(7, 87, 200, .22) !important;
+            }
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-pressed="true"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[aria-checked="true"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] button[data-state="on"] *,
+            .st-key-admin_nav [data-testid="stSegmentedControl"] label:has(input:checked) *,
+            .st-key-admin_nav [role="radiogroup"] > label:has(input:checked) *,
+            .st-key-admin_nav [data-baseweb="radio"]:has(input:checked) * {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
             }
             .admin-section-heading {
                 margin: 4px 0 3px;
@@ -10731,10 +10777,23 @@ elif es_rol_admin():
                     padding-left: 9px !important;
                     padding-right: 9px !important;
                 }
-                .st-key-admin_nav { margin: 9px 0 15px; padding: 4px; }
-                .st-key-admin_nav [data-testid="stSegmentedControl"] button {
-                    min-height: 40px;
-                    font-size: .7rem !important;
+                .st-key-admin_nav { margin: 9px 0 15px; padding: 5px; }
+                .st-key-admin_nav [data-testid="stSegmentedControl"],
+                .st-key-admin_nav [role="radiogroup"],
+                .st-key-admin_nav [data-baseweb="button-group"] {
+                    gap: 4px !important;
+                }
+                .st-key-admin_nav [data-testid="stSegmentedControl"] button,
+                .st-key-admin_nav [data-testid="stSegmentedControl"] label,
+                .st-key-admin_nav [role="radiogroup"] > label,
+                .st-key-admin_nav [data-baseweb="radio"] {
+                    min-height: 42px !important;
+                    padding-left: 3px !important;
+                    padding-right: 3px !important;
+                    font-size: .66rem !important;
+                    white-space: normal !important;
+                    text-align: center !important;
+                    line-height: 1.15 !important;
                 }
                 .st-key-admin_user_workspace { padding: 12px; }
                 .admin-account-head,
