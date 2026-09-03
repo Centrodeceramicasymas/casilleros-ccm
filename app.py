@@ -1738,6 +1738,22 @@ def cargar_confirmaciones_db(casillero):
     }
 
 
+@st.cache_data(ttl=20, show_spinner=False)
+def cargar_estados_cotizaciones_db(casillero):
+    cas = formatear_casillero(casillero or "")
+    variantes = coincidencias_casillero(cas)
+    if not variantes:
+        return {}
+    marcadores = ",".join("?" for _ in variantes)
+    with get_db() as conn:
+        filas = conn.execute(
+            f"SELECT id, COALESCE(estado, 'emitida') FROM cotizaciones "
+            f"WHERE codigo_casillero IN ({marcadores})",
+            tuple(variantes),
+        ).fetchall()
+    return {int(fila[0]): str(fila[1] or "emitida") for fila in filas}
+
+
 @st.cache_data(ttl=15, show_spinner=False)
 def cargar_paquetes_db(casillero):
     """Snapshot breve de paquetes para que la navegación no abra otra conexión."""
@@ -1747,13 +1763,17 @@ def cargar_paquetes_db(casillero):
     with get_db() as conn:
         return conn.execute(
             """
-            SELECT tracking, descripcion, contenedor_id, estado, fecha_actualizacion,
-                   cotizacion_id, tipo_contenedor, recibido_bodega, pago_confirmado,
-                   costo_manipulacion_usd, fecha_recepcion, ubicacion_actual, eta,
-                   proximo_paso, incidencia, visible_cliente
-            FROM paquetes
-            WHERE codigo_casillero = ? AND COALESCE(visible_cliente, TRUE) = TRUE
-            ORDER BY fecha_actualizacion DESC
+            SELECT p.tracking, p.descripcion, p.contenedor_id, p.estado, p.fecha_actualizacion,
+                   p.cotizacion_id, p.tipo_contenedor, p.recibido_bodega, p.pago_confirmado,
+                   p.costo_manipulacion_usd, p.fecha_recepcion, p.ubicacion_actual, p.eta,
+                   p.proximo_paso, p.incidencia, p.visible_cliente,
+                   COALESCE(c.estado_pago, CASE WHEN p.pago_confirmado = TRUE THEN 'Confirmado' ELSE 'Pendiente' END),
+                   COALESCE(c.estado_documentos, 'Bloqueados'), c.fecha_compromiso,
+                   c.receptor_entrega, c.fecha_entrega, c.evidencia_entrega_url,
+                   COALESCE(c.incidencia_estado, 'Sin incidencia')
+            FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
+            WHERE p.codigo_casillero = ? AND COALESCE(p.visible_cliente, TRUE) = TRUE
+            ORDER BY p.fecha_actualizacion DESC
             LIMIT 500
             """,
             (cas,),
@@ -1780,8 +1800,9 @@ def cargar_eventos_tracking_db(casillero):
 
 
 def cotizaciones_habilitadas_por_operacion(paquetes):
-    """Cotizaciones cuyos documentos fueron liberados por recepción o pago."""
+    """Cotizaciones liberadas por operación o por decisión explícita del superusuario."""
     habilitadas = set()
+    tracking_cotizacion = {}
     for paquete in paquetes or []:
         try:
             cotizacion_id = int(paquete[5]) if paquete[5] is not None else 0
@@ -1789,8 +1810,29 @@ def cotizaciones_habilitadas_por_operacion(paquetes):
             cotizacion_id = 0
         recibido = bool(paquete[7]) if len(paquete) > 7 else False
         pagado = bool(paquete[8]) if len(paquete) > 8 else False
+        tracking = str(paquete[0] or "").strip() if paquete else ""
+        if tracking and cotizacion_id:
+            tracking_cotizacion[tracking] = cotizacion_id
         if cotizacion_id and (recibido or pagado):
             habilitadas.add(cotizacion_id)
+    if tracking_cotizacion:
+        try:
+            marcas = ",".join("?" for _ in tracking_cotizacion)
+            with get_db() as conn:
+                controles = conn.execute(
+                    f"SELECT tracking, estado_documentos FROM control_envios WHERE tracking IN ({marcas})",
+                    tuple(tracking_cotizacion),
+                ).fetchall()
+            for tracking, estado_documentos in controles:
+                cotizacion_id = tracking_cotizacion.get(str(tracking))
+                if not cotizacion_id:
+                    continue
+                if estado_documentos == "Habilitados":
+                    habilitadas.add(cotizacion_id)
+                elif estado_documentos in ("Bloqueados", "Anulados"):
+                    habilitadas.discard(cotizacion_id)
+        except Exception as exc:
+            print(f"[CCM documentos] No se pudo aplicar el control administrativo: {exc}", flush=True)
     return habilitadas
 
 
@@ -1883,6 +1925,118 @@ def cargar_resumen_operativo_admin():
         "paquetes": int((paquetes or (0,))[0] or 0),
         "manipulacion": float((paquetes or (0, 0))[1] or 0),
     }
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_notificaciones_cliente(casillero, incluir_ocultas=False):
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return []
+    condicion_visible = "" if incluir_ocultas else "AND visible = TRUE"
+    with get_db() as conn:
+        return conn.execute(
+            f"""
+            SELECT id, tracking, tipo, prioridad, titulo, mensaje, canal,
+                   leida, visible, fecha_creacion, creado_por
+            FROM notificaciones_cliente
+            WHERE codigo_casillero = ? {condicion_visible}
+            ORDER BY fecha_creacion DESC, id DESC
+            LIMIT 100
+            """,
+            (cas,),
+        ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_casos_cliente(casillero):
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT id, tracking, categoria, asunto, detalle, estado, prioridad,
+                   respuesta_operador, creado_por, fecha_creacion, fecha_actualizacion
+            FROM casos_cliente
+            WHERE codigo_casillero = ?
+            ORDER BY fecha_actualizacion DESC, id DESC
+            LIMIT 100
+            """,
+            (cas,),
+        ).fetchall()
+
+
+def crear_notificacion_cliente(
+    casillero, titulo, mensaje, tipo="Información", prioridad="Normal",
+    tracking="", canal="Portal", creado_por=None,
+):
+    cas = formatear_casillero(casillero)
+    titulo_limpio = str(titulo or "").strip()
+    mensaje_limpio = str(mensaje or "").strip()
+    if not cas or not titulo_limpio or not mensaje_limpio:
+        return False
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO notificaciones_cliente (
+                codigo_casillero, tracking, tipo, prioridad, titulo, mensaje,
+                canal, leida, visible, fecha_creacion, creado_por
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
+            """,
+            (
+                cas, str(tracking or "").strip() or None, tipo, prioridad,
+                titulo_limpio, mensaje_limpio, canal, fecha,
+                creado_por or st.session_state.get("usuario") or "sistema",
+            ),
+        )
+    cargar_notificaciones_cliente.clear()
+    return True
+
+
+def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
+    """Aplica la acción solo a una notificación perteneciente a la sesión cliente."""
+    cas = formatear_casillero(casillero)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE notificaciones_cliente SET leida = TRUE, visible = ? "
+            "WHERE id = ? AND codigo_casillero = ?",
+            (bool(visible), int(notificacion_id), cas),
+        )
+    cargar_notificaciones_cliente.clear()
+
+
+def pintar_centro_notificaciones_cliente(casillero):
+    notificaciones = cargar_notificaciones_cliente(casillero)
+    if not notificaciones:
+        return
+    no_leidas = sum(1 for fila in notificaciones if not bool(fila[7]))
+    with st.expander(
+        f"🔔 Notificaciones{f' · {no_leidas} nuevas' if no_leidas else ''}",
+        expanded=bool(no_leidas),
+    ):
+        for fila in notificaciones[:8]:
+            nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila
+            borde = "#dc2626" if prioridad == "Urgente" else "#0757c8"
+            st.markdown(
+                f'<div style="margin:5px 0 7px;padding:11px 13px;background:#fff;'
+                f'border:1px solid #e2e8f0;border-left:3px solid {borde};border-radius:7px;">'
+                f'<div style="display:flex;justify-content:space-between;gap:10px;">'
+                f'<b style="color:#0f172a;font-size:.84rem;">{html.escape(str(titulo))}</b>'
+                f'<span style="color:#64748b;font-size:.68rem;white-space:nowrap;">{html.escape(str(fecha))}</span></div>'
+                f'<div style="margin-top:4px;color:#475569;font-size:.78rem;line-height:1.45;">'
+                f'{html.escape(str(mensaje))}</div>'
+                f'<div style="margin-top:5px;color:#64748b;font-size:.68rem;">'
+                f'{html.escape(str(tipo))} · {html.escape(str(canal))}'
+                f'{" · " + html.escape(str(tracking)) if tracking else ""}</div></div>',
+                unsafe_allow_html=True,
+            )
+            if not bool(leida):
+                st.button(
+                    "Marcar como leída", key=f"notif_read_{nid}",
+                    on_click=marcar_notificacion_cliente,
+                    args=(nid, casillero, True),
+                )
 
 
 def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
@@ -2025,20 +2179,26 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
             # fila antes de actualizar evita que variaciones CCM-/sin prefijo
             # impidan confirmar una tarifa que ya fue mostrada al cliente.
             cur.execute(
-                f"SELECT codigo_casillero, IFNULL(confirmada, 0), fecha_confirmacion "
+                f"SELECT codigo_casillero, IFNULL(confirmada, 0), fecha_confirmacion, "
+                f"COALESCE(estado, 'emitida') "
                 f"FROM cotizaciones WHERE id = ? AND codigo_casillero IN ({marcadores})",
                 (cid, *variantes),
             )
             fila = cur.fetchone()
             if fila is None:
                 raise sqlite3.OperationalError("La cotización no existe o no pertenece a este casillero.")
-            codigo_guardado, ya_confirmada, fecha_guardada = fila
+            codigo_guardado, ya_confirmada, fecha_guardada, estado_guardado = fila
+            if str(estado_guardado) in ("cancelada", "vencida", "en_revision"):
+                raise sqlite3.OperationalError(
+                    f"La cotización está {estado_guardado} y requiere autorización del operador."
+                )
             cur.execute(
                 f"""
                 UPDATE cotizaciones
                 SET confirmada = TRUE, fecha_confirmacion = ?, estado = 'confirmada'
                 WHERE id = ? AND codigo_casillero IN ({marcadores})
                   AND COALESCE(confirmada, FALSE) = FALSE
+                  AND COALESCE(estado, 'emitida') = 'emitida'
                 """,
                 (ahora, cid, *variantes),
             )
@@ -2068,6 +2228,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
+        cargar_estados_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
         cargar_cotizaciones_confirmadas_admin.clear()
         cargar_resumen_operativo_admin.clear()
@@ -2194,6 +2355,7 @@ def emitir_tarifa_desde_snapshot():
             id_generado = cur.lastrowid
             conn.commit()
         cargar_cotizaciones_db.clear()
+        cargar_estados_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
         cargar_resumen_operativo_admin.clear()
     except Exception as exc:
@@ -2294,6 +2456,7 @@ def purgar_cotizaciones_no_confirmadas_vencidas(ahora=None):
             conn.commit()
         if eliminadas:
             cargar_cotizaciones_db.clear()
+            cargar_estados_cotizaciones_db.clear()
             cargar_confirmaciones_db.clear()
             cargar_cotizaciones_confirmadas_admin.clear()
             cargar_resumen_operativo_admin.clear()
@@ -3339,6 +3502,56 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
+        with st.expander("🧾 Solicitudes y soporte", expanded=False):
+            st.caption("Registre una consulta o incidencia. El equipo podrá responderla desde su expediente.")
+            paquetes_soporte = cargar_paquetes_db(cas_formato)
+            tracking_soporte = st.selectbox(
+                "Envío relacionado",
+                ["Sin tracking"] + [str(p[0]) for p in paquetes_soporte],
+                key="cliente_caso_tracking",
+            )
+            categoria_soporte = st.selectbox(
+                "Categoría",
+                ["Consulta", "Pago", "Documentos", "Demora", "Daño o faltante", "Datos de cuenta"],
+                key="cliente_caso_categoria",
+            )
+            asunto_soporte = st.text_input("Asunto", max_chars=120, key="cliente_caso_asunto")
+            detalle_soporte = st.text_area(
+                "Detalle", max_chars=1500, height=90, key="cliente_caso_detalle"
+            )
+            if st.button("Enviar solicitud", type="primary", key="cliente_caso_enviar"):
+                if not asunto_soporte.strip() or not detalle_soporte.strip():
+                    st.warning("Escriba el asunto y el detalle de la solicitud.")
+                else:
+                    fecha_caso = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                    with get_db() as conn:
+                        conn.execute(
+                            """
+                            INSERT INTO casos_cliente (
+                                codigo_casillero, tracking, categoria, asunto, detalle,
+                                estado, prioridad, respuesta_operador, creado_por,
+                                fecha_creacion, fecha_actualizacion
+                            ) VALUES (?, ?, ?, ?, ?, 'Abierto', 'Normal', '', 'cliente', ?, ?)
+                            """,
+                            (
+                                cas_formato,
+                                None if tracking_soporte == "Sin tracking" else tracking_soporte,
+                                categoria_soporte, asunto_soporte.strip(), detalle_soporte.strip(),
+                                fecha_caso, fecha_caso,
+                            ),
+                        )
+                    cargar_casos_cliente.clear()
+                    st.success("Solicitud registrada. Puede revisar aquí la respuesta del operador.")
+                    st.rerun()
+            casos_cliente = cargar_casos_cliente(cas_formato)
+            if casos_cliente:
+                st.markdown("##### Historial")
+                for caso in casos_cliente[:5]:
+                    st.markdown(
+                        f"**#{int(caso[0]):04d} · {caso[3]}** — {caso[5]}  \n"
+                        f"{caso[4]}  \n"
+                        f"**Respuesta CCM:** {caso[7] or 'Pendiente de respuesta'}"
+                    )
         st.markdown(
             f'<section class="actividad-politicas" aria-label="Políticas de envío y productos restringidos">'
             f'<div class="actividad-politicas-copy"><span class="actividad-politicas-icon" aria-hidden="true">!</span>'
@@ -4580,12 +4793,143 @@ def asegurar_esquema_paquetes_operativo():
         conn.commit()
 
 
+def asegurar_esquema_control_cliente():
+    """Crea el control 360 sin alterar los registros operativos existentes."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if USA_SUPABASE:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.control_envios (
+                    tracking TEXT PRIMARY KEY REFERENCES public.paquetes(tracking) ON DELETE CASCADE,
+                    estado_pago TEXT NOT NULL DEFAULT 'Pendiente',
+                    referencia_pago TEXT,
+                    comprobante_pago_url TEXT,
+                    estado_documentos TEXT NOT NULL DEFAULT 'Bloqueados',
+                    incidencia_estado TEXT NOT NULL DEFAULT 'Sin incidencia',
+                    responsable_incidencia TEXT,
+                    fecha_compromiso TEXT,
+                    receptor_entrega TEXT,
+                    fecha_entrega TEXT,
+                    evidencia_entrega_url TEXT,
+                    canal_notificacion TEXT NOT NULL DEFAULT 'Portal',
+                    actualizado_por TEXT,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.notificaciones_cliente (
+                    id BIGSERIAL PRIMARY KEY,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking TEXT,
+                    tipo TEXT NOT NULL DEFAULT 'Información',
+                    prioridad TEXT NOT NULL DEFAULT 'Normal',
+                    titulo TEXT NOT NULL,
+                    mensaje TEXT NOT NULL,
+                    canal TEXT NOT NULL DEFAULT 'Portal',
+                    leida BOOLEAN NOT NULL DEFAULT FALSE,
+                    visible BOOLEAN NOT NULL DEFAULT TRUE,
+                    fecha_creacion TEXT NOT NULL,
+                    creado_por TEXT
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.casos_cliente (
+                    id BIGSERIAL PRIMARY KEY,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking TEXT,
+                    categoria TEXT NOT NULL,
+                    asunto TEXT NOT NULL,
+                    detalle TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'Abierto',
+                    prioridad TEXT NOT NULL DEFAULT 'Normal',
+                    respuesta_operador TEXT,
+                    creado_por TEXT,
+                    fecha_creacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+        else:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS control_envios (
+                    tracking TEXT PRIMARY KEY,
+                    estado_pago TEXT NOT NULL DEFAULT 'Pendiente',
+                    referencia_pago TEXT,
+                    comprobante_pago_url TEXT,
+                    estado_documentos TEXT NOT NULL DEFAULT 'Bloqueados',
+                    incidencia_estado TEXT NOT NULL DEFAULT 'Sin incidencia',
+                    responsable_incidencia TEXT,
+                    fecha_compromiso TEXT,
+                    receptor_entrega TEXT,
+                    fecha_entrega TEXT,
+                    evidencia_entrega_url TEXT,
+                    canal_notificacion TEXT NOT NULL DEFAULT 'Portal',
+                    actualizado_por TEXT,
+                    fecha_actualizacion TEXT NOT NULL,
+                    FOREIGN KEY(tracking) REFERENCES paquetes(tracking) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notificaciones_cliente (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking TEXT,
+                    tipo TEXT NOT NULL DEFAULT 'Información',
+                    prioridad TEXT NOT NULL DEFAULT 'Normal',
+                    titulo TEXT NOT NULL,
+                    mensaje TEXT NOT NULL,
+                    canal TEXT NOT NULL DEFAULT 'Portal',
+                    leida INTEGER NOT NULL DEFAULT 0,
+                    visible INTEGER NOT NULL DEFAULT 1,
+                    fecha_creacion TEXT NOT NULL,
+                    creado_por TEXT
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casos_cliente (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking TEXT,
+                    categoria TEXT NOT NULL,
+                    asunto TEXT NOT NULL,
+                    detalle TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'Abierto',
+                    prioridad TEXT NOT NULL DEFAULT 'Normal',
+                    respuesta_operador TEXT,
+                    creado_por TEXT,
+                    fecha_creacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_fecha "
+            "ON notificaciones_cliente(codigo_casillero, visible, fecha_creacion DESC)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_casos_cliente_estado "
+            "ON casos_cliente(codigo_casillero, estado, fecha_actualizacion DESC)"
+        )
+        conn.commit()
+
+
 @st.cache_resource(show_spinner=False)
 def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
     init_db()
     asegurar_esquema_cotizaciones()
     asegurar_esquema_paquetes_operativo()
+    asegurar_esquema_control_cliente()
     asegurar_esquema_direcciones()
     asegurar_indices_rendimiento()
     return True
@@ -5067,7 +5411,7 @@ def guardar_permisos(casillero, datos):
 def _migrar_casillero_tablas(conn, origen, destino):
     for tabla in (
         "cotizaciones", "paquetes", "eventos_tracking", "direcciones_entrega",
-        "carrito_catalogo", "permisos_usuario",
+        "carrito_catalogo", "permisos_usuario", "notificaciones_cliente", "casos_cliente",
     ):
         try:
             conn.execute(
@@ -6173,6 +6517,7 @@ def invalidar_cache_datos_admin():
     cargar_metricas_paquetes_admin.clear()
     cargar_eventos_tracking_admin.clear()
     cargar_cotizaciones_db.clear()
+    cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
 
@@ -6256,7 +6601,7 @@ def dialogo_editar_usuario_admin(usuario, root=False):
                     cur = conn.cursor()
                     for tabla in (
                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
-                        "eventos_tracking", "paquetes", "cotizaciones",
+                        "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
                     ):
                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero=?", (cas_u,))
                     cur.execute("DELETE FROM usuarios WHERE id=?", (uid,))
@@ -9781,6 +10126,430 @@ st.markdown(
 # ---------------------------------------------------------
 # 7. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
+def pintar_control_cliente_360():
+    """Expediente operativo completo, disponible únicamente para el superusuario."""
+    st.markdown(
+        '<div class="admin-section-heading">Control integral del cliente</div>'
+        '<div class="admin-section-copy">Cotizaciones, carga, pagos, documentos, incidencias, comunicaciones y seguridad en un solo expediente.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <style>
+            .st-key-control360_selector { padding: 12px 14px; background:#fff; border:1px solid #dbe3ee; border-radius:8px; }
+            .control360-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin:12px 0 14px; padding:15px 16px; background:#f8fafc; border-left:4px solid #0757c8; border-radius:7px; }
+            .control360-head b { display:block; color:#0f172a; font-size:1rem; }
+            .control360-head span { color:#64748b; font-size:.76rem; }
+            .control360-badge { padding:5px 9px; color:#166534 !important; background:#dcfce7; border-radius:999px; font-weight:800; white-space:nowrap; }
+            .control360-section { margin:14px 0 8px; color:#0f172a; font-size:.86rem; font-weight:850; }
+            .st-key-control360_action { padding:14px; background:#f8fafc; border:1px solid #dbe3ee; border-radius:8px; }
+            @media(max-width:640px){ .control360-head{flex-direction:column}.control360-badge{align-self:flex-start} }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with get_db() as conn:
+        usuarios = conn.execute(
+            """
+            SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal,
+                   activo, dni, departamento, ciudad, direccion_exacta
+            FROM usuarios WHERE rol = 'cliente'
+            ORDER BY nombre_completo LIMIT 500
+            """
+        ).fetchall()
+    if not usuarios:
+        st.info("No hay cuentas de cliente registradas.")
+        return
+
+    etiquetas = {
+        f"{formatear_casillero(u[0])} · {u[1]} · {u[2]}": u for u in usuarios
+    }
+    with st.container(key="control360_selector"):
+        etiqueta_cliente = st.selectbox(
+            "Cliente", list(etiquetas), key="control360_cliente",
+            help="Seleccione una cuenta para abrir su expediente operativo.",
+        )
+    usuario = etiquetas[etiqueta_cliente]
+    cas, nombre, correo, telefono, activo, dni, departamento, ciudad, direccion = usuario
+    cas = formatear_casillero(cas)
+    estado_cuenta = "Cuenta activa" if activo else "Cuenta suspendida"
+    st.markdown(
+        '<div class="control360-head"><div>'
+        f'<b>{html.escape(str(nombre))}</b><span>{html.escape(cas)} · {html.escape(str(correo))} · {html.escape(str(telefono))}</span>'
+        f'</div><span class="control360-badge">{estado_cuenta}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    with get_db() as conn:
+        cotizaciones = conn.execute(
+            """
+            SELECT id, total_usd, COALESCE(fecha_creacion, fecha), confirmada,
+                   COALESCE(estado, 'emitida'), fecha_confirmacion, tipo_carga,
+                   destino_entrega, detalle_tarifa, tarifa_snapshot_json
+            FROM cotizaciones WHERE codigo_casillero = ?
+            ORDER BY COALESCE(fecha_creacion, fecha) DESC, id DESC LIMIT 200
+            """,
+            (cas,),
+        ).fetchall()
+        paquetes = conn.execute(
+            """
+            SELECT p.tracking, p.descripcion, p.contenedor_id, p.estado, p.fecha_actualizacion,
+                   p.cotizacion_id, p.tipo_contenedor, p.recibido_bodega, p.pago_confirmado,
+                   p.costo_manipulacion_usd, p.fecha_recepcion, p.ubicacion_actual, p.eta,
+                   p.proximo_paso, p.incidencia, p.visible_cliente,
+                   COALESCE(c.estado_pago, 'Pendiente'), c.referencia_pago,
+                   c.comprobante_pago_url, COALESCE(c.estado_documentos, 'Bloqueados'),
+                   COALESCE(c.incidencia_estado, 'Sin incidencia'), c.responsable_incidencia,
+                   c.fecha_compromiso, c.receptor_entrega, c.fecha_entrega,
+                   c.evidencia_entrega_url, COALESCE(c.canal_notificacion, 'Portal')
+            FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
+            WHERE p.codigo_casillero = ?
+            ORDER BY p.fecha_actualizacion DESC LIMIT 200
+            """,
+            (cas,),
+        ).fetchall()
+    casos = cargar_casos_cliente(cas)
+    notificaciones = cargar_notificaciones_cliente(cas, incluir_ocultas=True)
+    pendientes = sum(1 for c in casos if str(c[5]) not in ("Resuelto", "Cerrado"))
+    en_transito = sum(1 for p in paquetes if str(p[3]) not in ("Entregado", "Incidencia", "Retenido"))
+    m1, m2, m3, m4 = st.columns(4, gap="small")
+    m1.metric("Cotizaciones", len(cotizaciones))
+    m2.metric("Envíos activos", en_transito)
+    m3.metric("Casos abiertos", pendientes)
+    m4.metric("Notificaciones", len(notificaciones))
+
+    tab_resumen, tab_cot, tab_env, tab_casos, tab_com, tab_seg = st.tabs(
+        ["Resumen", "Cotizaciones", "Envíos", "Casos", "Comunicaciones", "Seguridad"]
+    )
+    with tab_resumen:
+        st.markdown('<div class="control360-section">Datos de cuenta y entrega</div>', unsafe_allow_html=True)
+        r1, r2 = st.columns(2, gap="medium")
+        with r1:
+            st.info(f"**Identidad:** {dni or '—'}\n\n**Ubicación:** {ciudad or '—'}, {departamento or '—'}")
+        with r2:
+            st.info(f"**Correo:** {correo or '—'}\n\n**Teléfono:** {telefono or '—'}")
+        st.caption(f"Dirección principal: {direccion or 'No registrada'}")
+        if paquetes:
+            st.markdown('<div class="control360-section">Actividad logística reciente</div>', unsafe_allow_html=True)
+            st.dataframe(
+                {
+                    "Tracking": [p[0] for p in paquetes[:10]],
+                    "Estado": [p[3] for p in paquetes[:10]],
+                    "Pago": [p[16] for p in paquetes[:10]],
+                    "Documentos": [p[19] for p in paquetes[:10]],
+                    "Actualizado": [p[4] for p in paquetes[:10]],
+                }, hide_index=True, use_container_width=True,
+            )
+
+    with tab_cot:
+        if not cotizaciones:
+            st.info("Este cliente todavía no tiene cotizaciones.")
+        else:
+            opciones_cot = {
+                f"CCM-COT-{int(c[0]):05d} · ${float(c[1] or 0):,.2f} · {c[4]}": c
+                for c in cotizaciones
+            }
+            etiqueta_cot = st.selectbox("Cotización", list(opciones_cot), key=f"c360_cot_{cas}")
+            cot = opciones_cot[etiqueta_cot]
+            st.caption(f"Emitida: {cot[2]} · Destino: {cot[7] or 'No indicado'} · Tipo: {cot[6] or 'No indicado'}")
+            estados_cot = ["emitida", "en_revision", "confirmada", "vencida", "cancelada"]
+            estado_actual_cot = str(cot[4] or "emitida")
+            nuevo_estado_cot = st.selectbox(
+                "Estado administrativo", estados_cot,
+                index=estados_cot.index(estado_actual_cot) if estado_actual_cot in estados_cot else 0,
+                key=f"c360_cot_estado_{cot[0]}",
+            )
+            nota_cot = st.text_area(
+                "Mensaje para el cliente", key=f"c360_cot_nota_{cot[0]}", height=75,
+                placeholder="Explique la aprobación, revisión, cancelación o vencimiento.",
+            )
+            notificar_cot = st.toggle("Notificar este cambio en el portal", value=True, key=f"c360_cot_notif_{cot[0]}")
+            if st.button("Guardar control de cotización", type="primary", key=f"c360_cot_save_{cot[0]}"):
+                fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                confirmada = nuevo_estado_cot == "confirmada"
+                fecha_confirmacion = fecha if confirmada and not cot[5] else cot[5] if confirmada else None
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE cotizaciones SET estado=?, confirmada=?, fecha_confirmacion=? "
+                        "WHERE id=? AND codigo_casillero=?",
+                        (nuevo_estado_cot, confirmada, fecha_confirmacion, int(cot[0]), cas),
+                    )
+                if notificar_cot:
+                    crear_notificacion_cliente(
+                        cas, f"Cotización CCM-COT-{int(cot[0]):05d}",
+                        nota_cot.strip() or f"Su cotización cambió al estado {nuevo_estado_cot}.",
+                        tipo="Cotización", tracking="", creado_por=st.session_state.get("usuario"),
+                    )
+                cargar_cotizaciones_db.clear()
+                cargar_estados_cotizaciones_db.clear()
+                cargar_cotizaciones_confirmadas_admin.clear()
+                cargar_resumen_operativo_admin.clear()
+                st.success("Cotización actualizada y registrada en el expediente.")
+                st.rerun()
+            with st.expander("Detalle comercial guardado"):
+                st.write(cot[8] or "Sin detalle tarifario.")
+                if cot[9]:
+                    try:
+                        st.json(json.loads(cot[9]))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        st.code(str(cot[9]), language="text")
+
+    with tab_env:
+        if not paquetes:
+            st.info("No hay paquetes registrados para este cliente. Use la sección Paquetes para crear el primero.")
+        else:
+            opciones_env = {f"{p[0]} · {p[3]}": p for p in paquetes}
+            etiqueta_env = st.selectbox("Envío", list(opciones_env), key=f"c360_env_{cas}")
+            paquete = opciones_env[etiqueta_env]
+            tracking = str(paquete[0])
+            estado_ops = list(ESTADOS_LOGISTICOS) + list(ESTADOS_LOGISTICOS_ESPECIALES)
+            estado_env = st.selectbox(
+                "Estado logístico", estado_ops,
+                index=estado_ops.index(paquete[3]) if paquete[3] in estado_ops else 0,
+                key=f"c360_env_estado_{tracking}",
+            )
+            e1, e2, e3 = st.columns(3, gap="small")
+            with e1:
+                ubicacion_env = st.text_input("Ubicación", value=paquete[11] or "", key=f"c360_env_ubi_{tracking}")
+            with e2:
+                eta_env = st.text_input("ETA (AAAA-MM-DD)", value=paquete[12] or "", key=f"c360_env_eta_{tracking}")
+            with e3:
+                fecha_compromiso = st.text_input("Compromiso", value=paquete[22] or "", key=f"c360_env_comp_{tracking}")
+            proximo_env = st.text_input("Próximo paso", value=paquete[13] or proximo_estado_logistico(estado_env), key=f"c360_env_next_{tracking}")
+            st.markdown('<div class="control360-section">Pago y documentos</div>', unsafe_allow_html=True)
+            p1, p2 = st.columns(2, gap="medium")
+            with p1:
+                estados_pago = ["Pendiente", "En revisión", "Confirmado", "Rechazado", "Reembolsado"]
+                estado_pago = st.selectbox("Estado del pago", estados_pago, index=estados_pago.index(paquete[16]) if paquete[16] in estados_pago else 0, key=f"c360_pago_{tracking}")
+                referencia_pago = st.text_input("Referencia", value=paquete[17] or "", key=f"c360_pago_ref_{tracking}")
+                comprobante_url = st.text_input("URL del comprobante", value=paquete[18] or "", key=f"c360_pago_url_{tracking}")
+            with p2:
+                estados_docs = ["Bloqueados", "Habilitados", "En revisión", "Reemplazados", "Anulados"]
+                estado_docs = st.selectbox("Estado de documentos", estados_docs, index=estados_docs.index(paquete[19]) if paquete[19] in estados_docs else 0, key=f"c360_docs_{tracking}")
+                recibido_env = st.toggle("Recibido en China", value=bool(paquete[7]), key=f"c360_rec_{tracking}")
+                visible_env = st.toggle("Visible para el cliente", value=bool(paquete[15]), key=f"c360_vis_{tracking}")
+            st.markdown('<div class="control360-section">Incidencia y entrega</div>', unsafe_allow_html=True)
+            i1, i2 = st.columns(2, gap="medium")
+            with i1:
+                estados_inc = ["Sin incidencia", "Abierta", "En investigación", "Esperando cliente", "Resuelta"]
+                estado_inc = st.selectbox("Estado de incidencia", estados_inc, index=estados_inc.index(paquete[20]) if paquete[20] in estados_inc else 0, key=f"c360_inc_estado_{tracking}")
+                incidencia_env = st.text_area("Detalle visible", value=paquete[14] or "", height=75, key=f"c360_inc_{tracking}")
+                responsable_inc = st.text_input("Responsable", value=paquete[21] or "", key=f"c360_inc_resp_{tracking}")
+            with i2:
+                receptor_entrega = st.text_input("Recibido por", value=paquete[23] or "", key=f"c360_ent_rec_{tracking}")
+                fecha_entrega = st.text_input("Fecha de entrega", value=paquete[24] or "", key=f"c360_ent_fecha_{tracking}")
+                evidencia_entrega = st.text_input("URL de evidencia", value=paquete[25] or "", key=f"c360_ent_url_{tracking}")
+            mensaje_env = st.text_area("Actualización para el cliente", height=75, key=f"c360_env_msg_{tracking}", placeholder="Mensaje que aparecerá en su bandeja y línea de tiempo.")
+            canal_env = st.selectbox("Canal registrado", ["Portal", "WhatsApp", "Correo", "Portal + WhatsApp"], index=0, key=f"c360_env_canal_{tracking}")
+            permitir_retroceso = st.checkbox("Autorizar corrección manual de un estado anterior", key=f"c360_env_override_{tracking}")
+            if st.button("Guardar control integral del envío", type="primary", key=f"c360_env_save_{tracking}"):
+                fechas_validar = [valor.strip() for valor in (eta_env, fecha_compromiso, fecha_entrega) if valor.strip()]
+                fechas_validas = all(_fecha_es_valida(valor) for valor in fechas_validar)
+                if not fechas_validas:
+                    st.error("ETA, compromiso y entrega deben usar el formato AAAA-MM-DD.")
+                elif not permitir_retroceso and not transicion_logistica_valida(paquete[3], estado_env):
+                    st.error("El nuevo estado retrocede el proceso. Active la autorización de corrección manual.")
+                else:
+                    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                    pago_confirmado = estado_pago == "Confirmado"
+                    documentos_habilitados = estado_docs == "Habilitados"
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            """
+                            UPDATE paquetes SET estado=?, ubicacion_actual=?, eta=?, proximo_paso=?,
+                                incidencia=?, recibido_bodega=?, pago_confirmado=?, visible_cliente=?,
+                                fecha_actualizacion=? WHERE tracking=? AND codigo_casillero=?
+                            """,
+                            (estado_env, ubicacion_env.strip(), eta_env.strip(), proximo_env.strip(),
+                             incidencia_env.strip(), bool(recibido_env), pago_confirmado,
+                             bool(visible_env), fecha, tracking, cas),
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO control_envios (
+                                tracking, estado_pago, referencia_pago, comprobante_pago_url,
+                                estado_documentos, incidencia_estado, responsable_incidencia,
+                                fecha_compromiso, receptor_entrega, fecha_entrega,
+                                evidencia_entrega_url, canal_notificacion, actualizado_por,
+                                fecha_actualizacion
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(tracking) DO UPDATE SET
+                                estado_pago=excluded.estado_pago,
+                                referencia_pago=excluded.referencia_pago,
+                                comprobante_pago_url=excluded.comprobante_pago_url,
+                                estado_documentos=excluded.estado_documentos,
+                                incidencia_estado=excluded.incidencia_estado,
+                                responsable_incidencia=excluded.responsable_incidencia,
+                                fecha_compromiso=excluded.fecha_compromiso,
+                                receptor_entrega=excluded.receptor_entrega,
+                                fecha_entrega=excluded.fecha_entrega,
+                                evidencia_entrega_url=excluded.evidencia_entrega_url,
+                                canal_notificacion=excluded.canal_notificacion,
+                                actualizado_por=excluded.actualizado_por,
+                                fecha_actualizacion=excluded.fecha_actualizacion
+                            """,
+                            (tracking, estado_pago, referencia_pago.strip(), comprobante_url.strip(),
+                             estado_docs, estado_inc, responsable_inc.strip(), fecha_compromiso.strip(),
+                             receptor_entrega.strip(), fecha_entrega.strip(), evidencia_entrega.strip(),
+                             canal_env, st.session_state.get("usuario") or "superadmin", fecha),
+                        )
+                        if mensaje_env.strip() or estado_env != paquete[3]:
+                            cur.execute(
+                                """
+                                INSERT INTO eventos_tracking (
+                                    tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                                    nota_interna, fecha_evento, creado_por, visible_cliente
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (tracking, cas, estado_env, ubicacion_env.strip(),
+                                 mensaje_env.strip() or f"Estado actualizado: {estado_env}.",
+                                 f"Pago: {estado_pago}; documentos: {estado_docs}", fecha,
+                                 st.session_state.get("usuario") or "superadmin", bool(visible_env)),
+                            )
+                    if documentos_habilitados and not (recibido_env or pago_confirmado):
+                        st.warning("Los documentos se marcaron habilitados manualmente sin recepción ni pago confirmado.")
+                    crear_notificacion_cliente(
+                        cas, f"Actualización de {tracking}",
+                        mensaje_env.strip() or f"Su envío ahora está en estado {estado_env}.",
+                        tipo="Seguimiento", prioridad="Urgente" if estado_inc in ("Abierta", "En investigación") else "Normal",
+                        tracking=tracking, canal=canal_env,
+                    )
+                    cargar_paquetes_db.clear()
+                    cargar_eventos_tracking_db.clear()
+                    cargar_paquetes_admin.clear()
+                    cargar_metricas_paquetes_admin.clear()
+                    cargar_eventos_tracking_admin.clear()
+                    cargar_resumen_operativo_admin.clear()
+                    st.success("Control del envío actualizado; el cliente recibió una notificación.")
+                    st.rerun()
+
+    with tab_casos:
+        if not casos:
+            st.info("No hay solicitudes o incidencias registradas.")
+        else:
+            opciones_caso = {f"#{int(c[0]):04d} · {c[3]} · {c[5]}": c for c in casos}
+            etiqueta_caso = st.selectbox("Caso", list(opciones_caso), key=f"c360_caso_{cas}")
+            caso = opciones_caso[etiqueta_caso]
+            st.info(f"**Solicitud del cliente:** {caso[4]}")
+            estados_caso = ["Abierto", "En revisión", "Esperando cliente", "Resuelto", "Cerrado"]
+            estado_caso = st.selectbox("Estado", estados_caso, index=estados_caso.index(caso[5]) if caso[5] in estados_caso else 0, key=f"c360_caso_estado_{caso[0]}")
+            prioridad_caso = st.selectbox("Prioridad", ["Baja", "Normal", "Alta", "Urgente"], index=["Baja", "Normal", "Alta", "Urgente"].index(caso[6]) if caso[6] in ["Baja", "Normal", "Alta", "Urgente"] else 1, key=f"c360_caso_prio_{caso[0]}")
+            respuesta_caso = st.text_area("Respuesta al cliente", value=caso[7] or "", height=110, key=f"c360_caso_resp_{caso[0]}")
+            if st.button("Guardar respuesta", type="primary", key=f"c360_caso_save_{caso[0]}"):
+                fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE casos_cliente SET estado=?, prioridad=?, respuesta_operador=?, "
+                        "fecha_actualizacion=? WHERE id=? AND codigo_casillero=?",
+                        (estado_caso, prioridad_caso, respuesta_caso.strip(), fecha, int(caso[0]), cas),
+                    )
+                crear_notificacion_cliente(
+                    cas, f"Respuesta al caso #{int(caso[0]):04d}",
+                    respuesta_caso.strip() or f"Su solicitud cambió al estado {estado_caso}.",
+                    tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
+                )
+                cargar_casos_cliente.clear()
+                st.success("Caso actualizado y respuesta enviada al portal del cliente.")
+                st.rerun()
+
+    with tab_com:
+        tipo_notif = st.selectbox("Tipo", ["Información", "Cotización", "Seguimiento", "Pago", "Documentos", "Soporte"], key=f"c360_not_tipo_{cas}")
+        prioridad_notif = st.selectbox("Prioridad", ["Baja", "Normal", "Alta", "Urgente"], index=1, key=f"c360_not_prio_{cas}")
+        titulo_notif = st.text_input("Título", max_chars=120, key=f"c360_not_titulo_{cas}")
+        mensaje_notif = st.text_area("Mensaje", max_chars=1500, height=100, key=f"c360_not_msg_{cas}")
+        canal_notif = st.selectbox("Canal registrado", ["Portal", "WhatsApp", "Correo", "Portal + WhatsApp"], key=f"c360_not_canal_{cas}")
+        tracking_notif = st.selectbox("Tracking relacionado", ["Sin tracking"] + [str(p[0]) for p in paquetes], key=f"c360_not_track_{cas}")
+        if st.button("Enviar al centro de notificaciones", type="primary", key=f"c360_not_send_{cas}"):
+            if crear_notificacion_cliente(
+                cas, titulo_notif, mensaje_notif, tipo_notif, prioridad_notif,
+                "" if tracking_notif == "Sin tracking" else tracking_notif, canal_notif,
+            ):
+                st.success("Notificación publicada para este cliente.")
+                st.rerun()
+            else:
+                st.warning("Escriba un título y un mensaje.")
+        if notificaciones:
+            st.markdown('<div class="control360-section">Historial de comunicaciones</div>', unsafe_allow_html=True)
+            st.dataframe(
+                {
+                    "Fecha": [n[9] for n in notificaciones], "Título": [n[4] for n in notificaciones],
+                    "Tipo": [n[2] for n in notificaciones], "Canal": [n[6] for n in notificaciones],
+                    "Leída": ["Sí" if n[7] else "No" for n in notificaciones],
+                    "Visible": ["Sí" if n[8] else "No" for n in notificaciones],
+                }, hide_index=True, use_container_width=True,
+            )
+            opciones_hist_not = {
+                f"#{int(n[0]):04d} · {n[4]} · {n[9]}": n for n in notificaciones
+            }
+            notif_hist_sel = st.selectbox(
+                "Administrar notificación", list(opciones_hist_not), key=f"c360_not_admin_{cas}"
+            )
+            notif_hist = opciones_hist_not[notif_hist_sel]
+            notif_visible = st.toggle(
+                "Visible en el portal", value=bool(notif_hist[8]), key=f"c360_not_visible_{notif_hist[0]}"
+            )
+            if st.button("Guardar visibilidad", key=f"c360_not_vis_save_{notif_hist[0]}"):
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE notificaciones_cliente SET visible=? WHERE id=? AND codigo_casillero=?",
+                        (bool(notif_visible), int(notif_hist[0]), cas),
+                    )
+                cargar_notificaciones_cliente.clear()
+                st.success("Visibilidad de la notificación actualizada.")
+                st.rerun()
+
+    with tab_seg:
+        with st.container(key="control360_action"):
+            cuenta_habilitada = st.toggle("Permitir inicio de sesión", value=bool(activo), key=f"c360_activo_{cas}")
+            if st.button("Guardar estado de la cuenta", key=f"c360_activo_save_{cas}"):
+                with get_db() as conn:
+                    conn.execute("UPDATE usuarios SET activo=? WHERE codigo_casillero=? AND rol='cliente'", (bool(cuenta_habilitada), cas))
+                st.success("Estado de acceso actualizado.")
+                st.rerun()
+        clave_temporal = st.text_input("Nueva contraseña", type="password", key=f"c360_pwd_{cas}", placeholder="Vacío para generar una clave temporal")
+        if st.button("Restablecer contraseña", key=f"c360_pwd_save_{cas}"):
+            clave = clave_temporal.strip() or generar_clave_provisional()
+            with get_db() as conn:
+                conn.execute("UPDATE usuarios SET password_hash=? WHERE codigo_casillero=? AND rol='cliente'", (hash_pwd(clave), cas))
+            st.success("Contraseña restablecida. Comparta la clave por un canal privado.")
+            st.code(clave, language="text")
+        st.markdown('<div class="control360-section">Permisos del portal</div>', unsafe_allow_html=True)
+        permisos_360 = permisos_de(cas)
+        per1, per2 = st.columns(2, gap="medium")
+        with per1:
+            st.caption("Países")
+            p360_china = st.toggle("China", value=bool(permisos_360.get("hub_china")), key=f"c360_perm_cn_{cas}")
+            p360_eeuu = st.toggle("Estados Unidos", value=bool(permisos_360.get("hub_eeuu")), key=f"c360_perm_us_{cas}")
+            p360_hn = st.toggle("Honduras", value=bool(permisos_360.get("hub_honduras")), key=f"c360_perm_hn_{cas}")
+        with per2:
+            st.caption("Módulos")
+            p360_cot = st.toggle("Cotizador", value=bool(permisos_360.get("mod_cotizador")), key=f"c360_perm_cot_{cas}")
+            p360_cat = st.toggle("Catálogo", value=bool(permisos_360.get("mod_catalogo")), key=f"c360_perm_cat_{cas}")
+            p360_hist = st.toggle("Cotizaciones", value=bool(permisos_360.get("mod_cotizaciones")), key=f"c360_perm_hist_{cas}")
+            p360_env = st.toggle("Envíos", value=bool(permisos_360.get("mod_envios")), key=f"c360_perm_env_{cas}")
+            p360_fic = st.toggle("Fichas", value=bool(permisos_360.get("mod_fichas")), key=f"c360_perm_fic_{cas}")
+        if st.button("Guardar permisos", type="primary", key=f"c360_perm_save_{cas}"):
+            guardar_permisos(
+                cas,
+                {
+                    "hub_china": p360_china, "hub_eeuu": p360_eeuu,
+                    "hub_honduras": p360_hn, "mod_cotizador": p360_cot,
+                    "mod_catalogo": p360_cat, "mod_cotizaciones": p360_hist,
+                    "mod_envios": p360_env, "mod_fichas": p360_fic,
+                },
+            )
+            st.success("Permisos actualizados. Se aplicarán en el próximo refresco del cliente.")
+
+
+def _fecha_es_valida(valor):
+    try:
+        datetime.strptime(str(valor), "%Y-%m-%d")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 if not st.session_state["autenticado"]:
     if st.session_state["vista_actual"] == "login":
         with st.container(key="login_header"):
@@ -10175,6 +10944,7 @@ elif st.session_state["rol"] == "cliente":
     fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
     lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
+    estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
     total_cotizaciones = len(lista_mis_cotizaciones)
     direcciones_guardadas = direcciones_sesion(casillero)
     opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
@@ -10218,6 +10988,7 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_inicio"):
             if not hub_sel:
                 pintar_anuncio_portal_cliente()
+                pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
                     '<div class="client-home-copy">Seleccione el origen de su carga o abra directamente una herramienta disponible.</div>',
@@ -10369,7 +11140,7 @@ elif st.session_state["rol"] == "cliente":
                 [
                     ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
                     ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
-                    ("📦", "Seguimiento y documentos", "CCM los habilita al confirmar <b>recepción o pago</b>.", "verde"),
+                    ("📦", "Seguimiento y documentos", "CCM los habilita después de validar <b>recepción, pago y documentación</b>.", "verde"),
                 ]
             )
             # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
@@ -10382,7 +11153,7 @@ elif st.session_state["rol"] == "cliente":
                     f'border-radius:12px;padding:14px 16px;margin:10px 0 14px;color:#166534;">'
                     f'<div style="font-weight:800;font-size:1rem;">✅ CCM-COT-{int(confirmada_flash):05d} confirmada correctamente</div>'
                     f'<div style="margin-top:4px;font-size:.9rem;">La tarifa quedó confirmada por 48 horas. '
-                    f'CCM habilitará los documentos al registrar la recepción o el pago.</div></div>',
+                    f'CCM habilitará los documentos después de la validación operativa.</div></div>',
                     unsafe_allow_html=True,
                 )
             elif error_confirmacion:
@@ -10408,6 +11179,8 @@ elif st.session_state["rol"] == "cliente":
                 for cot in cotizaciones_render:
                     id_cot_item, al_c, an_c, la_c, pe_lb_c, vol_m3_c, tot_c, fec_c, conf_c = cot
                     consolidada = es_cotizacion_confirmada(conf_c)
+                    estado_admin_cot = estados_cotizaciones_cliente.get(int(id_cot_item), "confirmada" if consolidada else "emitida")
+                    cotizacion_operable = estado_admin_cot == "emitida"
                     fecha_confirmacion = confirmaciones_cotizaciones.get(int(id_cot_item))
                     estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn, fecha_confirmacion)
                     color_estado = "#1d4ed8" if consolidada else "#166534"
@@ -10419,6 +11192,8 @@ elif st.session_state["rol"] == "cliente":
                     id_ancla = 'id="cotizacion-foco-pendiente"' if pendiente_foco else f'id="cotizacion-ccm-{id_cot_item}"'
                     insignia = (
                         '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
+                        if not consolidada and cotizacion_operable
+                        else f'<span style="display:inline-flex;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(estado_admin_cot.replace("_", " ").title())}</span>'
                         if not consolidada
                         else '<span style="display:inline-flex;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">✅ Confirmada · 48 h</span>'
                     )
@@ -10489,25 +11264,32 @@ elif st.session_state["rol"] == "cliente":
                                 )
                             else:
                                 st.button(
-                                    "🔒 PDF pendiente de recepción o pago",
+                                    "🔒 PDF pendiente de validación",
                                     key=f"dl_cot_locked_{id_cot_item}",
                                     disabled=True,
                                     use_container_width=True,
                                 )
                         else:
-                            confirmar_ctx = (
-                                st.container(key=f"foco_confirmar_{id_cot_item}")
-                                if pendiente_foco
-                                else st.container()
-                            )
-                            with confirmar_ctx:
+                            if cotizacion_operable:
+                                confirmar_ctx = (
+                                    st.container(key=f"foco_confirmar_{id_cot_item}")
+                                    if pendiente_foco
+                                    else st.container()
+                                )
+                                with confirmar_ctx:
+                                    st.button(
+                                        "Confirmar Cotización",
+                                        type="primary",
+                                        key=f"btn_confirmar_cot_{id_cot_item}",
+                                        use_container_width=True,
+                                        on_click=on_confirmar_cot_historial,
+                                        args=(id_cot_item, casillero),
+                                    )
+                            else:
                                 st.button(
-                                    "Confirmar Cotización",
-                                    type="primary",
-                                    key=f"btn_confirmar_cot_{id_cot_item}",
-                                    use_container_width=True,
-                                    on_click=on_confirmar_cot_historial,
-                                    args=(id_cot_item, casillero),
+                                    f"Cotización {estado_admin_cot.replace('_', ' ')}",
+                                    key=f"btn_cot_bloqueada_{id_cot_item}",
+                                    disabled=True, use_container_width=True,
                                 )
                             st.download_button(
                                 f"📥 PDF CCM-COT-{id_cot_item:05d}",
@@ -11127,6 +11909,13 @@ elif st.session_state["rol"] == "cliente":
                     eta_p = html.escape(str(p[12] or "Por confirmar"))
                     proximo_paso_p = html.escape(str(p[13] or proximo_estado_logistico(p[3])))
                     incidencia_p = html.escape(str(p[14] or ""))
+                    estado_pago_p = html.escape(str(p[16] or ("Confirmado" if pagado_p else "Pendiente"))) if len(p) > 16 else ("Confirmado" if pagado_p else "Pendiente")
+                    estado_docs_p = html.escape(str(p[17] or "Bloqueados")) if len(p) > 17 else "Bloqueados"
+                    compromiso_p = html.escape(str(p[18] or "")) if len(p) > 18 else ""
+                    receptor_p = html.escape(str(p[19] or "")) if len(p) > 19 else ""
+                    entrega_p = html.escape(str(p[20] or "")) if len(p) > 20 else ""
+                    evidencia_p = url_anuncio_segura(p[21]) if len(p) > 21 else ""
+                    incidencia_estado_p = html.escape(str(p[22] or "Sin incidencia")) if len(p) > 22 else "Sin incidencia"
                     progreso_p = porcentaje_estado_logistico(p[3])
                     flag_recepcion = "ok" if recibido_p else ""
                     flag_pago = "ok" if pagado_p else ""
@@ -11143,15 +11932,25 @@ elif st.session_state["rol"] == "cliente":
                         + f'</div><div class="shipment-flags">'
                         f'<span class="shipment-flag {flag_recepcion}">{"✓ Recibido en China" if recibido_p else "Pendiente de recepción"}</span>'
                         f'<span class="shipment-flag {flag_pago}">{"✓ Pago confirmado" if pagado_p else "Pago pendiente"}</span>'
+                        f'<span class="shipment-flag {"ok" if estado_docs_p == "Habilitados" else ""}">Documentos: {estado_docs_p}</span>'
                         f'</div>'
                         f'<div style="margin-top:12px;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
                         f'<div style="width:{progreso_p}%;height:100%;background:#157347;"></div></div>'
                         f'<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-size:.76rem;color:#475569;">'
                         f'<span>Progreso {progreso_p}%</span><span>Próximo paso: <b>{proximo_paso_p}</b></span></div>'
                         + (f'<div style="margin-top:10px;padding:9px 11px;background:#fff7ed;border-left:3px solid #ea580c;color:#9a3412;font-size:.8rem;"><b>Atención:</b> {incidencia_p}</div>' if incidencia_p else '')
+                        + f'<div style="margin-top:9px;color:#475569;font-size:.76rem;">Pago: <b>{estado_pago_p}</b> · Incidencia: <b>{incidencia_estado_p}</b>'
+                        + (f' · Compromiso: <b>{compromiso_p}</b>' if compromiso_p else '')
+                        + (f' · Entregado a: <b>{receptor_p}</b> ({entrega_p})' if receptor_p or entrega_p else '')
+                        + '</div>'
                         + f'</article>',
                         unsafe_allow_html=True,
                     )
+                    if evidencia_p:
+                        st.link_button(
+                            "Ver evidencia de entrega", evidencia_p,
+                            use_container_width=True,
+                        )
                     eventos_paquete = eventos_por_tracking.get(str(p[0] or ""), [])
                     with st.expander(
                         f"Ver recorrido y actualizaciones · {len(eventos_paquete)} evento(s)",
@@ -11214,7 +12013,7 @@ elif st.session_state["rol"] == "cliente":
                         fec_e, conf_e, ahora_hn, confirmaciones_cotizaciones.get(int(id_e))
                     )
                     clase_documentos = "is-ready" if documentos_habilitados else "is-locked"
-                    texto_documentos = "✓ Documentos habilitados" if documentos_habilitados else "🔒 Pendiente de recepción o pago"
+                    texto_documentos = "✓ Documentos habilitados" if documentos_habilitados else "🔒 Pendiente de validación"
                     html_tarjeta_envio = (
                         f'<article {id_ancla_env} class="quote-shipment-card {clase_documentos}">'
                         f'<div class="quote-shipment-head"><span class="quote-shipment-id">CCM-COT-{id_e:05d}</span>'
@@ -11290,7 +12089,7 @@ elif st.session_state["rol"] == "cliente":
                                 disabled=True,
                                 use_container_width=True,
                             )
-                            st.caption("CCM habilitará estos documentos al confirmar la recepción o el pago.")
+                            st.caption("CCM habilitará estos documentos después de la validación operativa.")
                 if limite_envios < total_envios:
                     st.button(
                         f"Mostrar 10 documentos más ({limite_envios} de {total_envios})",
@@ -11325,7 +12124,7 @@ elif st.session_state["rol"] == "cliente":
                     <div style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:0.85rem;">
                         <b>🔖 CCM-COT-{id_f:05d}</b> &bull; Fecha: {formatear_fecha_pantalla(fec_f)}<br>
                         <small style="color:#475569;">📐 Medidas: {al_f:.1f}x{an_f:.1f}x{la_f:.1f} cm | Peso: {pe_f:.1f} lbs | 💰 Total: <b>${tot_f:.2f} USD</b></small><br>
-                        <small style="color:{'#15803d' if ficha_disponible else '#64748b'};font-weight:800;">{'✓ Ficha habilitada' if ficha_disponible else '🔒 Pendiente de recepción o pago'}</small>
+                        <small style="color:{'#15803d' if ficha_disponible else '#64748b'};font-weight:800;">{'✓ Ficha habilitada' if ficha_disponible else '🔒 Pendiente de validación'}</small>
                     </div>
                     """,
                         unsafe_allow_html=True,
@@ -11355,7 +12154,7 @@ elif st.session_state["rol"] == "cliente":
                         )
                     else:
                         st.button(
-                            "🔒 Ficha pendiente de recepción o pago",
+                            "🔒 Ficha pendiente de validación",
                             key=f"ficha_locked_{id_f}",
                             disabled=True,
                             use_container_width=True,
@@ -12040,11 +12839,13 @@ elif es_rol_admin():
                 .st-key-admin_nav [role="radiogroup"],
                 .st-key-admin_nav [data-baseweb="button-group"] {
                     gap: 4px !important;
+                    flex-wrap: wrap !important;
                 }
                 .st-key-admin_nav [data-testid="stSegmentedControl"] button,
                 .st-key-admin_nav [data-testid="stSegmentedControl"] label,
                 .st-key-admin_nav [role="radiogroup"] > label,
                 .st-key-admin_nav [data-baseweb="radio"] {
+                    flex: 1 1 30% !important;
                     min-height: 42px !important;
                     padding-left: 3px !important;
                     padding-right: 3px !important;
@@ -12095,9 +12896,10 @@ elif es_rol_admin():
 
     opciones_admin = ["Usuarios", "Paquetes"]
     if root:
-        opciones_admin = ["Usuarios", "Anuncios", "Paquetes", "Tarifas", "Sistema"]
+        opciones_admin = ["Usuarios", "Control 360", "Paquetes", "Anuncios", "Tarifas", "Sistema"]
     etiquetas_admin = {
         "Usuarios": "👥 Usuarios",
+        "Control 360": "🎛️ Control 360",
         "Anuncios": "📣 Anuncios",
         "Paquetes": "📦 Paquetes",
         "Tarifas": "⚙️ Tarifas",
@@ -12563,7 +13365,7 @@ elif es_rol_admin():
                                     cur = conn.cursor()
                                     for tabla in (
                                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
-                                        "eventos_tracking", "paquetes", "cotizaciones",
+                                        "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
                                     ):
                                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
                                     cur.execute(
@@ -12577,6 +13379,7 @@ elif es_rol_admin():
                                 cargar_metricas_paquetes_admin.clear()
                                 cargar_eventos_tracking_admin.clear()
                                 cargar_cotizaciones_db.clear()
+                                cargar_estados_cotizaciones_db.clear()
                                 cargar_cotizaciones_confirmadas_admin.clear()
                                 cargar_resumen_operativo_admin.clear()
                                 st.success("Cuenta eliminada.")
@@ -12743,6 +13546,9 @@ elif es_rol_admin():
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error("Ya existe un casillero, DNI o correo con esos datos.")
+
+    if admin_seccion == "Control 360" and root:
+        pintar_control_cliente_360()
 
     if admin_seccion == "Anuncios" and root:
         st.markdown(
@@ -13064,7 +13870,7 @@ elif es_rol_admin():
                     format="%.2f",
                     key=f"admin_pkg_costo_manipulacion_{sufijo_editor}",
                 )
-            st.caption("La recepción o el pago confirmado habilitan los documentos oficiales para el cliente.")
+            st.caption("La recepción o el pago habilitan documentos por defecto; Control 360 permite autorizarlos o bloquearlos manualmente.")
             visible_cliente_in = st.toggle(
                 "Visible en el portal del cliente",
                 value=bool(paquete_editar[16]) if paquete_editar else True,
