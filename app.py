@@ -2836,6 +2836,45 @@ def cerrar_conversacion_caso_cliente():
     st.session_state.pop("cliente_caso_activo", None)
 
 
+def cambiar_estado_caso_desde_cliente(caso_id, casillero, nuevo_estado):
+    """Permite cerrar o reabrir únicamente un caso perteneciente al cliente."""
+    estado = str(nuevo_estado or "").strip()
+    if estado not in ("Cerrado", "Abierto"):
+        return False
+    cas = formatear_casillero(casillero)
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT estado FROM casos_cliente WHERE id=? AND codigo_casillero=?",
+            (int(caso_id), cas),
+        )
+        fila = cursor.fetchone()
+        if fila is None:
+            return False
+        if str(fila[0]) == estado:
+            return True
+        cursor.execute(
+            "UPDATE casos_cliente SET estado=?, fecha_actualizacion=? "
+            "WHERE id=? AND codigo_casillero=?",
+            (estado, fecha, int(caso_id), cas),
+        )
+        texto_evento = (
+            "El cliente cerró esta solicitud."
+            if estado == "Cerrado" else "El cliente reabrió esta solicitud."
+        )
+        cursor.execute(
+            """
+            INSERT INTO casos_mensajes (
+                caso_id, codigo_casillero, autor_tipo, autor_nombre, mensaje, fecha_creacion
+            ) VALUES (?, ?, 'sistema', 'Sistema', ?, ?)
+            """,
+            (int(caso_id), cas, texto_evento, fecha),
+        )
+    invalidar_cache_soporte()
+    return True
+
+
 def crear_notificacion_cliente(
     casillero, titulo, mensaje, tipo="Información", prioridad="Normal",
     tracking="", canal="Portal", creado_por=None,
@@ -4516,14 +4555,28 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .st-key-soporte_cliente_panel details > summary * { color:#0f172a !important; -webkit-text-fill-color:#0f172a !important; font-weight:800 !important; opacity:1 !important; }
                 .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"] { padding:14px 16px 16px !important; background:#f8fafc !important; }
                 .support-case-card { min-height:74px; padding:11px 13px; background:#fff; border:1px solid #e2e8f0; border-left:4px solid #0757c8; border-radius:7px; box-sizing:border-box; }
+                .support-case-card.closed { border-left-color:#94a3b8; background:#fbfcfe; }
+                .support-case-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
                 .support-case-card b { display:block; color:#0f172a; font-size:.82rem; line-height:1.35; }
                 .support-case-card span { display:block; margin-top:5px; color:#64748b; font-size:.68rem; line-height:1.35; }
-                .support-thread-head { padding:12px 14px; margin:8px 0 10px; background:#eaf3ff; border:1px solid #bfd7f5; border-radius:7px; }
-                .support-thread-head b { display:block; color:#0f172a; font-size:.86rem; }
-                .support-thread-head span { display:block; margin-top:3px; color:#52677f; font-size:.69rem; }
+                .support-case-card .support-card-status { flex:none; display:inline-block; margin:0; padding:3px 7px; color:#166534; background:#dcfce7; border-radius:999px; font-size:.61rem; font-weight:850; }
+                .support-case-card .support-card-status.closed { color:#475569; background:#e2e8f0; }
+                .support-thread-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 15px; margin:10px 0 12px; background:#fff; border:1px solid #d8e2ee; border-left:4px solid #0757c8; border-radius:8px; }
+                .support-thread-identity { display:flex; align-items:center; gap:11px; min-width:0; }
+                .support-thread-icon { display:grid !important; place-items:center; flex:0 0 38px; width:38px; height:38px; margin:0 !important; color:#0757c8 !important; background:#eaf3ff; border-radius:7px; font-size:.68rem !important; font-weight:900; }
+                .support-thread-head small { display:block; margin-bottom:2px; color:#0757c8; font-size:.61rem; font-weight:850; text-transform:uppercase; }
+                .support-thread-head b { display:block; overflow-wrap:anywhere; color:#0f172a; font-size:.87rem; line-height:1.3; }
+                .support-thread-head .support-thread-meta { display:block; margin-top:4px; color:#64748b; font-size:.67rem; }
+                .support-status { flex:none; padding:5px 9px; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; border-radius:999px; font-size:.64rem; font-weight:850; }
+                .support-status.closed { color:#475569; background:#f1f5f9; border-color:#cbd5e1; }
                 .support-message { max-width:88%; margin:7px 0; padding:10px 12px; background:#fff; border:1px solid #dbe3ee; border-radius:7px; color:#334155; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
                 .support-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
+                .support-message.system { max-width:max-content; margin:9px auto; padding:6px 10px; color:#64748b; background:#eef2f6; border:0; border-radius:999px; font-size:.68rem; text-align:center; }
                 .support-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
+                .support-closed-note { margin:12px 0 8px; padding:11px 13px; color:#475569; background:#f1f5f9; border:1px solid #d8e1ea; border-radius:7px; font-size:.75rem; line-height:1.4; }
+                [class*="st-key-cerrar_caso_cliente_"] .stButton > button { color:#b91c1c !important; -webkit-text-fill-color:#b91c1c !important; background:#fff !important; border-color:#fecaca !important; box-shadow:none !important; }
+                [class*="st-key-cerrar_caso_cliente_"] .stButton > button:hover { background:#fef2f2 !important; border-color:#ef4444 !important; }
+                .support-close-confirm { margin:9px 0; padding:11px 13px; color:#7f1d1d; background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #dc2626; border-radius:7px; font-size:.74rem; }
                 .st-key-soporte_cliente_panel .stButton > button { min-height:40px; border-radius:7px !important; font-weight:800 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] { display:flex !important; gap:6px !important; padding:5px !important; margin-bottom:8px; background:#eaf0f6 !important; border:1px solid #d8e1ec !important; border-radius:8px !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label { flex:1 !important; min-height:38px !important; margin:0 !important; padding:7px 11px !important; justify-content:center !important; background:#fff !important; border:1px solid #d7e0eb !important; border-radius:6px !important; }
@@ -4536,7 +4589,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 [class*="st-key-soporte_composer_cliente_"] textarea, [class*="st-key-soporte_composer_cliente_"] textarea:focus, [class*="st-key-soporte_composer_cliente_"] textarea:focus-visible { min-height:70px !important; outline:0 !important; color:#0f172a !important; background:#f8fafc !important; box-shadow:none !important; font-size:.8rem !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:none !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button:focus, [class*="st-key-soporte_composer_cliente_"] .stButton > button:active { outline:0 !important; box-shadow:none !important; }
-                @media(max-width:700px){ .support-message{max-width:96%} .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
+                @media(max-width:700px){ .support-thread-head{align-items:flex-start;flex-direction:column}.support-message{max-width:96%}.st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
                 </style>
                 """,
                 unsafe_allow_html=True,
@@ -4561,18 +4614,23 @@ def pintar_vista_actividad(total_cotizaciones=0):
                     else:
                         for caso in casos_cliente[:10]:
                             estado_texto = str(caso[5] or "Abierto")
+                            caso_lista_cerrado = estado_texto in ("Cerrado", "Resuelto")
+                            clase_caso_lista = "closed" if caso_lista_cerrado else ""
                             detalle_caso, accion_caso = st.columns([4.5, 1.35])
                             with detalle_caso:
                                 st.markdown(
-                                    '<div class="support-case-card">'
+                                    f'<div class="support-case-card {clase_caso_lista}">'
+                                    '<div class="support-case-card-head">'
                                     f'<b>#{int(caso[0]):04d} · {html.escape(str(caso[3]))}</b>'
-                                    f'<span>{html.escape(estado_texto)} · {html.escape(str(caso[2]))} · '
+                                    f'<span class="support-card-status {clase_caso_lista}">'
+                                    f'{html.escape(estado_texto)}</span></div>'
+                                    f'<span>{html.escape(str(caso[2]))} · '
                                     f'Actualizado {html.escape(str(caso[10]))}</span></div>',
                                     unsafe_allow_html=True,
                                 )
                             with accion_caso:
                                 st.button(
-                                    "Abrir conversación",
+                                    "Ver historial" if caso_lista_cerrado else "Abrir conversación",
                                     key=f"cliente_abrir_caso_{caso[0]}",
                                     use_container_width=True,
                                     on_click=abrir_conversacion_caso_cliente,
@@ -4586,12 +4644,22 @@ def pintar_vista_actividad(total_cotizaciones=0):
                         if caso_seleccionado:
                             caso_id = int(caso_seleccionado[0])
                             mensajes = obtener_hilo_soporte(caso_id, cas_formato)
+                            estado_caso_cliente = str(caso_seleccionado[5] or "Abierto")
+                            caso_cerrado = estado_caso_cliente == "Cerrado"
+                            clase_estado = "closed" if caso_cerrado else ""
+                            tracking_caso = (
+                                f" · Tracking: {html.escape(str(caso_seleccionado[1]))}"
+                                if caso_seleccionado[1] else " · Sin tracking asociado"
+                            )
                             st.markdown(
-                                '<div class="support-thread-head">'
-                                f'<b>Conversación #{caso_id:04d} · {html.escape(str(caso_seleccionado[3]))}</b>'
-                                f'<span>Estado: {html.escape(str(caso_seleccionado[5]))}'
-                                f'{" · Tracking: " + html.escape(str(caso_seleccionado[1])) if caso_seleccionado[1] else ""}</span>'
-                                '</div>',
+                                '<section class="support-thread-head">'
+                                '<div class="support-thread-identity"><span class="support-thread-icon">SC</span><div>'
+                                f'<small>Solicitud #{caso_id:04d}</small>'
+                                f'<b>{html.escape(str(caso_seleccionado[3]))}</b>'
+                                f'<span class="support-thread-meta">{html.escape(str(caso_seleccionado[2]))}'
+                                f'{tracking_caso} · Actualizado {html.escape(str(caso_seleccionado[10]))}</span>'
+                                f'</div></div><span class="support-status {clase_estado}">'
+                                f'{html.escape(estado_caso_cliente)}</span></section>',
                                 unsafe_allow_html=True,
                             )
                             st.markdown(
@@ -4607,8 +4675,13 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     unsafe_allow_html=True,
                                 )
                             for mensaje in mensajes:
-                                clase = "client" if str(mensaje[1]) == "cliente" else ""
-                                autor = "Usted" if clase else "Equipo CCM"
+                                tipo_autor = str(mensaje[1])
+                                if tipo_autor == "cliente":
+                                    clase, autor = "client", "Usted"
+                                elif tipo_autor == "sistema":
+                                    clase, autor = "system", "Sistema"
+                                else:
+                                    clase, autor = "", "Equipo CCM"
                                 st.markdown(
                                     f'<div class="support-message {clase}"><small>{autor} · '
                                     f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
@@ -4622,35 +4695,98 @@ def pintar_vista_actividad(total_cotizaciones=0):
                             clave_limpiar_cliente = f"_limpiar_cliente_caso_{caso_id}"
                             if st.session_state.pop(clave_limpiar_cliente, False):
                                 st.session_state.pop(clave_respuesta_cliente, None)
-                            with st.container(key=f"soporte_composer_cliente_{caso_id}"):
-                                campo_mensaje, accion_enviar = st.columns([5, 1.15], gap="small")
-                                with campo_mensaje:
-                                    respuesta_cliente = st.text_area(
-                                        "Mensaje para soporte",
-                                        height=70,
-                                        placeholder="Escriba un mensaje...",
-                                        key=clave_respuesta_cliente,
-                                        label_visibility="collapsed",
-                                    )
-                                with accion_enviar:
-                                    enviar_respuesta_cliente = st.button(
-                                        "Enviar", type="primary",
-                                        key=f"cliente_enviar_respuesta_{caso_id}",
+                            if not caso_cerrado:
+                                with st.container(key=f"soporte_composer_cliente_{caso_id}"):
+                                    campo_mensaje, accion_enviar = st.columns([5, 1.15], gap="small")
+                                    with campo_mensaje:
+                                        respuesta_cliente = st.text_area(
+                                            "Mensaje para soporte",
+                                            height=70,
+                                            placeholder="Escriba un mensaje...",
+                                            key=clave_respuesta_cliente,
+                                            label_visibility="collapsed",
+                                        )
+                                    with accion_enviar:
+                                        enviar_respuesta_cliente = st.button(
+                                            "Enviar", type="primary",
+                                            key=f"cliente_enviar_respuesta_{caso_id}",
+                                            use_container_width=True,
+                                        )
+                                if enviar_respuesta_cliente:
+                                    if agregar_mensaje_caso(
+                                        caso_id, cas_formato, "cliente", respuesta_cliente, "Abierto"
+                                    ):
+                                        st.session_state[clave_limpiar_cliente] = True
+                                        st.session_state[clave_flash_cliente] = "Mensaje enviado correctamente."
+                                        st.rerun()
+                                    else:
+                                        st.warning("Escriba un mensaje antes de enviarlo.")
+
+                                ocultar_col, cerrar_col = st.columns([1, 1], gap="small")
+                                with ocultar_col:
+                                    st.button(
+                                        "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
                                         use_container_width=True,
+                                        on_click=cerrar_conversacion_caso_cliente,
                                     )
-                            if enviar_respuesta_cliente:
-                                if agregar_mensaje_caso(
-                                    caso_id, cas_formato, "cliente", respuesta_cliente, "Abierto"
+                                with cerrar_col:
+                                    with st.container(key=f"cerrar_caso_cliente_{caso_id}"):
+                                        if st.button(
+                                            "Cerrar caso", key=f"cliente_solicitar_cierre_{caso_id}",
+                                            use_container_width=True,
+                                        ):
+                                            st.session_state[f"_confirmar_cierre_caso_{caso_id}"] = True
+                                clave_confirmar = f"_confirmar_cierre_caso_{caso_id}"
+                                if st.session_state.get(clave_confirmar):
+                                    st.markdown(
+                                        '<div class="support-close-confirm"><b>Confirmar cierre</b><br>'
+                                        'La solicitud quedará finalizada. Podrá reabrirla más adelante si necesita continuar.</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    confirmar_col, cancelar_col = st.columns(2, gap="small")
+                                    with confirmar_col:
+                                        confirmar_cierre = st.button(
+                                            "Confirmar cierre", type="primary",
+                                            key=f"cliente_confirmar_cierre_{caso_id}",
+                                            use_container_width=True,
+                                        )
+                                    with cancelar_col:
+                                        cancelar_cierre = st.button(
+                                            "Cancelar", key=f"cliente_cancelar_cierre_{caso_id}",
+                                            use_container_width=True,
+                                        )
+                                    if confirmar_cierre and cambiar_estado_caso_desde_cliente(
+                                        caso_id, cas_formato, "Cerrado"
+                                    ):
+                                        st.session_state.pop(clave_confirmar, None)
+                                        st.session_state[clave_flash_cliente] = "Caso cerrado correctamente."
+                                        st.rerun()
+                                    if cancelar_cierre:
+                                        st.session_state.pop(clave_confirmar, None)
+                                        st.rerun()
+                            else:
+                                st.markdown(
+                                    '<div class="support-closed-note"><b>Caso cerrado.</b> '
+                                    'La conversación se conserva como historial. Reabra el caso para enviar un mensaje nuevo.</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                reabrir_col, ocultar_col = st.columns(2, gap="small")
+                                with reabrir_col:
+                                    reabrir_caso = st.button(
+                                        "Reabrir caso", type="primary",
+                                        key=f"cliente_reabrir_caso_{caso_id}", use_container_width=True,
+                                    )
+                                with ocultar_col:
+                                    st.button(
+                                        "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
+                                        use_container_width=True,
+                                        on_click=cerrar_conversacion_caso_cliente,
+                                    )
+                                if reabrir_caso and cambiar_estado_caso_desde_cliente(
+                                    caso_id, cas_formato, "Abierto"
                                 ):
-                                    st.session_state[clave_limpiar_cliente] = True
-                                    st.session_state[clave_flash_cliente] = "Mensaje enviado correctamente."
+                                    st.session_state[clave_flash_cliente] = "Caso reabierto correctamente."
                                     st.rerun()
-                                else:
-                                    st.warning("Escriba un mensaje antes de enviarlo.")
-                            st.button(
-                                "Cerrar conversación", key=f"cliente_cerrar_hilo_{caso_id}",
-                                on_click=cerrar_conversacion_caso_cliente,
-                            )
                 if modo_soporte == "Nueva solicitud":
                     st.caption("Cree una solicitud nueva solamente cuando no corresponda continuar un caso existente.")
                     paquetes_soporte = cargar_paquetes_db(cas_formato)
@@ -8188,6 +8324,7 @@ def logout():
     prefijos_soporte = (
         "cliente_responder_caso_", "_limpiar_cliente_caso_", "_flash_cliente_caso_",
         "c360_caso_resp_", "_limpiar_admin_caso_", "_flash_admin_caso_",
+        "_confirmar_cierre_caso_",
         "soporte_composer_cliente_", "soporte_composer_admin_",
     )
     for clave_sesion in list(st.session_state.keys()):
@@ -12051,6 +12188,7 @@ def pintar_control_cliente_360():
             .c360-thread { margin:12px 0; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
             .c360-message { max-width:88%; margin:7px 0; padding:10px 12px; color:#334155; background:#fff; border:1px solid #dbe3ee; border-radius:7px; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
             .c360-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
+            .c360-message.system { max-width:max-content; margin:9px auto; padding:6px 10px; color:#64748b; background:#eef2f6; border:0; border-radius:999px; font-size:.68rem; text-align:center; }
             .c360-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
             [class*="st-key-soporte_composer_admin_"] { margin:12px 0 8px; padding:8px 10px; overflow:hidden; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:none !important; }
             [class*="st-key-soporte_composer_admin_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
@@ -12517,9 +12655,13 @@ def pintar_control_cliente_360():
                     unsafe_allow_html=True,
                 )
             for mensaje in mensajes_caso:
-                es_cliente = str(mensaje[1]) == "cliente"
-                clase = "client" if es_cliente else ""
-                autor = "Cliente" if es_cliente else "Equipo CCM"
+                tipo_autor = str(mensaje[1])
+                if tipo_autor == "cliente":
+                    clase, autor = "client", "Cliente"
+                elif tipo_autor == "sistema":
+                    clase, autor = "system", "Sistema"
+                else:
+                    clase, autor = "", "Equipo CCM"
                 st.markdown(
                     f'<div class="c360-message {clase}"><small>{autor} · '
                     f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
