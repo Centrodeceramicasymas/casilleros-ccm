@@ -2762,7 +2762,7 @@ def invalidar_cache_soporte():
 def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=None):
     """Agrega una respuesta al hilo y verifica la propiedad del caso en la misma transacción."""
     cas = formatear_casillero(casillero)
-    texto = str(mensaje or "").strip()
+    texto = str(mensaje or "").strip()[:1500]
     autor = "operador" if str(autor_tipo).lower() == "operador" else "cliente"
     if not cas or not texto:
         return False
@@ -4530,11 +4530,12 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label p { color:#334155 !important; -webkit-text-fill-color:#334155 !important; font-size:.74rem !important; font-weight:800 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) p { color:#fff !important; -webkit-text-fill-color:#fff !important; }
-                [class*="st-key-soporte_composer_cliente_"] { margin-top:12px; padding:8px 10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 3px 10px rgba(15,23,42,.05); }
+                [class*="st-key-soporte_composer_cliente_"] { margin-top:12px; padding:8px 10px; overflow:hidden; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:none !important; }
                 [class*="st-key-soporte_composer_cliente_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
-                [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"] { border:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
-                [class*="st-key-soporte_composer_cliente_"] textarea { min-height:70px !important; color:#0f172a !important; background:#f8fafc !important; font-size:.8rem !important; }
-                [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; }
+                [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"], [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"] > div { border:0 !important; outline:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
+                [class*="st-key-soporte_composer_cliente_"] textarea, [class*="st-key-soporte_composer_cliente_"] textarea:focus, [class*="st-key-soporte_composer_cliente_"] textarea:focus-visible { min-height:70px !important; outline:0 !important; color:#0f172a !important; background:#f8fafc !important; box-shadow:none !important; font-size:.8rem !important; }
+                [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:none !important; }
+                [class*="st-key-soporte_composer_cliente_"] .stButton > button:focus, [class*="st-key-soporte_composer_cliente_"] .stButton > button:active { outline:0 !important; box-shadow:none !important; }
                 @media(max-width:700px){ .support-message{max-width:96%} .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
                 </style>
                 """,
@@ -4614,7 +4615,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                             clave_flash_cliente = f"_flash_cliente_caso_{caso_id}"
                             mensaje_flash_cliente = st.session_state.pop(clave_flash_cliente, "")
                             if mensaje_flash_cliente:
-                                st.success(mensaje_flash_cliente)
+                                st.toast(mensaje_flash_cliente)
                             clave_respuesta_cliente = f"cliente_responder_caso_{caso_id}"
                             clave_limpiar_cliente = f"_limpiar_cliente_caso_{caso_id}"
                             if st.session_state.pop(clave_limpiar_cliente, False):
@@ -4624,7 +4625,6 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                 with campo_mensaje:
                                     respuesta_cliente = st.text_area(
                                         "Mensaje para soporte",
-                                        max_chars=1500,
                                         height=70,
                                         placeholder="Escriba un mensaje...",
                                         key=clave_respuesta_cliente,
@@ -12050,11 +12050,12 @@ def pintar_control_cliente_360():
             .c360-message { max-width:88%; margin:7px 0; padding:10px 12px; color:#334155; background:#fff; border:1px solid #dbe3ee; border-radius:7px; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
             .c360-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
             .c360-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
-            [class*="st-key-soporte_composer_admin_"] { margin:12px 0 8px; padding:8px 10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 3px 10px rgba(15,23,42,.05); }
+            [class*="st-key-soporte_composer_admin_"] { margin:12px 0 8px; padding:8px 10px; overflow:hidden; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:none !important; }
             [class*="st-key-soporte_composer_admin_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
-            [class*="st-key-soporte_composer_admin_"] [data-baseweb="textarea"] { border:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
-            [class*="st-key-soporte_composer_admin_"] textarea { min-height:70px !important; color:#0f172a !important; background:#f8fafc !important; font-size:.8rem !important; }
-            [class*="st-key-soporte_composer_admin_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; }
+            [class*="st-key-soporte_composer_admin_"] [data-baseweb="textarea"], [class*="st-key-soporte_composer_admin_"] [data-baseweb="textarea"] > div { border:0 !important; outline:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
+            [class*="st-key-soporte_composer_admin_"] textarea, [class*="st-key-soporte_composer_admin_"] textarea:focus, [class*="st-key-soporte_composer_admin_"] textarea:focus-visible { min-height:70px !important; outline:0 !important; color:#0f172a !important; background:#f8fafc !important; box-shadow:none !important; font-size:.8rem !important; }
+            [class*="st-key-soporte_composer_admin_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:none !important; }
+            [class*="st-key-soporte_composer_admin_"] .stButton > button:focus, [class*="st-key-soporte_composer_admin_"] .stButton > button:active { outline:0 !important; box-shadow:none !important; }
             .st-key-control360_nav [role="radiogroup"] { display:flex !important; gap:6px !important; padding:6px !important; overflow-x:auto !important; background:#eef3f8 !important; border:1px solid #d8e1ec !important; border-radius:9px !important; }
             .st-key-control360_nav [role="radiogroup"] label { flex:1 0 auto !important; min-height:42px !important; margin:0 !important; padding:8px 13px !important; justify-content:center !important; background:#fff !important; border:1px solid #d7e0eb !important; border-radius:7px !important; box-shadow:0 1px 3px rgba(15,23,42,.05) !important; }
             .st-key-control360_nav [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:0 4px 10px rgba(7,87,200,.20) !important; }
@@ -12549,7 +12550,7 @@ def pintar_control_cliente_360():
             clave_flash_admin = f"_flash_admin_caso_{caso_id}"
             mensaje_flash_admin = st.session_state.pop(clave_flash_admin, "")
             if mensaje_flash_admin:
-                st.success(mensaje_flash_admin)
+                st.toast(mensaje_flash_admin)
             if st.session_state.pop(clave_limpiar_admin, False):
                 st.session_state.pop(clave_respuesta_admin, None)
             with st.container(key=f"soporte_composer_admin_{caso_id}"):
