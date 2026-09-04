@@ -23,6 +23,7 @@ import secrets
 import ipaddress
 import socket
 import time
+import unicodedata
 
 import requests
 
@@ -6992,26 +6993,46 @@ def nucleo_casillero_desde_id(valor):
     return ""
 
 
-def generar_codigo_casillero_dni(dni_raw):
+def iniciales_casillero_desde_nombre(nombre):
+    """Devuelve las iniciales ASCII de los dos primeros componentes del nombre."""
+    texto = unicodedata.normalize("NFKD", str(nombre or "").strip())
+    texto_ascii = texto.encode("ascii", "ignore").decode("ascii").upper()
+    partes = re.findall(r"[A-Z]+", texto_ascii)
+    return "".join(parte[0] for parte in partes[:2])
+
+
+def generar_codigo_casillero_dni(dni_raw, nombre=""):
     nucleo = nucleo_casillero_desde_id(dni_raw)
     if not nucleo:
         return ""
+    iniciales = iniciales_casillero_desde_nombre(nombre)
+    if nombre and len(iniciales) != 2:
+        return ""
+    if len(iniciales) == 2:
+        return f"{PREFIJO_CASILLERO}{iniciales}-{nucleo}"
     return f"{PREFIJO_CASILLERO}{nucleo}"
 
 
 def formatear_casillero(codigo):
-    return generar_codigo_casillero_dni(codigo) or str(codigo or "").strip()
+    texto = str(codigo or "").strip().upper().replace(" ", "")
+    coincidencia_nueva = re.fullmatch(r"(?:CCM-)?([A-Z]{1,2})-?(\d{8})", texto)
+    if coincidencia_nueva:
+        return f"{PREFIJO_CASILLERO}{coincidencia_nueva.group(1)}-{coincidencia_nueva.group(2)}"
+    return generar_codigo_casillero_dni(texto) or texto
 
 
-def codigo_casillero_desde_usuario(codigo, dni):
+def codigo_casillero_desde_usuario(codigo, dni, nombre=""):
+    codigo_existente = formatear_casillero(codigo)
+    if codigo_existente:
+        return codigo_existente
     dni_digitos = "".join(filter(str.isdigit, str(dni or "")))
     if len(dni_digitos) >= 8:
-        return generar_codigo_casillero_dni(dni)
-    return formatear_casillero(codigo)
+        return generar_codigo_casillero_dni(dni, nombre)
+    return ""
 
 
 def coincidencias_casillero(valor):
-    """Variantes de un casillero (15011985, CCM-15011985, etc.) para consultas IN (...)."""
+    """Incluye variantes nuevas y antiguas para búsquedas compatibles."""
     vistos = []
     for candidato in (str(valor or "").strip(), formatear_casillero(valor), nucleo_casillero_desde_id(valor)):
         if candidato and candidato not in vistos:
@@ -7361,10 +7382,10 @@ def migrar_prefijo_casillero():
     tablas_hijas = ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo")
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, codigo_casillero, dni FROM usuarios")
+        c.execute("SELECT id, codigo_casillero, dni, nombre_completo FROM usuarios")
         filas = c.fetchall()
-        for uid, codigo, dni in filas:
-            nuevo = codigo_casillero_desde_usuario(codigo, dni)
+        for uid, codigo, dni, nombre in filas:
+            nuevo = codigo_casillero_desde_usuario(codigo, dni, nombre)
             if not nuevo or nuevo == codigo:
                 continue
             c.execute("SELECT id FROM usuarios WHERE codigo_casillero = ? AND id != ?", (nuevo, uid))
@@ -8479,7 +8500,7 @@ def dialogo_editar_usuario_admin(usuario, root=False):
             "Guardar cambios", type="primary", key=f"dlg_save_{uid}", use_container_width=True
         )
     if guardar:
-        nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
+        nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni, n_nom)
         correo = normalizar_correo(n_cor)
         if not (n_nom.strip() and n_dni.strip() and correo and n_tel.strip() and nuevo_cas):
             st.error("Complete nombre, DNI, correo, teléfono y casillero.")
@@ -8540,7 +8561,7 @@ def dialogo_crear_usuario_admin(root=False):
             placeholder="Vacío para generar una clave segura",
         )
         rol = st.selectbox("Rol inicial", ["cliente", "admin"] if root else ["cliente"], key="dlg_new_rol")
-    casillero = generar_codigo_casillero_dni(dni)
+    casillero = generar_codigo_casillero_dni(dni, nombre)
     if casillero:
         st.info(f"Casillero que será asignado: {casillero}")
     if st.button("Crear cuenta", type="primary", key="dlg_new_submit", use_container_width=True):
@@ -13494,19 +13515,21 @@ if not st.session_state["autenticado"]:
                 value=st.session_state["reg_datos"].get("dni", ""),
                 placeholder="Ej: 1301199800990",
             )
-            if dni:
+            casillero_previsto = generar_codigo_casillero_dni(dni, nom)
+            if casillero_previsto:
                 st.markdown(
-                    f'<div class="reg-code-preview">Casillero previsto: <b>{html.escape(generar_codigo_casillero_dni(dni))}</b></div>',
+                    f'<div class="reg-code-preview">Casillero previsto: <b>{html.escape(casillero_previsto)}</b></div>',
                     unsafe_allow_html=True,
                 )
             if st.button("Continuar", type="primary", use_container_width=True):
                 dni_digitos = "".join(filter(str.isdigit, dni))
-                if len(nom.strip()) >= 3 and len(dni_digitos) == 13:
+                iniciales_nombre = iniciales_casillero_desde_nombre(nom)
+                if len(iniciales_nombre) == 2 and len(dni_digitos) == 13:
                     st.session_state["reg_datos"].update({"nom": nom.strip(), "dni": dni_digitos})
                     st.session_state["reg_paso"] = 2
                     st.rerun()
                 else:
-                    st.error("Ingrese el nombre completo y una identidad válida de 13 dígitos.")
+                    st.error("Ingrese al menos dos nombres y una identidad válida de 13 dígitos.")
 
         elif paso == 2:
             st.markdown(
@@ -13574,7 +13597,7 @@ if not st.session_state["autenticado"]:
             resumen_registro = (
                 '<div class="reg-summary">'
                 f'<div class="reg-summary-item"><span class="reg-summary-label">Cliente</span><span class="reg-summary-value">{html.escape(str(d.get("nom") or ""))}</span></div>'
-                f'<div class="reg-summary-item"><span class="reg-summary-label">Casillero</span><span class="reg-summary-value">{html.escape(generar_codigo_casillero_dni(d.get("dni") or ""))}</span></div>'
+                f'<div class="reg-summary-item"><span class="reg-summary-label">Casillero</span><span class="reg-summary-value">{html.escape(generar_codigo_casillero_dni(d.get("dni") or "", d.get("nom") or ""))}</span></div>'
                 f'<div class="reg-summary-item"><span class="reg-summary-label">Contacto</span><span class="reg-summary-value">{html.escape(str(d.get("cor") or ""))}<br>{html.escape(str(d.get("tel") or ""))}</span></div>'
                 f'<div class="reg-summary-item"><span class="reg-summary-label">Destino</span><span class="reg-summary-value">{html.escape(str(d.get("ciu") or ""))}, {html.escape(str(d.get("dep") or ""))}</span></div>'
                 '</div>'
@@ -13603,7 +13626,7 @@ if not st.session_state["autenticado"]:
                     st.rerun()
             with c2:
                 if st.button("Crear casillero", type="primary", use_container_width=True):
-                    n_cod = generar_codigo_casillero_dni(d["dni"])
+                    n_cod = generar_codigo_casillero_dni(d["dni"], d["nom"])
                     n_pwd = generar_clave_provisional()
                     f_crea = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -16461,7 +16484,7 @@ elif es_rol_admin():
                             use_container_width=True,
                         )
                 if guardar_cambios_usuario:
-                    nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni)
+                    nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni, n_nom)
                     correo_editado = normalizar_correo(n_cor)
                     if not (n_nom.strip() and n_dni.strip() and correo_editado and n_tel.strip()):
                         st.error("Nombre, DNI, correo y teléfono son obligatorios.")
@@ -16510,7 +16533,7 @@ elif es_rol_admin():
             ):
                 st.markdown(
                     '<div class="admin-create-intro"><b>Alta de cliente</b><br>'
-                    'Complete la identidad, contacto y acceso. El casillero se generará automáticamente desde el DNI.</div>',
+                    'Complete la identidad, contacto y acceso. El casillero combinará las dos iniciales del nombre con los primeros 8 dígitos del DNI.</div>',
                     unsafe_allow_html=True,
                 )
                 st.markdown(
@@ -16523,7 +16546,7 @@ elif es_rol_admin():
                     c_nom = st.text_input("Nombre completo *", key="new_nom")
                 with c2:
                     c_dni = st.text_input("DNI *", key="new_dni")
-                codigo_casillero_previo = generar_codigo_casillero_dni(c_dni)
+                codigo_casillero_previo = generar_codigo_casillero_dni(c_dni, c_nom)
                 if codigo_casillero_previo:
                     st.markdown(
                         f'<div class="admin-generated-code">Casillero generado: '
