@@ -4530,6 +4530,11 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label p { color:#334155 !important; -webkit-text-fill-color:#334155 !important; font-size:.74rem !important; font-weight:800 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) p { color:#fff !important; -webkit-text-fill-color:#fff !important; }
+                [class*="st-key-soporte_composer_cliente_"] { margin-top:12px; padding:8px 10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 3px 10px rgba(15,23,42,.05); }
+                [class*="st-key-soporte_composer_cliente_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
+                [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"] { border:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
+                [class*="st-key-soporte_composer_cliente_"] textarea { min-height:70px !important; color:#0f172a !important; background:#f8fafc !important; font-size:.8rem !important; }
+                [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; }
                 @media(max-width:700px){ .support-message{max-width:96%} .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
                 </style>
                 """,
@@ -4606,31 +4611,44 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
                                     unsafe_allow_html=True,
                                 )
-                            respuesta_cliente = st.text_area(
-                                "Continuar la conversación",
-                                max_chars=1500,
-                                height=90,
-                                placeholder="Escriba una respuesta o agregue información a su solicitud...",
-                                key=f"cliente_responder_caso_{caso_id}",
-                            )
-                            enviar_respuesta, cerrar_hilo = st.columns([1.6, 1])
-                            with enviar_respuesta:
-                                if st.button(
-                                    "Enviar respuesta", type="primary",
-                                    key=f"cliente_enviar_respuesta_{caso_id}", use_container_width=True,
+                            clave_flash_cliente = f"_flash_cliente_caso_{caso_id}"
+                            mensaje_flash_cliente = st.session_state.pop(clave_flash_cliente, "")
+                            if mensaje_flash_cliente:
+                                st.success(mensaje_flash_cliente)
+                            clave_respuesta_cliente = f"cliente_responder_caso_{caso_id}"
+                            clave_limpiar_cliente = f"_limpiar_cliente_caso_{caso_id}"
+                            if st.session_state.pop(clave_limpiar_cliente, False):
+                                st.session_state.pop(clave_respuesta_cliente, None)
+                            with st.container(key=f"soporte_composer_cliente_{caso_id}"):
+                                campo_mensaje, accion_enviar = st.columns([5, 1.15], gap="small")
+                                with campo_mensaje:
+                                    respuesta_cliente = st.text_area(
+                                        "Mensaje para soporte",
+                                        max_chars=1500,
+                                        height=70,
+                                        placeholder="Escriba un mensaje...",
+                                        key=clave_respuesta_cliente,
+                                        label_visibility="collapsed",
+                                    )
+                                with accion_enviar:
+                                    enviar_respuesta_cliente = st.button(
+                                        "Enviar", type="primary",
+                                        key=f"cliente_enviar_respuesta_{caso_id}",
+                                        use_container_width=True,
+                                    )
+                            if enviar_respuesta_cliente:
+                                if agregar_mensaje_caso(
+                                    caso_id, cas_formato, "cliente", respuesta_cliente, "Abierto"
                                 ):
-                                    if agregar_mensaje_caso(
-                                        caso_id, cas_formato, "cliente", respuesta_cliente, "Abierto"
-                                    ):
-                                        st.success("Respuesta enviada. El caso quedó activo para revisión.")
-                                        st.rerun()
-                                    else:
-                                        st.warning("Escriba una respuesta antes de enviarla.")
-                            with cerrar_hilo:
-                                st.button(
-                                    "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
-                                    use_container_width=True, on_click=cerrar_conversacion_caso_cliente,
-                                )
+                                    st.session_state[clave_limpiar_cliente] = True
+                                    st.session_state[clave_flash_cliente] = "Mensaje enviado correctamente."
+                                    st.rerun()
+                                else:
+                                    st.warning("Escriba un mensaje antes de enviarlo.")
+                            st.button(
+                                "Cerrar conversación", key=f"cliente_cerrar_hilo_{caso_id}",
+                                on_click=cerrar_conversacion_caso_cliente,
+                            )
                 if modo_soporte == "Nueva solicitud":
                     st.caption("Cree una solicitud nueva solamente cuando no corresponda continuar un caso existente.")
                     paquetes_soporte = cargar_paquetes_db(cas_formato)
@@ -8165,6 +8183,14 @@ def logout():
         "_ccm_soporte_hilo_cache_v3",
     ]:
         st.session_state.pop(k, None)
+    prefijos_soporte = (
+        "cliente_responder_caso_", "_limpiar_cliente_caso_", "_flash_cliente_caso_",
+        "c360_caso_resp_", "_limpiar_admin_caso_", "_flash_admin_caso_",
+        "soporte_composer_cliente_", "soporte_composer_admin_",
+    )
+    for clave_sesion in list(st.session_state.keys()):
+        if str(clave_sesion).startswith(prefijos_soporte):
+            st.session_state.pop(clave_sesion, None)
     st.session_state["autenticado"] = False
     st.session_state["vista_actual"] = "login"
     st.query_params.clear()
@@ -12024,6 +12050,11 @@ def pintar_control_cliente_360():
             .c360-message { max-width:88%; margin:7px 0; padding:10px 12px; color:#334155; background:#fff; border:1px solid #dbe3ee; border-radius:7px; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
             .c360-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
             .c360-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
+            [class*="st-key-soporte_composer_admin_"] { margin:12px 0 8px; padding:8px 10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 3px 10px rgba(15,23,42,.05); }
+            [class*="st-key-soporte_composer_admin_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
+            [class*="st-key-soporte_composer_admin_"] [data-baseweb="textarea"] { border:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
+            [class*="st-key-soporte_composer_admin_"] textarea { min-height:70px !important; color:#0f172a !important; background:#f8fafc !important; font-size:.8rem !important; }
+            [class*="st-key-soporte_composer_admin_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; }
             .st-key-control360_nav [role="radiogroup"] { display:flex !important; gap:6px !important; padding:6px !important; overflow-x:auto !important; background:#eef3f8 !important; border:1px solid #d8e1ec !important; border-radius:9px !important; }
             .st-key-control360_nav [role="radiogroup"] label { flex:1 0 auto !important; min-height:42px !important; margin:0 !important; padding:8px 13px !important; justify-content:center !important; background:#fff !important; border:1px solid #d7e0eb !important; border-radius:7px !important; box-shadow:0 1px 3px rgba(15,23,42,.05) !important; }
             .st-key-control360_nav [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:0 4px 10px rgba(7,87,200,.20) !important; }
@@ -12513,22 +12544,31 @@ def pintar_control_cliente_360():
                     index=prioridades_caso.index(caso[6]) if caso[6] in prioridades_caso else 1,
                     key=f"c360_caso_prio_{caso_id}",
                 )
-            respuesta_caso = st.text_area(
-                "Nueva respuesta al cliente", height=100,
-                placeholder="Escriba una respuesta nueva; el historial anterior se conservará.",
-                key=f"c360_caso_resp_{caso_id}",
+            clave_respuesta_admin = f"c360_caso_resp_{caso_id}"
+            clave_limpiar_admin = f"_limpiar_admin_caso_{caso_id}"
+            clave_flash_admin = f"_flash_admin_caso_{caso_id}"
+            mensaje_flash_admin = st.session_state.pop(clave_flash_admin, "")
+            if mensaje_flash_admin:
+                st.success(mensaje_flash_admin)
+            if st.session_state.pop(clave_limpiar_admin, False):
+                st.session_state.pop(clave_respuesta_admin, None)
+            with st.container(key=f"soporte_composer_admin_{caso_id}"):
+                campo_admin, enviar_admin = st.columns([5, 1.15], gap="small")
+                with campo_admin:
+                    respuesta_caso = st.text_area(
+                        "Nueva respuesta al cliente", height=70,
+                        placeholder="Escriba un mensaje para el cliente...",
+                        key=clave_respuesta_admin,
+                        label_visibility="collapsed",
+                    )
+                with enviar_admin:
+                    enviar_respuesta_caso = st.button(
+                        "Enviar", type="primary",
+                        key=f"c360_caso_save_{caso_id}", use_container_width=True,
+                    )
+            actualizar_solo_caso = st.button(
+                "Actualizar estado y prioridad", key=f"c360_caso_estado_save_{caso_id}",
             )
-            enviar_caso, actualizar_caso = st.columns([1.5, 1], gap="small")
-            with enviar_caso:
-                enviar_respuesta_caso = st.button(
-                    "Enviar respuesta", type="primary",
-                    key=f"c360_caso_save_{caso_id}", use_container_width=True,
-                )
-            with actualizar_caso:
-                actualizar_solo_caso = st.button(
-                    "Actualizar estado", key=f"c360_caso_estado_save_{caso_id}",
-                    use_container_width=True,
-                )
             if enviar_respuesta_caso:
                 if not respuesta_caso.strip():
                     st.warning("Escriba la respuesta que se enviará al cliente.")
@@ -12544,7 +12584,10 @@ def pintar_control_cliente_360():
                         cas, f"Nueva respuesta al caso #{caso_id:04d}", respuesta_caso.strip(),
                         tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
                     )
-                    st.success("Respuesta agregada al historial y enviada al portal del cliente.")
+                    st.session_state[clave_limpiar_admin] = True
+                    st.session_state[clave_flash_admin] = (
+                        "Respuesta agregada al historial y enviada al cliente."
+                    )
                     st.rerun()
             if actualizar_solo_caso:
                 fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
