@@ -9710,8 +9710,41 @@ st.markdown(
         font-size: .69rem;
         line-height: 1.4;
     }
+    .quote-origin-intro {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 11px;
+        align-items: start;
+        margin: 17px 0 9px;
+        padding: 12px 14px;
+        background: #f8fbff;
+        border: 1px solid #dbe7f5;
+        border-left: 4px solid #0757c8;
+        border-radius: 8px;
+    }
+    .quote-origin-intro small {
+        display: block;
+        margin-bottom: 3px;
+        color: #0757c8;
+        font-size: .61rem;
+        font-weight: 900;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .quote-origin-intro b {
+        display: block;
+        color: #0f172a;
+        font-size: .94rem;
+        line-height: 1.3;
+    }
+    .quote-origin-intro p {
+        margin: 4px 0 0;
+        color: #64748b;
+        font-size: .69rem;
+        line-height: 1.4;
+    }
     [class*="st-key-cotizador_origen_"] {
-        min-height: 130px;
+        min-height: 112px;
         padding: 14px 15px 12px;
         background: #ffffff;
         border: 1px solid #d6e0eb;
@@ -9755,21 +9788,8 @@ st.markdown(
     }
     .quote-route-badge.soon { color:#64748b; background:#eef2f6; }
     .quote-route-copy { margin: 10px 0 0; color:#526175; font-size:.69rem; line-height:1.4; }
-    [class*="st-key-cotizador_origen_"] .stButton > button {
-        min-height: 34px !important;
-        height: 34px !important;
-        margin-top: 8px !important;
-        border-radius: 6px !important;
-        box-shadow: none !important;
-        font-size: .7rem !important;
-    }
-    .st-key-cotizador_origen_china .stButton > button:disabled {
-        opacity: 1 !important;
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
-        background: #0757c8 !important;
-        border-color: #0757c8 !important;
-    }
+    .quote-route-footer { margin-top:10px; padding-top:8px; color:#0757c8; border-top:1px solid #bfd7f5; font-size:.65rem; font-weight:850; }
+    .quote-route-footer.soon { color:#64748b; border-top-color:#e2e8f0; }
     .quote-subhead {
         margin: 14px 0 8px;
         color: #334155;
@@ -13949,10 +13969,11 @@ elif st.session_state["rol"] == "cliente":
                 unsafe_allow_html=True,
             )
             st.markdown(
-                '<div class="quote-stage"><span class="quote-stage-number">1</span><div>'
-                '<small>Ruta internacional</small><b>Origen de la carga</b>'
-                '<p>Seleccione el país desde donde será despachada su mercancía.</p>'
-                '</div></div>',
+                '<section class="quote-origin-intro"><span class="quote-stage-number">1</span><div>'
+                '<small>Origen de la carga</small>'
+                '<b>¿Desde dónde se enviará su mercancía?</b>'
+                '<p>La ruta seleccionada determina las tarifas, límites y documentos disponibles.</p>'
+                '</div></section>',
                 unsafe_allow_html=True,
             )
             origen_china, origen_eeuu = st.columns(2, gap="medium")
@@ -13963,12 +13984,9 @@ elif st.session_state["rol"] == "cliente":
                         '<span class="quote-route-code">CN</span><div><b>China</b>'
                         '<small>Consolidación marítima</small></div></div>'
                         '<span class="quote-route-badge">Seleccionado</span></div>'
-                        '<p class="quote-route-copy">Ruta operativa hacia la bodega central en Honduras.</p>',
+                        '<p class="quote-route-copy">Ruta operativa hacia la bodega central en Honduras.</p>'
+                        '<div class="quote-route-footer">Ruta activa para esta cotización</div>',
                         unsafe_allow_html=True,
-                    )
-                    st.button(
-                        "Origen seleccionado", key="cot_origen_china_activo",
-                        disabled=True, use_container_width=True,
                     )
             with origen_eeuu:
                 with st.container(key="cotizador_origen_eeuu"):
@@ -13977,12 +13995,9 @@ elif st.session_state["rol"] == "cliente":
                         '<span class="quote-route-code us">US</span><div><b>Estados Unidos</b>'
                         '<small>Paquetería internacional</small></div></div>'
                         '<span class="quote-route-badge soon">Próximamente</span></div>'
-                        '<p class="quote-route-copy">Nueva ruta de importación en preparación.</p>',
+                        '<p class="quote-route-copy">Nueva ruta de importación en preparación.</p>'
+                        '<div class="quote-route-footer soon">Aún no disponible para cotizar</div>',
                         unsafe_allow_html=True,
-                    )
-                    st.button(
-                        "Ruta no disponible", key="cot_origen_eeuu_inactivo",
-                        disabled=True, use_container_width=True,
                     )
 
             st.markdown(
