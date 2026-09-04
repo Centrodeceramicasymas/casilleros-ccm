@@ -3859,7 +3859,7 @@ def selector_modalidad_entrega(opciones_modalidad):
     elif st.session_state.get("sb_modalidad_entrega") not in opciones_modalidad:
         st.session_state["sb_modalidad_entrega"] = opciones_modalidad[idx_mod]
     mod_elegida = st.selectbox(
-        "🏪 ¿Cómo deseas recibir tu compra?",
+        "Modalidad de entrega",
         opciones_modalidad,
         on_change=al_cambiar_modalidad_entrega,
         **sel_kwargs,
@@ -9641,6 +9641,181 @@ st.markdown(
         margin-bottom: 0 !important;
         min-height: calc(100dvh - var(--header-offset, 208px)) !important;
     }
+    .quote-hero {
+        margin: 0 0 16px;
+        padding: 4px 0 14px;
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid #dbe3ee;
+    }
+    .quote-hero small {
+        display: block;
+        margin-bottom: 4px;
+        color: #087050;
+        font-size: .62rem;
+        font-weight: 900;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .quote-hero h2 {
+        margin: 0 !important;
+        padding: 0 !important;
+        color: #0f172a;
+        font-size: 1.18rem !important;
+        line-height: 1.3;
+    }
+    .quote-hero h2 span { color: #0757c8; }
+    .quote-hero p {
+        margin: 5px 0 0;
+        color: #526175;
+        font-size: .76rem;
+        line-height: 1.45;
+    }
+    .quote-stage {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 18px 0 10px;
+    }
+    .quote-stage-number {
+        display: grid;
+        place-items: center;
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        color: #ffffff;
+        background: #0757c8;
+        border-radius: 7px;
+        font-size: .72rem;
+        font-weight: 900;
+    }
+    .quote-stage small {
+        display: block;
+        margin-bottom: 2px;
+        color: #087050;
+        font-size: .59rem;
+        font-weight: 900;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+    }
+    .quote-stage b {
+        display: block;
+        color: #0f172a;
+        font-size: .9rem;
+        line-height: 1.3;
+    }
+    .quote-stage p {
+        margin: 3px 0 0;
+        color: #64748b;
+        font-size: .69rem;
+        line-height: 1.4;
+    }
+    [class*="st-key-cotizador_origen_"] {
+        min-height: 130px;
+        padding: 14px 15px 12px;
+        background: #ffffff;
+        border: 1px solid #d6e0eb;
+        border-radius: 8px;
+        box-sizing: border-box;
+    }
+    .st-key-cotizador_origen_china {
+        background: #f0f7ff;
+        border: 2px solid #0757c8;
+    }
+    .quote-route-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+    .quote-route-place { display:flex; align-items:center; gap:9px; min-width:0; }
+    .quote-route-code {
+        display: grid;
+        place-items: center;
+        flex: 0 0 34px;
+        width: 34px;
+        height: 34px;
+        color: #ffffff;
+        background: #c92a2a;
+        border-radius: 7px;
+        font-size: .66rem;
+        font-weight: 900;
+    }
+    .quote-route-code.us { background: #173c64; }
+    .quote-route-place b { display:block; color:#0f172a; font-size:.87rem; }
+    .quote-route-place small { display:block; margin-top:2px; color:#64748b; font-size:.62rem; }
+    .quote-route-badge {
+        flex: none;
+        padding: 4px 8px;
+        color: #0757c8;
+        background: #dbeafe;
+        border-radius: 999px;
+        font-size: .61rem;
+        font-weight: 850;
+    }
+    .quote-route-badge.soon { color:#64748b; background:#eef2f6; }
+    .quote-route-copy { margin: 10px 0 0; color:#526175; font-size:.69rem; line-height:1.4; }
+    [class*="st-key-cotizador_origen_"] .stButton > button {
+        min-height: 34px !important;
+        height: 34px !important;
+        margin-top: 8px !important;
+        border-radius: 6px !important;
+        box-shadow: none !important;
+        font-size: .7rem !important;
+    }
+    .st-key-cotizador_origen_china .stButton > button:disabled {
+        opacity: 1 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        background: #0757c8 !important;
+        border-color: #0757c8 !important;
+    }
+    .quote-subhead {
+        margin: 14px 0 8px;
+        color: #334155;
+        font-size: .69rem;
+        font-weight: 850;
+    }
+    .quote-capacity-note {
+        margin: 11px 0 8px;
+        padding: 10px 12px;
+        color: #526175;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 3px solid #087050;
+        border-radius: 7px;
+        font-size: .67rem;
+        line-height: 1.45;
+    }
+    .st-key-vista_cotizador [data-testid="stMetric"] {
+        border: 1px solid #dbe3ee !important;
+        border-top: 3px solid #0757c8 !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+    }
+    .st-key-vista_cotizador [data-testid="stWidgetLabel"] p {
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
+        font-size: .74rem !important;
+        font-weight: 800 !important;
+    }
+    .st-key-vista_cotizador div[data-baseweb="select"] > div,
+    .st-key-vista_cotizador [data-testid="stNumberInputContainer"] {
+        border-color: #b9c7d6 !important;
+        border-radius: 7px !important;
+        box-shadow: none !important;
+    }
+    .st-key-vista_cotizador div[data-baseweb="select"] > div:focus-within,
+    .st-key-vista_cotizador [data-testid="stNumberInputContainer"]:focus-within {
+        border-color: #0757c8 !important;
+        box-shadow: 0 0 0 2px rgba(7,87,200,.10) !important;
+    }
+    @media (max-width: 700px) {
+        .quote-hero { padding: 14px 15px; }
+        .quote-stage { margin-top: 15px; }
+        [class*="st-key-cotizador_origen_"] { min-height: 0; }
+        .quote-route-head { align-items: flex-start; }
+    }
     .st-key-vista_cotizador:has(.st-key-formulario_direcciones) {
         padding-top: 16px !important;
         padding-bottom: 0 !important;
@@ -11098,10 +11273,11 @@ st.markdown(
         100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(30, 77, 183, 0); }
     }
     .destino-seleccionado-card {
-        animation: pulso-suave 2.5s infinite ease-in-out;
-        border-left: 4px solid #1E4DB7;
-        background-color: #EBF3FF;
-        padding: 10px 14px;
+        animation: none !important;
+        border: 1px solid #bde8d5;
+        border-left: 4px solid #087050;
+        background-color: #f0fdf7;
+        padding: 11px 14px;
         border-radius: 8px;
         margin: 4px 0 10px 0;
         box-sizing: border-box;
@@ -11112,13 +11288,13 @@ st.markdown(
         font-weight: 800;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-        color: #1E4DB7;
+        color: #087050;
         margin: 0 0 2px 0;
     }
     .destino-seleccionado-dir {
         font-size: 0.92rem;
         font-weight: 800;
-        color: #0f2a6b;
+        color: #123d31;
         line-height: 1.35;
         word-break: break-word;
         margin: 0;
@@ -13764,9 +13940,60 @@ elif st.session_state["rol"] == "cliente":
         and not st.session_state.get("mostrar_gestion_direcciones")
     ):
         with st.container(key="vista_cotizador"):
-            st.markdown("#### 📐 Cotizador Flete Marítimo China ➔ Honduras")
+            st.markdown(
+                '<section class="quote-hero">'
+                '<small>Cotización logística internacional</small>'
+                '<h2>Flete marítimo <span>China a Honduras</span></h2>'
+                '<p>Configure la ruta, el destino y las medidas para obtener una tarifa clara antes de confirmar.</p>'
+                '</section>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="quote-stage"><span class="quote-stage-number">1</span><div>'
+                '<small>Ruta internacional</small><b>Origen de la carga</b>'
+                '<p>Seleccione el país desde donde será despachada su mercancía.</p>'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+            origen_china, origen_eeuu = st.columns(2, gap="medium")
+            with origen_china:
+                with st.container(key="cotizador_origen_china"):
+                    st.markdown(
+                        '<div class="quote-route-head"><div class="quote-route-place">'
+                        '<span class="quote-route-code">CN</span><div><b>China</b>'
+                        '<small>Consolidación marítima</small></div></div>'
+                        '<span class="quote-route-badge">Seleccionado</span></div>'
+                        '<p class="quote-route-copy">Ruta operativa hacia la bodega central en Honduras.</p>',
+                        unsafe_allow_html=True,
+                    )
+                    st.button(
+                        "Origen seleccionado", key="cot_origen_china_activo",
+                        disabled=True, use_container_width=True,
+                    )
+            with origen_eeuu:
+                with st.container(key="cotizador_origen_eeuu"):
+                    st.markdown(
+                        '<div class="quote-route-head"><div class="quote-route-place">'
+                        '<span class="quote-route-code us">US</span><div><b>Estados Unidos</b>'
+                        '<small>Paquetería internacional</small></div></div>'
+                        '<span class="quote-route-badge soon">Próximamente</span></div>'
+                        '<p class="quote-route-copy">Nueva ruta de importación en preparación.</p>',
+                        unsafe_allow_html=True,
+                    )
+                    st.button(
+                        "Ruta no disponible", key="cot_origen_eeuu_inactivo",
+                        disabled=True, use_container_width=True,
+                    )
+
+            st.markdown(
+                '<div class="quote-stage"><span class="quote-stage-number">2</span><div>'
+                '<small>Recepción en Honduras</small><b>Destino de entrega</b>'
+                '<p>Elija dónde recibirá su carga y confirme la dirección que aparecerá en los documentos.</p>'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
             st.button(
-                "📍 Administrar direcciones de envío",
+                "Administrar direcciones de envío",
                 type="secondary",
                 key="btn_abrir_gestion_direcciones",
                 use_container_width=True,
@@ -13780,9 +14007,9 @@ elif st.session_state["rol"] == "cliente":
             st.markdown(
                 f"""
                 <div class="destino-seleccionado-card">
-                    <div class="destino-seleccionado-kicker">📍 Destino de Entrega Seleccionado</div>
+                    <div class="destino-seleccionado-kicker">Destino confirmado</div>
                     <div class="destino-seleccionado-dir">{destino_estampado}</div>
-                    <div class="destino-seleccionado-nota">(Se imprimirá en todos los formatos y fichas de bodega)</div>
+                    <div class="destino-seleccionado-nota">Esta información aparecerá en los formatos y fichas de bodega.</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -13803,6 +14030,13 @@ elif st.session_state["rol"] == "cliente":
             umbral_paq = float(get_tarifa("umbral_paqueteria_lb") or 99.0)
             divisor_vol = float(get_tarifa("divisor_peso_volumetrico") or 390.0)
 
+            st.markdown(
+                '<div class="quote-stage"><span class="quote-stage-number">3</span><div>'
+                '<small>Características del envío</small><b>Modalidad y dimensiones</b>'
+                '<p>Indique el tipo de carga, las unidades y las medidas reales del paquete.</p>'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
             tipo_opts = [
                 f"📦 Paquetería Menor (1 a {umbral_paq:.0f} lbs)",
                 "🚢 Carga Comercial por CBM (hasta contenedor 40')",
@@ -13810,9 +14044,9 @@ elif st.session_state["rol"] == "cliente":
             tipo_kwargs = {"key": "sb_tipo_carga_select", "on_change": invalidar_emision_visible_cotizador}
             if "sb_tipo_carga_select" not in st.session_state:
                 tipo_kwargs["index"] = 0
-            tipo_carga = st.selectbox("Modalidad de Importación:", tipo_opts, **tipo_kwargs)
+            tipo_carga = st.selectbox("Tipo de carga", tipo_opts, **tipo_kwargs)
 
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="quote-subhead">Unidades del paquete</div>', unsafe_allow_html=True)
 
             c_u1, c_u2 = st.columns(2)
             with c_u1:
@@ -13836,15 +14070,20 @@ elif st.session_state["rol"] == "cliente":
             etiqueta_medida = unidad_medida.split()[1].strip("()")
             etiqueta_peso = unidad_peso.split()[1].strip("()")
 
-            st.caption(
-                f"Tope de medidas: contenedor 40' High Cube interno "
-                f"({CONTENEDOR_40_ALTO_M:.2f} m alto × {CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo). "
-                f"Peso máximo legal en Honduras para un 40': {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
-                f"({peso_max_contenedor_hn_lb():,.0f} lb)."
-                + (f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb." if es_paqueteria else "")
+            limite_paqueteria = (
+                f" En paquetería menor el peso no puede superar {umbral_paq:.0f} lb."
+                if es_paqueteria else ""
+            )
+            st.markdown(
+                '<div class="quote-capacity-note"><b>Límites operativos del envío</b><br>'
+                f"Contenedor 40' High Cube: {CONTENEDOR_40_ALTO_M:.2f} m alto × "
+                f"{CONTENEDOR_40_ANCHO_M:.2f} m ancho × {CONTENEDOR_40_LARGO_M:.2f} m largo. "
+                f"Peso máximo legal: {PESO_MAX_CONTENEDOR_HN_KG:,.0f} kg "
+                f"({peso_max_contenedor_hn_lb():,.0f} lb).{limite_paqueteria}</div>",
+                unsafe_allow_html=True,
             )
 
-            st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="quote-subhead">Medidas y peso reales</div>', unsafe_allow_html=True)
 
             pref = "menor" if es_paqueteria else "com"
             c1, c2, c3, c4 = st.columns(4)
