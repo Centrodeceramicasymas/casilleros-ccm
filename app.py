@@ -1423,7 +1423,7 @@ def leer_clave_inicial_superadmin():
 
 
 CLAVE_INICIAL_SUPERADMIN = leer_clave_inicial_superadmin()
-# La barra inferior respeta los permisos persistidos para cada módulo.
+# Hubs y módulos base siguen abiertos; Envíos solo se ve en la barra al abrir Mis Cotizaciones.
 # En producción los permisos deben salir de la tabla permisos_usuario.
 PERMISOS_ABIERTOS_TEMPORAL = False
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
@@ -3938,8 +3938,6 @@ def ir_a(vista, hub="_omit"):
             vista = "Inicio"
     if vista == "Cotizador":
         preparar_nueva_cotizacion()
-    if vista != "Actividad":
-        st.session_state.pop("abrir_soporte_desde_menu", None)
     st.session_state["sub_tab_inicio"] = vista
     st.session_state["vista_activa"] = vista
     cas = formatear_casillero(st.session_state.get("casillero", ""))
@@ -3994,21 +3992,26 @@ def modulo_china_disponible_en_hub_actual(modulo):
 
 
 def ir_a_catalogo():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Catálogo")):
+    # Impide abrir el catálogo por un callback o URL residual si el origen fue deseleccionado.
+    if not catalogo_disponible_en_hub_actual():
         ir_a_inicio()
         return
     ir_a("Catálogo", hub="china")
 
 
 def ir_a_mis_cotizaciones():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Mis Cotizaciones")):
+    casillero = st.session_state.get("casillero", "")
+    if not (
+        modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
+        and casillero_tiene_cotizacion_emitida(casillero)
+    ):
         ir_a_inicio()
         return
     ir_a("Mis Cotizaciones", hub="china")
 
 
 def ir_a_cotizador():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Cotizador")):
+    if not modulo_china_disponible_en_hub_actual("Cotizador"):
         ir_a_inicio()
         return
     avanzar_guia_si(1, 2)
@@ -4038,23 +4041,17 @@ def iniciar_guia_desde_mas():
 
 
 def ir_a_envios():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Mis Envíos")):
+    if not modulo_china_disponible_en_hub_actual("Mis Envíos"):
         ir_a_inicio()
         return
     ir_a("Mis Envíos", hub="china")
 
 
 def ir_a_fichas():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Etiqueta")):
+    if not modulo_china_disponible_en_hub_actual("Etiqueta"):
         ir_a_inicio()
         return
     ir_a("Fichas", hub="china")
-
-
-def ir_a_soporte():
-    st.session_state["cliente_modo_soporte"] = "Mis solicitudes"
-    st.session_state["abrir_soporte_desde_menu"] = True
-    ir_a("Actividad", hub="china")
 
 
 def ir_a_envios_de_cotizacion(id_cot):
@@ -4601,10 +4598,9 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 """,
                 unsafe_allow_html=True,
             )
-            # La bandeja solo se abre automáticamente cuando el usuario pulsa
-            # el acceso explícito de Soporte en el menú Más.
-            abrir_soporte = bool(st.session_state.get("abrir_soporte_desde_menu", False))
-            with st.expander(etiqueta_soporte, expanded=abrir_soporte):
+            # Al entrar en Actividad, la bandeja inicia cerrada. La conversación
+            # seleccionada se conserva y solo se muestra al pulsar la flecha.
+            with st.expander(etiqueta_soporte, expanded=False):
                 st.markdown(
                     '<div style="color:#0f172a;font-size:.92rem;font-weight:850;">Centro de ayuda</div>'
                     '<div style="margin:2px 0 10px;color:#64748b;font-size:.73rem;">'
@@ -4873,7 +4869,8 @@ def pintar_vista_actividad(total_cotizaciones=0):
 
 def pintar_vista_mas():
     """Pantalla personal: cuenta, direcciones, catálogo, soporte y sesión."""
-    mostrar_btn_guia = usuario_puede_hub("china")
+    hub_activo = st.session_state.get("hub")
+    mostrar_btn_guia = hub_activo == "china"
     perfil = cargar_perfil_usuario(st.session_state.get("casillero"))
     if perfil:
         aplicar_perfil_en_sesion(perfil)
@@ -4899,17 +4896,14 @@ def pintar_vista_mas():
                 f"</div>",
                 unsafe_allow_html=True,
             )
-            if st.button("Editar perfil", key="mas_editar_perfil", use_container_width=True):
+            if st.button("✏️  Editar perfil", key="mas_editar_perfil", use_container_width=True):
                 abrir_dialogo_editar_perfil()
-        st.markdown('<div class="mas-seccion mas-seccion-modulos">Cuenta y herramientas</div>', unsafe_allow_html=True)
-        with st.container(key="mas_modulos"):
-            if usuario_puede_hub("china") and usuario_puede_modulo("Cotizador"):
-                st.button("Direcciones de envío", key="mas_direcciones", use_container_width=True, on_click=abrir_direcciones_desde_mas)
-            if usuario_puede_hub("china") and usuario_puede_modulo("Catálogo"):
-                st.button("Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
-            if usuario_puede_hub("china") and usuario_puede_modulo("Etiqueta"):
-                st.button("Fichas y documentos", key="mas_fichas", use_container_width=True, on_click=ir_a_fichas)
-            st.button("Solicitudes y soporte", key="mas_soporte", use_container_width=True, on_click=ir_a_soporte)
+        if hub_activo == "china":
+            st.markdown('<div class="mas-seccion mas-seccion-modulos">Cuenta y herramientas</div>', unsafe_allow_html=True)
+            with st.container(key="mas_modulos"):
+                st.button("📍  Direcciones de envío", key="mas_direcciones", use_container_width=True, on_click=abrir_direcciones_desde_mas)
+                if catalogo_disponible_en_hub_actual():
+                    st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
         with st.container(key="mas_sesion"):
             st.markdown('<div class="mas-seccion">Soporte y sesión</div>', unsafe_allow_html=True)
             if mostrar_btn_guia:
@@ -4920,7 +4914,7 @@ def pintar_vista_mas():
                     use_container_width=True,
                     on_click=iniciar_guia_desde_mas,
                 )
-            if st.button("Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
+            if st.button("⏻  Cerrar sesión", type="secondary", key="btn_logout_cliente", use_container_width=True):
                 ir_a("Cerrar")
         espaciador_barra_inferior("safe_mas")
 
@@ -4932,28 +4926,24 @@ def espaciador_barra_inferior(clave):
 
 
 def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
-    """Navegación móvil principal: cinco destinos directos y sin duplicados."""
+    """Píldora flotante simple: Inicio, Cotizar, Actividad y Más."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
+    actividad_activa = vista in ("Actividad", "Mis Cotizaciones", "Mis Envíos", "Etiqueta")
     cotizador_activo = vista == "Cotizador"
-    cotizaciones_activo = vista == "Mis Cotizaciones"
-    envios_activo = vista == "Mis Envíos"
-    mas_activo = vista in ("Más", "Configuración", "Consultas", "Actividad", "Etiqueta", "Catálogo")
+    mas_activo = vista in ("Más", "Configuración", "Consultas")
     n_badge = int(total_cotizaciones or 0)
-    badge_visible = "block" if n_badge > 0 else "none"
 
     st.markdown(
-        f"<style>:root {{ --ccm-cot-badge: \"{n_badge}\"; --ccm-cot-badge-display: {badge_visible}; }}</style>",
+        f"<style>:root {{ --ccm-cot-badge: \"{n_badge}\"; }}</style>",
         unsafe_allow_html=True,
     )
 
-    items = [("inicio", "⌂", "Inicio", inicio_activo)]
-    if usuario_puede_hub("china") and usuario_puede_modulo("Cotizador"):
-        items.append(("cotizador", "+", "Cotizar", cotizador_activo))
-    if usuario_puede_hub("china") and usuario_puede_modulo("Mis Cotizaciones"):
-        items.append(("cotizaciones", "▤", "Cotizaciones", cotizaciones_activo))
-    if usuario_puede_hub("china") and usuario_puede_modulo("Mis Envíos"):
-        items.append(("envios", "□", "Envíos", envios_activo))
+    items = [("inicio", "🏠", "Inicio", inicio_activo)]
+    if modulo_china_disponible_en_hub_actual("Cotizador"):
+        items.append(("cotizador", "🧮", "Cotizar", cotizador_activo))
+    if st.session_state.get("hub") == "china":
+        items.append(("actividad", "📌", "Actividad", actividad_activa))
     items.append(("mas", "☰", "Más", mas_activo))
     with st.container(key="bottom_nav"):
         cols = st.columns(len(items), gap="small")
@@ -4967,13 +4957,13 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
                         use_container_width=True,
                         on_click=ir_a_inicio,
                     )
-                elif dest == "cotizaciones":
+                elif dest == "actividad":
                     st.button(
                         f"{icono}\n{etiqueta}",
                         type="primary" if activo else "secondary",
                         key=f"bnav_{dest}",
                         use_container_width=True,
-                        on_click=ir_a_mis_cotizaciones,
+                        on_click=ir_a_actividad,
                     )
                 elif dest == "cotizador":
                     st.button(
@@ -4982,14 +4972,6 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
                         key=f"bnav_{dest}",
                         use_container_width=True,
                         on_click=ir_a_cotizador,
-                    )
-                elif dest == "envios":
-                    st.button(
-                        f"{icono}\n{etiqueta}",
-                        type="primary" if activo else "secondary",
-                        key=f"bnav_{dest}",
-                        use_container_width=True,
-                        on_click=ir_a_envios,
                     )
                 else:
                     st.button(
@@ -5033,7 +5015,7 @@ def sincronizar_altura_encabezado_fijo():
                 const estilos = win.getComputedStyle(doc.documentElement);
                 const gapRaw = estilos.getPropertyValue("--header-gap").trim();
                 const gap = Number.parseFloat(gapRaw) || 16;
-                const offset = Math.ceil(Math.max(bottom + gap, 118)) + "px";
+                const offset = Math.ceil(Math.max(bottom + gap, 208)) + "px";
                 const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
                 destinos.forEach((nodo) => {
                   if (nodo && nodo.style) {
@@ -5093,7 +5075,7 @@ def desplazar_a_ancla(element_id, alinear="start"):
             const estilos = win.getComputedStyle(doc.documentElement);
             const gapRaw = estilos.getPropertyValue("--header-gap").trim();
             const gap = Number.parseFloat(gapRaw) || 16;
-            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 118);
+            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 196);
             const nav = doc.querySelector('[class~="st-key-bottom_nav"]') || doc.querySelector(".st-key-bottom_nav");
             let huecoNav = 125;
             if (nav) {{
@@ -13770,180 +13752,6 @@ if not st.session_state["autenticado"]:
 # 8. PORTAL DEL CLIENTE
 # ---------------------------------------------------------
 elif st.session_state["rol"] == "cliente":
-    st.markdown(
-        """
-        <style>
-            :root {
-                --sticky-h: 108px;
-                --header-offset: 108px;
-                --header-box: 98px;
-                --header-gap: 8px;
-                --ccm-nav-clearance: calc(76px + env(safe-area-inset-bottom, 0px));
-            }
-            .stApp,
-            [data-testid="stAppViewContainer"],
-            [data-testid="stMain"],
-            [data-testid="stMainBlockContainer"],
-            .block-container {
-                background: #f3f6f9 !important;
-            }
-            .st-key-sticky_top_header,
-            div[class~="st-key-sticky_top_header"] {
-                padding: max(8px, env(safe-area-inset-top, 0px)) 10px 8px !important;
-                background: #f3f6f9 !important;
-                border-bottom: 1px solid #dce4eb !important;
-                box-shadow: 0 5px 16px rgba(18, 45, 68, .08) !important;
-            }
-            .client-header-compact {
-                display: grid;
-                grid-template-columns: minmax(0, 1fr) auto;
-                align-items: center;
-                gap: 14px;
-                min-height: 76px;
-                padding: 13px 15px;
-                color: #ffffff;
-                background: #073b78;
-                border-radius: 8px;
-                box-sizing: border-box;
-            }
-            .client-header-main { min-width: 0; }
-            .client-header-compact .app-greeting-title {
-                margin: 0 0 5px !important;
-                font-size: clamp(1rem, 4.5vw, 1.18rem) !important;
-                line-height: 1.2 !important;
-            }
-            .client-header-compact .app-greeting-sub {
-                display: block !important;
-                color: #d8e8f7 !important;
-                font-size: .72rem !important;
-                line-height: 1.35 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
-            }
-            .client-header-time {
-                padding-left: 13px;
-                color: #d8e8f7;
-                border-left: 1px solid rgba(255,255,255,.24);
-                font-size: .67rem;
-                font-weight: 700;
-                line-height: 1.45;
-                text-align: right;
-                white-space: nowrap;
-            }
-            .app-header-top,
-            .app-header-brand { display: none !important; }
-            .ccm-header-spacer,
-            .stApp:has(.st-key-vista_mas) .ccm-header-spacer,
-            .stApp:has(.st-key-vista_catalogo) .ccm-header-spacer,
-            .stApp:has(.st-key-vista_cotizador) .ccm-header-spacer {
-                height: var(--header-offset) !important;
-                min-height: var(--header-offset) !important;
-            }
-            [data-testid="stElementContainer"]:has(.ccm-header-spacer),
-            [data-testid="stMarkdown"]:has(.ccm-header-spacer),
-            [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
-                height: var(--header-offset) !important;
-                min-height: var(--header-offset) !important;
-            }
-            .st-key-bottom_nav,
-            div[class~="st-key-bottom_nav"] {
-                bottom: 0 !important;
-                width: min(100%, 520px) !important;
-                max-width: 520px !important;
-                padding: 5px 7px calc(5px + env(safe-area-inset-bottom, 0px)) !important;
-                background: #ffffff !important;
-                border: 1px solid #d8e1e9 !important;
-                border-bottom: 0 !important;
-                border-radius: 8px 8px 0 0 !important;
-                box-shadow: 0 -7px 22px rgba(20, 47, 70, .11) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-            }
-            .st-key-bottom_nav [data-testid="stHorizontalBlock"] { gap: 2px !important; }
-            .st-key-bottom_nav div.stButton > button,
-            .st-key-bottom_nav [data-testid^="stBaseButton"] {
-                min-height: 56px !important;
-                padding: 6px 1px 5px !important;
-                color: #65788b !important;
-                -webkit-text-fill-color: #65788b !important;
-                border-radius: 6px !important;
-                font-size: .58rem !important;
-                line-height: 1.12 !important;
-            }
-            .st-key-bottom_nav div.stButton > button[kind="primary"],
-            .st-key-bottom_nav [data-testid="stBaseButton-primary"] {
-                color: #0757c8 !important;
-                -webkit-text-fill-color: #0757c8 !important;
-                background: #eaf2fd !important;
-                border-top: 2px solid #0757c8 !important;
-                border-radius: 6px !important;
-            }
-            .st-key-bottom_nav div.stButton > button[kind="primary"] *,
-            .st-key-bottom_nav [data-testid="stBaseButton-primary"] * {
-                color: #0757c8 !important;
-                -webkit-text-fill-color: #0757c8 !important;
-            }
-            .st-key-bottom_nav [data-testid="stHorizontalBlock"] > div:nth-child(3) button::after {
-                display: none !important;
-            }
-            .st-key-bnav_cotizaciones button::after {
-                display: var(--ccm-cot-badge-display, none) !important;
-            }
-            .client-home-title { margin-top: 5px; font-size: 1.18rem; color: #172b3a; }
-            .client-home-copy { margin-bottom: 10px; color: #66788a; }
-            .client-home-section { margin: 15px 0 9px; color: #4d6275; letter-spacing: 0; }
-            [class*="st-key-home_origin_"] {
-                min-height: 146px;
-                padding: 13px 12px 11px;
-                border-color: #d5dfe7 !important;
-                box-shadow: 0 3px 11px rgba(20, 47, 70, .05);
-            }
-            [class*="st-key-home_origin_"]:has(.home-origin-card[data-active="true"]) {
-                border-top: 1px solid #d5dfe7 !important;
-                border-left: 3px solid #078675 !important;
-            }
-            .home-origin-status { color: #087565; background: #e6f5f1; border-radius: 6px; }
-            .quote-hero {
-                margin-bottom: 12px;
-                padding: 5px 0 12px;
-                background: transparent;
-                border-bottom: 1px solid #d7e0e8;
-                border-radius: 0;
-                box-shadow: none;
-            }
-            .quote-origin-intro {
-                margin: 12px 0 14px;
-                background: #ffffff;
-                border-color: #cfdde5;
-                border-left-color: #078675;
-                box-shadow: none;
-            }
-            .quote-stage { margin: 17px 0 9px; }
-            .st-key-vista_cotizador { padding-top: 7px !important; }
-            .st-key-vista_historial { padding-top: 5px !important; }
-            .client-page-head {
-                display: flex;
-                align-items: flex-end;
-                justify-content: space-between;
-                gap: 12px;
-                margin: 3px 0 10px;
-                padding-bottom: 11px;
-                border-bottom: 1px solid #d7e0e8;
-            }
-            .client-page-head h2 { margin: 0; color: #172b3a; font-size: 1.17rem; letter-spacing: 0; }
-            .client-page-head p { margin: 3px 0 0; color: #66788a; font-size: .72rem; }
-            @media (max-width: 480px) {
-                :root { --app-pad: .7rem; }
-                .client-header-compact { min-height: 74px; padding: 12px 13px; }
-                .client-header-time { font-size: .62rem; }
-                .home-origin-name { font-size: .88rem; }
-                .home-origin-detail { font-size: .67rem; }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     if st.session_state.get("hub") and not usuario_puede_hub(st.session_state["hub"]):
         st.session_state["hub"] = None
         st.session_state["sub_tab_inicio"] = "Inicio"
@@ -13993,7 +13801,7 @@ elif st.session_state["rol"] == "cliente":
     dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
     mes_nombre = MESES_ES.get(ahora_hn.month, "")
     hora_formato = ahora_hn.strftime("%I:%M %p")
-    fecha_hora_texto = f"{ahora_hn.day} {mes_nombre[:3]}. {ahora_hn.year}<br>{hora_formato}"
+    fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
 
     lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
@@ -14023,13 +13831,11 @@ elif st.session_state["rol"] == "cliente":
         nombre_header = html.escape(nombre_display)
         casillero_header = html.escape(casillero)
         st.markdown(
-            '<section class="client-header-compact">'
-            '<div class="client-header-main">'
-            f'<div class="app-greeting-title">{saludo_horario}, {nombre_header}</div>'
-            f'<div class="app-greeting-sub">Casillero <b>{casillero_header}</b> &bull; {total_cotizaciones} cotizaciones</div>'
-            '</div>'
-            f'<div class="client-header-time">{fecha_hora_texto}</div>'
-            '</section>',
+            html_encabezado_institucional(
+                f'<div class="app-greeting-title">{saludo_horario}, {nombre_header}</div>'
+                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero_header}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
+                f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
+            ),
             unsafe_allow_html=True,
         )
 
@@ -14191,22 +13997,18 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state["sub_tab_inicio"] == "Mis Cotizaciones":
         with st.container(key="vista_historial"):
             st.markdown('<div class="ccm-vista-historial" aria-hidden="true"></div>', unsafe_allow_html=True)
+            pintar_banner_promocional_china(casillero)
             documentos_operativos_habilitados = cotizaciones_habilitadas_por_operacion(
                 cargar_paquetes_db(casillero)
             )
-            st.markdown(
-                '<div class="client-page-head"><div><h2>Mis cotizaciones</h2>'
-                '<p>Consulte vigencia, estado, documentos y seguimiento.</p></div></div>',
-                unsafe_allow_html=True,
+            st.markdown("#### 📄 Historial de Cotizaciones y Descarga de PDF")
+            pintar_guias_informativas(
+                [
+                    ("⏳", "Tarifa pendiente", "Confírmela antes de que venza su vigencia de <b>1 hora</b>.", "naranja"),
+                    ("🛡️", "Tarifa confirmada", "Permanece disponible durante <b>48 horas</b>.", "azul"),
+                    ("📦", "Seguimiento y documentos", "CCM los habilita después de validar <b>recepción, pago y documentación</b>.", "verde"),
+                ]
             )
-            st.button(
-                "+ Nueva cotización",
-                type="primary",
-                key="historial_nueva_cotizacion",
-                use_container_width=True,
-                on_click=ir_a_cotizador,
-            )
-            st.caption("Pendiente: vigencia de 1 hora · Confirmada: disponible durante 48 horas")
             # Descarta filtros de versiones anteriores: la guía ya no es interactiva.
             st.session_state.pop("filtro_historial_cotizaciones", None)
             confirmada_flash = st.session_state.pop("flash_cotizacion_confirmada", None)
