@@ -22,6 +22,7 @@ import threading
 import secrets
 import ipaddress
 import socket
+import time
 
 import requests
 
@@ -2701,21 +2702,20 @@ def consultar_casos_soporte_db(casillero):
         ).fetchall()
 
 
-@st.cache_data(ttl=10, show_spinner=False)
-def cargar_casos_soporte_v2(casillero):
-    return consultar_casos_soporte_db(casillero)
-
-
 def obtener_casos_soporte(casillero):
-    """Usa caché y continúa con consulta directa si Streamlit invalida mal su clave."""
-    try:
-        return cargar_casos_soporte_v2(casillero)
-    except KeyError:
-        try:
-            cargar_casos_soporte_v2.clear()
-        except Exception:
-            pass
-        return consultar_casos_soporte_db(casillero)
+    """Caché local de sesión, independiente del decorador defectuoso de Streamlit."""
+    cas = formatear_casillero(casillero)
+    clave = "_ccm_soporte_casos_cache_v3"
+    ahora = time.monotonic()
+    cache = st.session_state.get(clave)
+    if (
+        cache and cache.get("casillero") == cas
+        and ahora - float(cache.get("creado", 0)) < 10
+    ):
+        return cache["datos"]
+    datos = consultar_casos_soporte_db(cas)
+    st.session_state[clave] = {"casillero": cas, "creado": ahora, "datos": datos}
+    return datos
 
 
 def consultar_hilo_soporte_db(caso_id, casillero):
@@ -2735,20 +2735,28 @@ def consultar_hilo_soporte_db(caso_id, casillero):
         ).fetchall()
 
 
-@st.cache_data(ttl=10, show_spinner=False)
-def cargar_hilo_soporte_v2(caso_id, casillero):
-    return consultar_hilo_soporte_db(caso_id, casillero)
-
-
 def obtener_hilo_soporte(caso_id, casillero):
-    try:
-        return cargar_hilo_soporte_v2(caso_id, casillero)
-    except KeyError:
-        try:
-            cargar_hilo_soporte_v2.clear()
-        except Exception:
-            pass
-        return consultar_hilo_soporte_db(caso_id, casillero)
+    """Reutiliza el hilo durante la conversación sin usar st.cache_data."""
+    cas = formatear_casillero(casillero)
+    caso = int(caso_id)
+    clave = "_ccm_soporte_hilo_cache_v3"
+    ahora = time.monotonic()
+    cache = st.session_state.get(clave)
+    if (
+        cache and cache.get("casillero") == cas and cache.get("caso_id") == caso
+        and ahora - float(cache.get("creado", 0)) < 10
+    ):
+        return cache["datos"]
+    datos = consultar_hilo_soporte_db(caso, cas)
+    st.session_state[clave] = {
+        "casillero": cas, "caso_id": caso, "creado": ahora, "datos": datos,
+    }
+    return datos
+
+
+def invalidar_cache_soporte():
+    st.session_state.pop("_ccm_soporte_casos_cache_v3", None)
+    st.session_state.pop("_ccm_soporte_hilo_cache_v3", None)
 
 
 def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=None):
@@ -2816,8 +2824,7 @@ def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=N
                 "WHERE id=? AND codigo_casillero=?",
                 (estado, fecha, int(caso_id), cas),
             )
-    cargar_casos_soporte_v2.clear()
-    cargar_hilo_soporte_v2.clear()
+    invalidar_cache_soporte()
     return True
 
 
@@ -4518,6 +4525,11 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .support-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
                 .support-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
                 .st-key-soporte_cliente_panel .stButton > button { min-height:40px; border-radius:7px !important; font-weight:800 !important; }
+                .st-key-soporte_cliente_panel [role="radiogroup"] { display:flex !important; gap:6px !important; padding:5px !important; margin-bottom:8px; background:#eaf0f6 !important; border:1px solid #d8e1ec !important; border-radius:8px !important; }
+                .st-key-soporte_cliente_panel [role="radiogroup"] label { flex:1 !important; min-height:38px !important; margin:0 !important; padding:7px 11px !important; justify-content:center !important; background:#fff !important; border:1px solid #d7e0eb !important; border-radius:6px !important; }
+                .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; }
+                .st-key-soporte_cliente_panel [role="radiogroup"] label p { color:#334155 !important; -webkit-text-fill-color:#334155 !important; font-size:.74rem !important; font-weight:800 !important; }
+                .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) p { color:#fff !important; -webkit-text-fill-color:#fff !important; }
                 @media(max-width:700px){ .support-message{max-width:96%} .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
                 </style>
                 """,
@@ -4530,8 +4542,12 @@ def pintar_vista_actividad(total_cotizaciones=0):
                     'Consulte el historial y continúe cualquier conversación sin perder respuestas.</div>',
                     unsafe_allow_html=True,
                 )
-                tab_historial, tab_nueva = st.tabs(["Mis solicitudes", "Nueva solicitud"])
-                with tab_historial:
+                modo_soporte = st.radio(
+                    "Vista de soporte", ["Mis solicitudes", "Nueva solicitud"],
+                    horizontal=True, label_visibility="collapsed",
+                    key="cliente_modo_soporte",
+                )
+                if modo_soporte == "Mis solicitudes":
                     if not casos_cliente:
                         st.info("Todavía no tiene solicitudes. Use la pestaña Nueva solicitud para contactar al equipo.")
                     else:
@@ -4615,7 +4631,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
                                     use_container_width=True, on_click=cerrar_conversacion_caso_cliente,
                                 )
-                with tab_nueva:
+                if modo_soporte == "Nueva solicitud":
                     st.caption("Cree una solicitud nueva solamente cuando no corresponda continuar un caso existente.")
                     paquetes_soporte = cargar_paquetes_db(cas_formato)
                     tracking_soporte = st.selectbox(
@@ -4658,7 +4674,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                 else:
                                     cursor.execute(sentencia_caso, parametros_caso)
                                     nuevo_caso_id = int(cursor.lastrowid)
-                            cargar_casos_soporte_v2.clear()
+                            invalidar_cache_soporte()
                             st.session_state["cliente_caso_activo"] = nuevo_caso_id
                             st.success("Solicitud registrada. Ya puede abrirla desde Mis solicitudes.")
                             st.rerun()
@@ -6572,7 +6588,7 @@ def asegurar_esquema_flujo_tracking():
 
 
 @st.cache_resource(show_spinner=False)
-def inicializar_persistencia():
+def inicializar_persistencia_v3():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
     init_db()
     asegurar_esquema_cotizaciones()
@@ -6585,7 +6601,7 @@ def inicializar_persistencia():
     return True
 
 
-inicializar_persistencia()
+inicializar_persistencia_v3()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -8143,6 +8159,10 @@ def logout():
         "guia_completada",
         "mostrar_guia",
         "cliente_caso_activo",
+        "_ccm_control360_clientes_cache_v3",
+        "_ccm_control360_expediente_cache_v3",
+        "_ccm_soporte_casos_cache_v3",
+        "_ccm_soporte_hilo_cache_v3",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -8174,10 +8194,9 @@ def invalidar_cache_datos_admin():
     cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
-    cargar_casos_soporte_v2.clear()
-    cargar_hilo_soporte_v2.clear()
-    cargar_clientes_control360_v2.clear()
-    cargar_expediente_control360_v2.clear()
+    invalidar_cache_clientes_control360()
+    invalidar_cache_expediente_control360()
+    invalidar_cache_soporte()
 
 
 @st.dialog("Editar cuenta", width="large")
@@ -11891,11 +11910,15 @@ st.markdown(
 # ---------------------------------------------------------
 # 7. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
-@st.cache_data(ttl=30, show_spinner=False)
 def cargar_clientes_control360_v2():
-    """Evita repetir la consulta del directorio en cada interacción del panel."""
+    """Caché de sesión para evitar el fallo de cache_data durante recargas del código."""
+    clave_cache = "_ccm_control360_clientes_cache_v3"
+    ahora = time.monotonic()
+    cache = st.session_state.get(clave_cache)
+    if cache and ahora - float(cache.get("creado", 0)) < 30:
+        return cache["datos"]
     with get_db() as conn:
-        return conn.execute(
+        datos = conn.execute(
             """
             SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal,
                    activo, dni, departamento, ciudad, direccion_exacta
@@ -11903,12 +11926,21 @@ def cargar_clientes_control360_v2():
             ORDER BY nombre_completo LIMIT 500
             """
         ).fetchall()
+    st.session_state[clave_cache] = {"creado": ahora, "datos": datos}
+    return datos
 
 
-@st.cache_data(ttl=15, show_spinner=False)
 def cargar_expediente_control360_v2(casillero):
-    """Agrupa las dos consultas operativas más costosas del expediente."""
+    """Agrupa y reutiliza las consultas operativas mientras se pulsa dentro del panel."""
     cas = formatear_casillero(casillero)
+    clave_cache = "_ccm_control360_expediente_cache_v3"
+    ahora = time.monotonic()
+    cache = st.session_state.get(clave_cache)
+    if (
+        cache and cache.get("casillero") == cas
+        and ahora - float(cache.get("creado", 0)) < 15
+    ):
+        return cache["datos"]
     with get_db() as conn:
         cotizaciones = conn.execute(
             """
@@ -11937,7 +11969,19 @@ def cargar_expediente_control360_v2(casillero):
             """,
             (cas,),
         ).fetchall()
-    return cotizaciones, paquetes
+    datos = (cotizaciones, paquetes)
+    st.session_state[clave_cache] = {
+        "casillero": cas, "creado": ahora, "datos": datos,
+    }
+    return datos
+
+
+def invalidar_cache_clientes_control360():
+    st.session_state.pop("_ccm_control360_clientes_cache_v3", None)
+
+
+def invalidar_cache_expediente_control360():
+    st.session_state.pop("_ccm_control360_expediente_cache_v3", None)
 
 
 def pintar_control_cliente_360():
@@ -12186,7 +12230,7 @@ def pintar_control_cliente_360():
                 cargar_estados_cotizaciones_db.clear()
                 cargar_cotizaciones_confirmadas_admin.clear()
                 cargar_resumen_operativo_admin.clear()
-                cargar_expediente_control360_v2.clear()
+                invalidar_cache_expediente_control360()
                 st.success("Cotización actualizada y registrada en el expediente.")
                 st.rerun()
             with st.expander("Detalle comercial guardado"):
@@ -12398,7 +12442,7 @@ def pintar_control_cliente_360():
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
-                    cargar_expediente_control360_v2.clear()
+                    invalidar_cache_expediente_control360()
                     st.success("Control del envío actualizado; el cliente recibió una notificación.")
                     st.rerun()
 
@@ -12500,7 +12544,6 @@ def pintar_control_cliente_360():
                         cas, f"Nueva respuesta al caso #{caso_id:04d}", respuesta_caso.strip(),
                         tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
                     )
-                    cargar_casos_soporte_v2.clear()
                     st.success("Respuesta agregada al historial y enviada al portal del cliente.")
                     st.rerun()
             if actualizar_solo_caso:
@@ -12511,7 +12554,7 @@ def pintar_control_cliente_360():
                         "fecha_actualizacion=? WHERE id=? AND codigo_casillero=?",
                         (estado_caso, prioridad_caso, fecha, caso_id, cas),
                     )
-                cargar_casos_soporte_v2.clear()
+                invalidar_cache_soporte()
                 if estado_caso != estado_actual_caso:
                     crear_notificacion_cliente(
                         cas, f"Estado del caso #{caso_id:04d}",
@@ -12573,7 +12616,7 @@ def pintar_control_cliente_360():
             if st.button("Guardar estado de la cuenta", key=f"c360_activo_save_{cas}"):
                 with get_db() as conn:
                     conn.execute("UPDATE usuarios SET activo=? WHERE codigo_casillero=? AND rol='cliente'", (bool(cuenta_habilitada), cas))
-                cargar_clientes_control360_v2.clear()
+                invalidar_cache_clientes_control360()
                 st.success("Estado de acceso actualizado.")
                 st.rerun()
         clave_temporal = st.text_input("Nueva contraseña", type="password", key=f"c360_pwd_{cas}", placeholder="Vacío para generar una clave temporal")
@@ -15637,8 +15680,6 @@ elif es_rol_admin():
                                 cargar_estados_cotizaciones_db.clear()
                                 cargar_cotizaciones_confirmadas_admin.clear()
                                 cargar_resumen_operativo_admin.clear()
-                                cargar_casos_soporte_v2.clear()
-                                cargar_hilo_soporte_v2.clear()
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
 
