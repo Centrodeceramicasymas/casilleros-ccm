@@ -2834,10 +2834,45 @@ def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=N
 
 def abrir_conversacion_caso_cliente(caso_id):
     st.session_state["cliente_caso_activo"] = int(caso_id)
+    st.session_state["cliente_modo_soporte"] = "Mis solicitudes"
 
 
 def cerrar_conversacion_caso_cliente():
     st.session_state.pop("cliente_caso_activo", None)
+    st.session_state["mantener_soporte_abierto"] = True
+
+
+def fecha_soporte_amigable(fecha_raw, ahora=None):
+    """Muestra fechas operativas legibles y evita timestamps técnicos."""
+    fecha = parsear_fecha_cotizacion(fecha_raw)
+    if fecha is None:
+        return str(fecha_raw or "Sin fecha")
+    ahora = ahora or obtener_tiempo_honduras()
+    diferencia = ahora - fecha
+    segundos = int(diferencia.total_seconds())
+    if 0 <= segundos < 60:
+        return "Ahora"
+    if 60 <= segundos < 3600:
+        minutos = max(1, segundos // 60)
+        return f"Hace {minutos} min"
+    if 3600 <= segundos < 86400:
+        horas = max(1, segundos // 3600)
+        return f"Hace {horas} h"
+    hora = fecha.strftime("%I:%M").lstrip("0")
+    periodo = "a. m." if fecha.hour < 12 else "p. m."
+    mes = MESES_ES.get(fecha.month, "").lower()
+    return f"{fecha.day} {mes}. {fecha.year}, {hora} {periodo}"
+
+
+def clase_estado_soporte(estado):
+    estado_normalizado = str(estado or "").strip().lower()
+    if estado_normalizado in ("cerrado", "resuelto"):
+        return "closed"
+    if "esperando" in estado_normalizado:
+        return "waiting"
+    if "revisión" in estado_normalizado or "revision" in estado_normalizado:
+        return "review"
+    return "open"
 
 
 def cambiar_estado_caso_desde_cliente(caso_id, casillero, nuevo_estado):
@@ -4564,21 +4599,31 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .st-key-soporte_cliente_panel details > summary { min-height:50px !important; padding:0 16px !important; background:#fff !important; }
                 .st-key-soporte_cliente_panel details > summary * { color:#0f172a !important; -webkit-text-fill-color:#0f172a !important; font-weight:800 !important; opacity:1 !important; }
                 .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"] { padding:14px 16px 16px !important; background:#f8fafc !important; }
+                .support-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin:0 0 12px; }
+                .support-panel-head h3 { margin:0; color:#102a43; font-size:1rem; line-height:1.25; letter-spacing:0; }
+                .support-panel-head p { margin:4px 0 0; color:#64748b; font-size:.73rem; line-height:1.4; }
+                .support-active-count { flex:none; padding:4px 8px; color:#087050; background:#e4f6f0; border:1px solid #b9e5d8; border-radius:6px; font-size:.64rem; font-weight:850; white-space:nowrap; }
                 .support-case-card { min-height:74px; padding:11px 13px; background:#fff; border:1px solid #e2e8f0; border-left:4px solid #0757c8; border-radius:7px; box-sizing:border-box; }
                 .support-case-card.closed { border-left-color:#94a3b8; background:#fbfcfe; }
                 .support-case-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-                .support-case-card b { display:block; color:#0f172a; font-size:.82rem; line-height:1.35; }
-                .support-case-card span { display:block; margin-top:5px; color:#64748b; font-size:.68rem; line-height:1.35; }
+                .support-case-id { display:block; margin-bottom:3px; color:#0757c8; font-size:.62rem; font-weight:850; }
+                .support-case-card b { display:block; overflow-wrap:anywhere; color:#0f172a; font-size:.82rem; line-height:1.35; }
+                .support-case-card span { display:block; margin-top:5px; color:#64748b; font-size:.68rem; line-height:1.4; }
                 .support-case-card .support-card-status { flex:none; display:inline-block; margin:0; padding:3px 7px; color:#166534; background:#dcfce7; border-radius:999px; font-size:.61rem; font-weight:850; }
                 .support-case-card .support-card-status.closed { color:#475569; background:#e2e8f0; }
-                .support-thread-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 15px; margin:10px 0 12px; background:#fff; border:1px solid #d8e2ee; border-left:4px solid #0757c8; border-radius:8px; }
-                .support-thread-identity { display:flex; align-items:center; gap:11px; min-width:0; }
-                .support-thread-icon { display:grid !important; place-items:center; flex:0 0 38px; width:38px; height:38px; margin:0 !important; color:#0757c8 !important; background:#eaf3ff; border-radius:7px; font-size:.68rem !important; font-weight:900; }
+                .support-card-status.waiting, .support-status.waiting { color:#92400e !important; background:#fff7df !important; border-color:#f5d58a !important; }
+                .support-card-status.review, .support-status.review { color:#0757c8 !important; background:#eaf3ff !important; border-color:#bfd7f5 !important; }
+                .support-list-help { margin:2px 0 10px; color:#64748b; font-size:.7rem; }
+                [class*="st-key-cliente_abrir_caso_"] button { min-height:42px !important; color:#0757c8 !important; background:#fff !important; border-color:#b9cdea !important; }
+                .support-thread-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:14px 15px; margin:8px 0 12px; background:#fff; border:1px solid #d8e2ee; border-left:4px solid #0757c8; border-radius:8px; }
+                .support-thread-identity { min-width:0; }
                 .support-thread-head small { display:block; margin-bottom:2px; color:#0757c8; font-size:.61rem; font-weight:850; text-transform:uppercase; }
-                .support-thread-head b { display:block; overflow-wrap:anywhere; color:#0f172a; font-size:.87rem; line-height:1.3; }
+                .support-thread-head b { display:block; overflow-wrap:anywhere; color:#0f172a; font-size:.94rem; line-height:1.3; }
                 .support-thread-head .support-thread-meta { display:block; margin-top:4px; color:#64748b; font-size:.67rem; }
                 .support-status { flex:none; padding:5px 9px; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; border-radius:999px; font-size:.64rem; font-weight:850; }
                 .support-status.closed { color:#475569; background:#f1f5f9; border-color:#cbd5e1; }
+                .support-tracking { display:block; margin-top:5px; overflow-wrap:anywhere; color:#475569; }
+                [class*="st-key-cliente_volver_solicitudes_"] button { min-height:38px !important; justify-content:flex-start !important; color:#0757c8 !important; background:transparent !important; border:0 !important; box-shadow:none !important; }
                 .support-message { max-width:88%; margin:7px 0; padding:10px 12px; background:#fff; border:1px solid #dbe3ee; border-radius:7px; color:#334155; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
                 .support-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
                 .support-message.system { max-width:max-content; margin:9px auto; padding:6px 10px; color:#64748b; background:#eef2f6; border:0; border-radius:999px; font-size:.68rem; text-align:center; }
@@ -4593,59 +4638,128 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label p { color:#334155 !important; -webkit-text-fill-color:#334155 !important; font-size:.74rem !important; font-weight:800 !important; }
                 .st-key-soporte_cliente_panel [role="radiogroup"] label:has(input:checked) p { color:#fff !important; -webkit-text-fill-color:#fff !important; }
-                [class*="st-key-soporte_composer_cliente_"] { margin-top:12px; padding:8px 10px; overflow:hidden; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:none !important; }
+                [class*="st-key-soporte_composer_cliente_"] { position:sticky; bottom:calc(var(--ccm-nav-clearance, 90px) + 6px); z-index:8; margin-top:12px; padding:8px 10px; overflow:hidden; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 5px 18px rgba(15,23,42,.10) !important; }
                 [class*="st-key-soporte_composer_cliente_"] [data-testid="stHorizontalBlock"] { align-items:flex-end !important; }
                 [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"], [class*="st-key-soporte_composer_cliente_"] [data-baseweb="textarea"] > div { border:0 !important; outline:0 !important; background:#f8fafc !important; border-radius:7px !important; box-shadow:none !important; }
                 [class*="st-key-soporte_composer_cliente_"] textarea, [class*="st-key-soporte_composer_cliente_"] textarea:focus, [class*="st-key-soporte_composer_cliente_"] textarea:focus-visible { min-height:70px !important; outline:0 !important; color:#0f172a !important; background:#f8fafc !important; box-shadow:none !important; font-size:.8rem !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:none !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button:focus, [class*="st-key-soporte_composer_cliente_"] .stButton > button:active { outline:0 !important; box-shadow:none !important; }
-                @media(max-width:700px){ .support-thread-head{align-items:flex-start;flex-direction:column}.support-message{max-width:96%}.st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
+                @media(max-width:700px){ .support-thread-head{gap:9px}.support-message{max-width:94%}.st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} .support-panel-head{align-items:center;} }
                 </style>
                 """,
                 unsafe_allow_html=True,
             )
-            # Al entrar en Actividad, la bandeja inicia cerrada. La conversación
-            # seleccionada se conserva y solo se muestra al pulsar la flecha.
-            with st.expander(etiqueta_soporte, expanded=False):
+            mantener_abierto = bool(st.session_state.pop("mantener_soporte_abierto", False))
+            with st.expander(etiqueta_soporte, expanded=bool(caso_activo or mantener_abierto)):
                 st.markdown(
-                    '<div style="color:#0f172a;font-size:.92rem;font-weight:850;">Centro de ayuda</div>'
-                    '<div style="margin:2px 0 10px;color:#64748b;font-size:.73rem;">'
-                    'Consulte el historial y continúe cualquier conversación sin perder respuestas.</div>',
+                    '<div class="support-panel-head"><div><h3>Centro de ayuda</h3>'
+                    '<p>Consulte el historial y continúe sus conversaciones.</p></div>'
+                    f'<span class="support-active-count">{casos_pendientes} activas</span></div>',
                     unsafe_allow_html=True,
                 )
-                modo_soporte = st.radio(
-                    "Vista de soporte", ["Mis solicitudes", "Nueva solicitud"],
-                    horizontal=True, label_visibility="collapsed",
-                    key="cliente_modo_soporte",
-                )
+                if caso_activo:
+                    modo_soporte = "Mis solicitudes"
+                else:
+                    modo_soporte = st.radio(
+                        "Vista de soporte", ["Mis solicitudes", "Nueva solicitud"],
+                        horizontal=True, label_visibility="collapsed",
+                        key="cliente_modo_soporte",
+                    )
                 if modo_soporte == "Mis solicitudes":
                     if not casos_cliente:
                         st.info("Todavía no tiene solicitudes. Use la pestaña Nueva solicitud para contactar al equipo.")
                     else:
-                        for caso in casos_cliente[:10]:
+                        casos_para_lista = casos_cliente
+                        casos_renderizar = []
+                        total_casos_filtrados = 0
+                        limite_casos = 0
+                        if not caso_activo:
+                            st.markdown(
+                                '<div class="support-list-help">Seleccione una solicitud para continuar la conversación.</div>',
+                                unsafe_allow_html=True,
+                            )
+                            buscar_caso_col, filtrar_caso_col = st.columns([1.7, 1], gap="small")
+                            with buscar_caso_col:
+                                buscar_caso = st.text_input(
+                                    "Buscar solicitud",
+                                    placeholder="Número, asunto o tracking",
+                                    key="cliente_buscar_solicitud",
+                                    label_visibility="collapsed",
+                                ).strip().lower()
+                            with filtrar_caso_col:
+                                filtro_caso = st.selectbox(
+                                    "Estado",
+                                    ["Todas", "Activas", "Esperando respuesta", "Cerradas"],
+                                    key="cliente_filtrar_solicitud",
+                                    label_visibility="collapsed",
+                                )
+                            if buscar_caso:
+                                casos_para_lista = [
+                                    caso for caso in casos_para_lista
+                                    if buscar_caso in " ".join(
+                                        str(valor or "").lower()
+                                        for valor in (caso[0], caso[1], caso[2], caso[3])
+                                    )
+                                ]
+                            if filtro_caso == "Activas":
+                                casos_para_lista = [
+                                    caso for caso in casos_para_lista
+                                    if str(caso[5]) not in ("Cerrado", "Resuelto")
+                                ]
+                            elif filtro_caso == "Esperando respuesta":
+                                casos_para_lista = [
+                                    caso for caso in casos_para_lista
+                                    if "esperando" in str(caso[5] or "").lower()
+                                ]
+                            elif filtro_caso == "Cerradas":
+                                casos_para_lista = [
+                                    caso for caso in casos_para_lista
+                                    if str(caso[5]) in ("Cerrado", "Resuelto")
+                                ]
+                            if not casos_para_lista:
+                                st.info("No hay solicitudes que coincidan con la búsqueda o el filtro.")
+                            casos_renderizar, total_casos_filtrados, limite_casos = pagina_registros(
+                                casos_para_lista, "limite_casos_cliente", 10
+                            )
+                        for caso in casos_renderizar:
                             estado_texto = str(caso[5] or "Abierto")
                             caso_lista_cerrado = estado_texto in ("Cerrado", "Resuelto")
-                            clase_caso_lista = "closed" if caso_lista_cerrado else ""
+                            clase_caso_lista = clase_estado_soporte(estado_texto)
+                            tracking_lista = (
+                                f" · Tracking {html.escape(str(caso[1]))}"
+                                if caso[1] else ""
+                            )
+                            fecha_lista = fecha_soporte_amigable(caso[10])
                             detalle_caso, accion_caso = st.columns([4.5, 1.35])
                             with detalle_caso:
                                 st.markdown(
                                     f'<div class="support-case-card {clase_caso_lista}">'
                                     '<div class="support-case-card-head">'
-                                    f'<b>#{int(caso[0]):04d} · {html.escape(str(caso[3]))}</b>'
+                                    f'<div><span class="support-case-id">Solicitud #{int(caso[0]):04d}</span>'
+                                    f'<b>{html.escape(str(caso[3]))}</b></div>'
                                     f'<span class="support-card-status {clase_caso_lista}">'
                                     f'{html.escape(estado_texto)}</span></div>'
-                                    f'<span>{html.escape(str(caso[2]))} · '
-                                    f'Actualizado {html.escape(str(caso[10]))}</span></div>',
+                                    f'<span>{html.escape(str(caso[2]))}{tracking_lista}<br>'
+                                    f'Actualizado {html.escape(fecha_lista)}</span></div>',
                                     unsafe_allow_html=True,
                                 )
                             with accion_caso:
                                 st.button(
-                                    "Ver historial" if caso_lista_cerrado else "Abrir conversación",
+                                    "Ver historial" if caso_lista_cerrado else "Continuar",
                                     key=f"cliente_abrir_caso_{caso[0]}",
                                     use_container_width=True,
                                     on_click=abrir_conversacion_caso_cliente,
                                     args=(caso[0],),
                                 )
+
+                        if not caso_activo and limite_casos < total_casos_filtrados:
+                            st.button(
+                                f"Mostrar 10 solicitudes más ({limite_casos} de {total_casos_filtrados})",
+                                key="cliente_mas_solicitudes",
+                                use_container_width=True,
+                                on_click=aumentar_limite_registros,
+                                args=("limite_casos_cliente",),
+                            )
 
                         caso_seleccionado = next(
                             (caso for caso in casos_cliente if int(caso[0]) == int(caso_activo or 0)),
@@ -4655,20 +4769,28 @@ def pintar_vista_actividad(total_cotizaciones=0):
                             caso_id = int(caso_seleccionado[0])
                             mensajes = obtener_hilo_soporte(caso_id, cas_formato)
                             estado_caso_cliente = str(caso_seleccionado[5] or "Abierto")
-                            caso_cerrado = estado_caso_cliente == "Cerrado"
-                            clase_estado = "closed" if caso_cerrado else ""
+                            caso_cerrado = estado_caso_cliente in ("Cerrado", "Resuelto")
+                            clase_estado = clase_estado_soporte(estado_caso_cliente)
                             tracking_caso = (
-                                f" · Tracking: {html.escape(str(caso_seleccionado[1]))}"
-                                if caso_seleccionado[1] else " · Sin tracking asociado"
+                                html.escape(str(caso_seleccionado[1]))
+                                if caso_seleccionado[1] else "Sin tracking asociado"
+                            )
+                            fecha_hilo = fecha_soporte_amigable(caso_seleccionado[10])
+                            st.button(
+                                "← Volver a solicitudes",
+                                key=f"cliente_volver_solicitudes_{caso_id}",
+                                use_container_width=True,
+                                on_click=cerrar_conversacion_caso_cliente,
                             )
                             st.markdown(
                                 '<section class="support-thread-head">'
-                                '<div class="support-thread-identity"><span class="support-thread-icon">SC</span><div>'
+                                '<div class="support-thread-identity">'
                                 f'<small>Solicitud #{caso_id:04d}</small>'
                                 f'<b>{html.escape(str(caso_seleccionado[3]))}</b>'
-                                f'<span class="support-thread-meta">{html.escape(str(caso_seleccionado[2]))}'
-                                f'{tracking_caso} · Actualizado {html.escape(str(caso_seleccionado[10]))}</span>'
-                                f'</div></div><span class="support-status {clase_estado}">'
+                                f'<span class="support-thread-meta">{html.escape(str(caso_seleccionado[2]))} · '
+                                f'Actualizado {html.escape(fecha_hilo)}</span>'
+                                f'<span class="support-tracking">Tracking: {tracking_caso}</span>'
+                                f'</div><span class="support-status {clase_estado}">'
                                 f'{html.escape(estado_caso_cliente)}</span></section>',
                                 unsafe_allow_html=True,
                             )
@@ -4694,7 +4816,8 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     clase, autor = "", "Equipo CCM"
                                 st.markdown(
                                     f'<div class="support-message {clase}"><small>{autor} · '
-                                    f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
+                                    f'{html.escape(fecha_soporte_amigable(mensaje[4]))}</small>'
+                                    f'{html.escape(str(mensaje[3]))}</div>',
                                     unsafe_allow_html=True,
                                 )
                             clave_flash_cliente = f"_flash_cliente_caso_{caso_id}"
@@ -4732,20 +4855,12 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     else:
                                         st.warning("Escriba un mensaje antes de enviarlo.")
 
-                                ocultar_col, cerrar_col = st.columns([1, 1], gap="small")
-                                with ocultar_col:
-                                    st.button(
-                                        "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
+                                with st.container(key=f"cerrar_caso_cliente_{caso_id}"):
+                                    if st.button(
+                                        "Cerrar caso", key=f"cliente_solicitar_cierre_{caso_id}",
                                         use_container_width=True,
-                                        on_click=cerrar_conversacion_caso_cliente,
-                                    )
-                                with cerrar_col:
-                                    with st.container(key=f"cerrar_caso_cliente_{caso_id}"):
-                                        if st.button(
-                                            "Cerrar caso", key=f"cliente_solicitar_cierre_{caso_id}",
-                                            use_container_width=True,
-                                        ):
-                                            st.session_state[f"_confirmar_cierre_caso_{caso_id}"] = True
+                                    ):
+                                        st.session_state[f"_confirmar_cierre_caso_{caso_id}"] = True
                                 clave_confirmar = f"_confirmar_cierre_caso_{caso_id}"
                                 if st.session_state.get(clave_confirmar):
                                     st.markdown(
@@ -4776,22 +4891,14 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                         st.rerun()
                             else:
                                 st.markdown(
-                                    '<div class="support-closed-note"><b>Caso cerrado.</b> '
+                                    '<div class="support-closed-note"><b>Caso finalizado.</b> '
                                     'La conversación se conserva como historial. Reabra el caso para enviar un mensaje nuevo.</div>',
                                     unsafe_allow_html=True,
                                 )
-                                reabrir_col, ocultar_col = st.columns(2, gap="small")
-                                with reabrir_col:
-                                    reabrir_caso = st.button(
-                                        "Reabrir caso", type="primary",
-                                        key=f"cliente_reabrir_caso_{caso_id}", use_container_width=True,
-                                    )
-                                with ocultar_col:
-                                    st.button(
-                                        "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
-                                        use_container_width=True,
-                                        on_click=cerrar_conversacion_caso_cliente,
-                                    )
+                                reabrir_caso = st.button(
+                                    "Reabrir caso", type="primary",
+                                    key=f"cliente_reabrir_caso_{caso_id}", use_container_width=True,
+                                )
                                 if reabrir_caso and cambiar_estado_caso_desde_cliente(
                                     caso_id, cas_formato, "Abierto"
                                 ):
@@ -4842,6 +4949,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                     nuevo_caso_id = int(cursor.lastrowid)
                             invalidar_cache_soporte()
                             st.session_state["cliente_caso_activo"] = nuevo_caso_id
+                            st.session_state["cliente_modo_soporte"] = "Mis solicitudes"
                             st.success("Solicitud registrada. Ya puede abrirla desde Mis solicitudes.")
                             st.rerun()
         st.markdown(
