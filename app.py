@@ -9715,7 +9715,7 @@ st.markdown(
         position: relative;
         z-index: 2;
         display: grid;
-        grid-template-columns: 34px minmax(0, 1fr);
+        grid-template-columns: 34px minmax(0, 1fr) auto;
         gap: 11px;
         align-items: start;
         margin: 18px 0 16px;
@@ -9747,55 +9747,16 @@ st.markdown(
         font-size: .69rem;
         line-height: 1.4;
     }
-    [class*="st-key-cotizador_origen_"] {
-        position: relative;
-        z-index: 1;
-        min-height: 112px;
-        padding: 14px 15px 12px;
-        background: #ffffff;
-        border: 1px solid #d6e0eb;
-        border-radius: 8px;
-        box-sizing: border-box;
-    }
-    .st-key-cotizador_origen_china {
-        background: #f0fdf9;
-        border: 2px solid #0f766e;
-    }
-    .quote-route-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-    }
-    .quote-route-place { display:flex; align-items:center; gap:9px; min-width:0; }
-    .quote-route-code {
-        display: grid;
-        place-items: center;
-        flex: 0 0 34px;
-        width: 34px;
-        height: 34px;
-        color: #ffffff;
-        background: #c92a2a;
-        border-radius: 7px;
-        font-size: .66rem;
-        font-weight: 900;
-    }
-    .quote-route-code.us { background: #173c64; }
-    .quote-route-place b { display:block; color:#0f172a; font-size:.87rem; }
-    .quote-route-place small { display:block; margin-top:2px; color:#64748b; font-size:.62rem; }
-    .quote-route-badge {
-        flex: none;
+    .quote-origin-active {
+        align-self: center;
         padding: 4px 8px;
         color: #0f766e;
         background: #ccfbef;
         border-radius: 999px;
         font-size: .61rem;
         font-weight: 850;
+        white-space: nowrap;
     }
-    .quote-route-badge.soon { color:#64748b; background:#eef2f6; }
-    .quote-route-copy { margin: 10px 0 0; color:#526175; font-size:.69rem; line-height:1.4; }
-    .quote-route-footer { margin-top:10px; padding-top:8px; color:#0f766e; border-top:1px solid #b7e2d5; font-size:.65rem; font-weight:850; }
-    .quote-route-footer.soon { color:#64748b; border-top-color:#e2e8f0; }
     .quote-subhead {
         margin: 14px 0 8px;
         color: #334155;
@@ -9845,8 +9806,8 @@ st.markdown(
     @media (max-width: 700px) {
         .quote-hero { padding: 14px 15px; }
         .quote-stage { margin-top: 15px; }
-        [class*="st-key-cotizador_origen_"] { min-height: 0; }
-        .quote-route-head { align-items: flex-start; }
+        .quote-origin-intro { grid-template-columns: 30px minmax(0, 1fr); }
+        .quote-origin-active { grid-column: 2; justify-self: start; }
     }
     .st-key-vista_cotizador:has(.st-key-formulario_direcciones) {
         padding-top: 16px !important;
@@ -14042,35 +14003,12 @@ elif st.session_state["rol"] == "cliente":
             )
             st.markdown(
                 '<section class="quote-origin-intro"><span class="quote-stage-number">1</span><div>'
-                '<small>Paso 1 · Ruta internacional</small>'
-                '<b>Origen de la carga</b>'
-                '<p>Seleccione desde dónde se enviará su mercancía. Esta elección determina las tarifas, límites y documentos disponibles.</p>'
-                '</div></section>',
+                '<small>Origen seleccionado</small>'
+                '<b>China a Honduras</b>'
+                '<p>Consolidación marítima desde la bodega en China hacia la bodega central en Honduras.</p>'
+                '</div><span class="quote-origin-active">Ruta activa</span></section>',
                 unsafe_allow_html=True,
             )
-            origen_china, origen_eeuu = st.columns(2, gap="medium")
-            with origen_china:
-                with st.container(key="cotizador_origen_china"):
-                    st.markdown(
-                        '<div class="quote-route-head"><div class="quote-route-place">'
-                        '<span class="quote-route-code">CN</span><div><b>China</b>'
-                        '<small>Consolidación marítima</small></div></div>'
-                        '<span class="quote-route-badge">Seleccionado</span></div>'
-                        '<p class="quote-route-copy">Ruta operativa hacia la bodega central en Honduras.</p>'
-                        '<div class="quote-route-footer">Ruta activa para esta cotización</div>',
-                        unsafe_allow_html=True,
-                    )
-            with origen_eeuu:
-                with st.container(key="cotizador_origen_eeuu"):
-                    st.markdown(
-                        '<div class="quote-route-head"><div class="quote-route-place">'
-                        '<span class="quote-route-code us">US</span><div><b>Estados Unidos</b>'
-                        '<small>Paquetería internacional</small></div></div>'
-                        '<span class="quote-route-badge soon">Próximamente</span></div>'
-                        '<p class="quote-route-copy">Nueva ruta de importación en preparación.</p>'
-                        '<div class="quote-route-footer soon">Aún no disponible para cotizar</div>',
-                        unsafe_allow_html=True,
-                    )
 
             st.markdown(
                 '<div class="quote-stage"><span class="quote-stage-number">2</span><div>'
