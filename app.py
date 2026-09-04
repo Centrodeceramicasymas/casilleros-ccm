@@ -2934,6 +2934,7 @@ def marcar_todas_notificaciones_cliente(casillero):
 
 
 def pintar_centro_notificaciones_cliente(casillero):
+    abrir_desde_encabezado = bool(st.session_state.pop("abrir_notificaciones_header", False))
     notificaciones = cargar_notificaciones_cliente(casillero)
     if not notificaciones:
         return
@@ -3006,8 +3007,7 @@ def pintar_centro_notificaciones_cliente(casillero):
     )
     etiqueta = f"Notificaciones · {no_leidas} nuevas" if no_leidas else "Notificaciones"
     with st.container(key="centro_notificaciones_cliente"):
-        # Siempre inicia contraído. El usuario decide cuándo consultar la bandeja.
-        with st.expander(etiqueta, expanded=False):
+        with st.expander(etiqueta, expanded=abrir_desde_encabezado):
             encabezado, accion_global = st.columns([4, 1.35])
             with encabezado:
                 st.markdown(
@@ -3978,6 +3978,12 @@ def pintar_guias_informativas(guias):
 
 
 def ir_a_inicio():
+    ir_a("Inicio", hub=None)
+
+
+def abrir_notificaciones_desde_encabezado():
+    """Lleva al centro de notificaciones desde cualquier vista del cliente."""
+    st.session_state["abrir_notificaciones_header"] = True
     ir_a("Inicio", hub=None)
 
 
@@ -5015,7 +5021,7 @@ def sincronizar_altura_encabezado_fijo():
                 const estilos = win.getComputedStyle(doc.documentElement);
                 const gapRaw = estilos.getPropertyValue("--header-gap").trim();
                 const gap = Number.parseFloat(gapRaw) || 16;
-                const offset = Math.ceil(Math.max(bottom + gap, 208)) + "px";
+                const offset = Math.ceil(Math.max(bottom + gap, 116)) + "px";
                 const destinos = [doc.documentElement, doc.body, doc.querySelector(".stApp")];
                 destinos.forEach((nodo) => {
                   if (nodo && nodo.style) {
@@ -5075,7 +5081,7 @@ def desplazar_a_ancla(element_id, alinear="start"):
             const estilos = win.getComputedStyle(doc.documentElement);
             const gapRaw = estilos.getPropertyValue("--header-gap").trim();
             const gap = Number.parseFloat(gapRaw) || 16;
-            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 196);
+            const margen = Math.max(bottom + gap, Number.parseFloat(estilos.getPropertyValue("--header-offset")) || 0, 116);
             const nav = doc.querySelector('[class~="st-key-bottom_nav"]') || doc.querySelector(".st-key-bottom_nav");
             let huecoNav = 125;
             if (nav) {{
@@ -8615,11 +8621,11 @@ st.markdown(
         --greeting-title: clamp(0.95rem, 0.82rem + 0.7vw, 1.15rem);
         --greeting-sub: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
         --greeting-time: clamp(0.75rem, 0.66rem + 0.5vw, 0.9rem);
-        --sticky-h: 208px;
+        --sticky-h: 116px;
         --sticky-delivery: 0px;
         --header-offset: var(--sticky-h);
-        --header-box: 196px;
-        --header-gap: 20px;
+        --header-box: 106px;
+        --header-gap: 10px;
         --ccm-nav-clearance: calc(109px + env(safe-area-inset-bottom, 0px));
     }
 
@@ -8762,8 +8768,8 @@ st.markdown(
 
     .ccm-header-spacer {
         display: block !important;
-        height: max(var(--header-offset), 208px) !important;
-        min-height: max(var(--header-offset), 208px) !important;
+        height: max(var(--header-offset), 116px) !important;
+        min-height: max(var(--header-offset), 116px) !important;
         width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -8774,8 +8780,8 @@ st.markdown(
     [data-testid="stElementContainer"]:has(.ccm-header-spacer),
     [data-testid="stMarkdown"]:has(.ccm-header-spacer),
     [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
-        height: max(var(--header-offset), 208px) !important;
-        min-height: max(var(--header-offset), 208px) !important;
+        height: max(var(--header-offset), 116px) !important;
+        min-height: max(var(--header-offset), 116px) !important;
         margin: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
@@ -8803,12 +8809,11 @@ st.markdown(
     }
 
     .app-header-blue {
-        background: #0649ad !important;
-        padding: 14px 18px 15px !important;
-        border: 1px solid rgba(255, 255, 255, .12) !important;
-        border-radius: 8px !important;
+        background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
+        padding: var(--header-blue-pad-y) var(--header-blue-pad-x) !important;
+        border-radius: 12px !important;
         color: #ffffff !important;
-        box-shadow: 0 8px 20px rgba(4, 52, 126, .18) !important;
+        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
         max-width: 100% !important;
         width: 100% !important;
         box-sizing: border-box !important;
@@ -8817,7 +8822,7 @@ st.markdown(
         z-index: 10 !important;
         display: flex !important;
         flex-direction: column !important;
-        gap: 3px !important;
+        gap: 1px !important;
         container-type: inline-size;
         overflow: hidden !important;
     }
@@ -8831,9 +8836,9 @@ st.markdown(
         justify-content: center !important;
         width: 100% !important;
         min-width: 0 !important;
-        margin: 0 0 9px 0 !important;
-        padding: 0 0 10px 0 !important;
-        border-bottom: 1px solid rgba(219, 234, 254, .38) !important;
+        margin: 0 0 6px 0 !important;
+        padding: 2px 0 8px 0 !important;
+        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
         box-sizing: border-box !important;
     }
 
@@ -8841,12 +8846,11 @@ st.markdown(
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
-        align-items: center !important;
-        gap: 4px !important;
+        gap: 1px !important;
         width: 100% !important;
         min-width: 0 !important;
-        text-align: center !important;
-        text-align-last: center !important;
+        text-align: left !important;
+        text-align-last: left !important;
     }
 
     .app-header-brand {
@@ -8854,7 +8858,7 @@ st.markdown(
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 !important;
-        padding: 0 4px !important;
+        padding: 0 2px !important;
         box-sizing: border-box !important;
         border-bottom: none !important;
         color: #ffffff !important;
@@ -8864,10 +8868,10 @@ st.markdown(
         text-wrap: nowrap !important;
         text-align: center !important;
         text-align-last: center !important;
-        letter-spacing: 0 !important;
-        word-spacing: 0 !important;
+        letter-spacing: 0.04em !important;
+        word-spacing: 0.02em !important;
         line-height: 1.2 !important;
-        font-size: clamp(1rem, 3.9vw, 1.22rem) !important;
+        font-size: var(--brand-size) !important;
         overflow: hidden !important;
         text-overflow: clip !important;
     }
@@ -8875,14 +8879,13 @@ st.markdown(
     .st-key-sticky_top_header [data-testid="stMarkdown"],
     .st-key-sticky_top_header [data-testid="stMarkdown"] p,
     .st-key-sticky_top_header [data-testid="stMarkdownContainer"] {
-        text-align: center !important;
-        text-align-last: center !important;
+        text-align: left !important;
+        text-align-last: left !important;
         word-spacing: normal !important;
     }
 
     .app-greeting-title {
-        width: 100% !important;
-        font-size: clamp(1.05rem, 4.5vw, 1.32rem) !important;
+        font-size: var(--greeting-title) !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
@@ -8892,8 +8895,118 @@ st.markdown(
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         max-width: 100% !important;
-        text-align: center !important;
-        text-align-last: center !important;
+    }
+
+    /* Encabezado compacto del cliente: sin marca y centrado en su operación. */
+    .client-header-compact {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 94px;
+        padding: 13px 58px 13px 16px;
+        color: #ffffff;
+        background: #073b78;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 8px;
+        box-sizing: border-box;
+    }
+    .client-header-title {
+        margin: 0 0 5px;
+        overflow: hidden;
+        color: #ffffff;
+        font-size: clamp(1rem, 4.5vw, 1.22rem);
+        font-weight: 850;
+        line-height: 1.2;
+        letter-spacing: 0;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .client-header-casillero {
+        overflow: hidden;
+        color: #dbeafe;
+        font-size: clamp(.72rem, 3.2vw, .84rem);
+        font-weight: 650;
+        line-height: 1.3;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .client-header-meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 6px;
+        margin-top: 5px;
+        overflow: hidden;
+        color: #bcd5f2;
+        font-size: clamp(.64rem, 2.8vw, .75rem);
+        font-weight: 650;
+        line-height: 1.25;
+        white-space: nowrap;
+    }
+    .client-header-meta i {
+        display: block;
+        width: 3px;
+        height: 3px;
+        flex: 0 0 3px;
+        background: #7fd0c1;
+        border-radius: 50%;
+    }
+    .st-key-header_notification_action {
+        position: absolute !important;
+        top: max(23px, calc(env(safe-area-inset-top, 0px) + 18px)) !important;
+        right: calc(var(--app-pad) + 10px) !important;
+        z-index: 30 !important;
+        width: 42px !important;
+        height: 42px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .st-key-header_notification_action button {
+        position: relative !important;
+        width: 42px !important;
+        min-width: 42px !important;
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 0 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        background: rgba(255, 255, 255, .12) !important;
+        border: 1px solid rgba(255, 255, 255, .34) !important;
+        border-radius: 50% !important;
+        box-shadow: none !important;
+        font-size: 1rem !important;
+    }
+    .st-key-header_notification_action button:hover {
+        background: rgba(255, 255, 255, .2) !important;
+        border-color: rgba(255, 255, 255, .55) !important;
+    }
+    .st-key-header_notification_action button * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    .st-key-header_notification_action button::after {
+        content: var(--ccm-notif-badge, "");
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        display: var(--ccm-notif-badge-display, none);
+        place-items: center;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 3px;
+        color: #ffffff;
+        background: #dc2626;
+        border: 2px solid #073b78;
+        border-radius: 999px;
+        font-size: .55rem;
+        font-weight: 850;
+        line-height: 13px;
+        box-sizing: border-box;
+    }
+    @media (max-width: 360px) {
+        .client-header-compact { padding-left: 13px; padding-right: 54px; }
+        .client-header-meta { gap: 4px; font-size: .61rem; }
     }
 
     /* Acceso público: imagen operativa y formulario en una sola composición. */
@@ -9261,18 +9374,15 @@ st.markdown(
     }
 
     .app-greeting-sub {
-        width: 100% !important;
-        font-size: clamp(.76rem, 3.2vw, .9rem) !important;
+        font-size: var(--greeting-sub) !important;
         color: #dbeafe !important;
-        margin-top: 1px !important;
-        font-weight: 600 !important;
+        margin-top: 0 !important;
+        font-weight: 500 !important;
         line-height: 1.35 !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
+        white-space: normal !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
         max-width: 100% !important;
-        text-align: center !important;
-        text-align-last: center !important;
     }
 
     .app-header-casillero,
@@ -9284,18 +9394,13 @@ st.markdown(
     }
 
     .app-header-time {
-        width: 100% !important;
-        font-size: clamp(.71rem, 3vw, .82rem) !important;
-        color: #d6e7ff !important;
-        margin-top: 3px !important;
+        font-size: var(--greeting-time) !important;
+        color: #bfdbfe !important;
+        margin-top: 2px !important;
         font-weight: 600 !important;
         line-height: 1.35 !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
+        white-space: normal !important;
         max-width: 100% !important;
-        text-align: center !important;
-        text-align-last: center !important;
     }
 
     /* iPhone / Android compacto */
@@ -9310,26 +9415,27 @@ st.markdown(
             --sticky-delivery: 0px;
         }
         .app-header-blue {
-            padding: 13px 12px 14px !important;
-            border-radius: 8px !important;
+            border-radius: 11px !important;
             margin-bottom: 3px !important;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
-            font-size: clamp(.96rem, 4.3vw, 1.12rem) !important;
-            letter-spacing: 0 !important;
+            font-size: clamp(1.05rem, 0.55rem + 2.6vw, 1.2rem) !important;
+            letter-spacing: 0.02em !important;
         }
         .app-greeting-sub {
-            display: block !important;
-            white-space: nowrap !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 2px !important;
         }
         .app-header-sep {
-            display: inline !important;
+            display: none !important;
         }
         .app-header-casillero,
         .app-header-cots {
-            display: inline !important;
+            display: block !important;
         }
         .inicio-placeholder { min-height: 260px; }
         .inicio-placeholder-body { min-height: 180px; }
@@ -9349,13 +9455,13 @@ st.markdown(
             --header-blue-pad-x: 14px;
         }
         .app-header-blue {
-            border-radius: 8px !important;
+            border-radius: 14px !important;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
             font-size: clamp(1.12rem, 0.7rem + 1.8vw, 1.25rem) !important;
-            letter-spacing: 0 !important;
+            letter-spacing: 0.035em !important;
         }
     }
 
@@ -9369,10 +9475,10 @@ st.markdown(
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
         }
-        .app-header-blue { border-radius: 8px !important; margin-bottom: 8px !important; }
+        .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
         .app-header-brand {
             font-size: clamp(1.25rem, 0.85rem + 1.1vw, 1.4rem) !important;
-            letter-spacing: 0 !important;
+            letter-spacing: 0.045em !important;
         }
         .app-greeting-sub {
             white-space: nowrap !important;
@@ -9395,10 +9501,10 @@ st.markdown(
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
         }
-        .app-header-blue { border-radius: 8px !important; margin-bottom: 10px !important; }
+        .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
         .app-header-brand {
             font-size: clamp(1.45rem, 1.05rem + 0.7vw, 1.65rem) !important;
-            letter-spacing: 0 !important;
+            letter-spacing: 0.05em !important;
         }
         .app-greeting-sub {
             white-space: nowrap !important;
@@ -9897,7 +10003,7 @@ st.markdown(
         padding-top: 16px !important;
         padding-bottom: var(--ccm-nav-clearance) !important;
         margin-bottom: 0 !important;
-        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+        min-height: calc(100dvh - var(--header-offset, 116px)) !important;
     }
     .quote-hero {
         margin: 0 0 16px;
@@ -10111,7 +10217,7 @@ st.markdown(
         padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
         margin-top: 0 !important;
         margin-bottom: 0 !important;
-        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+        min-height: calc(100dvh - var(--header-offset, 116px)) !important;
     }
     .st-key-vista_catalogo:has([data-testid="stImage"]) {
         justify-content: flex-start !important;
@@ -10123,7 +10229,7 @@ st.markdown(
         justify-content: flex-start !important;
         padding-top: 16px !important;
         padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
-        min-height: calc(100dvh - var(--header-offset, 208px)) !important;
+        min-height: calc(100dvh - var(--header-offset, 116px)) !important;
     }
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) > [data-testid="stVerticalBlockBorderWrapper"],
     .st-key-vista_cotizador:has(.st-key-acciones_emit_cotizador) > [data-testid="stVerticalBlock"],
@@ -10184,7 +10290,7 @@ st.markdown(
     .st-key-vista_cotizador [data-testid="stHeading"] {
         margin-top: 0 !important;
         padding-top: 6px !important;
-        scroll-margin-top: max(var(--header-offset, 208px), 208px) !important;
+        scroll-margin-top: max(var(--header-offset, 116px), 116px) !important;
     }
     .st-key-vista_catalogo [data-testid="stHeading"],
     .st-key-catalogo_formulario [data-testid="stHeading"],
@@ -10195,7 +10301,7 @@ st.markdown(
         margin-top: 0 !important;
         margin-bottom: 8px !important;
         padding-top: 0 !important;
-        scroll-margin-top: max(var(--header-offset, 208px), 208px) !important;
+        scroll-margin-top: max(var(--header-offset, 116px), 116px) !important;
     }
     .st-key-guia_foco_tarifa,
     .st-key-guia_foco_tarifa [data-testid="stVerticalBlock"],
@@ -10795,7 +10901,7 @@ st.markdown(
         margin: 16px 0 22px 0;
         box-shadow: 0 16px 34px rgba(11, 35, 65, 0.22);
         box-sizing: border-box;
-        scroll-margin-top: calc(var(--header-offset, 208px) + 12px);
+        scroll-margin-top: calc(var(--header-offset, 116px) + 12px);
         animation: promo-ad-enter 360ms ease-out both;
     }
     .promo-ad-top {
@@ -13812,12 +13918,18 @@ elif st.session_state["rol"] == "cliente":
 
     dia_nombre = DIAS_SEMANA_ES.get(ahora_hn.weekday(), "")
     mes_nombre = MESES_ES.get(ahora_hn.month, "")
-    hora_formato = ahora_hn.strftime("%I:%M %p")
-    fecha_hora_texto = f"{dia_nombre}, {ahora_hn.day} {mes_nombre} {ahora_hn.year} &bull; {hora_formato}"
+    hora_numero = ahora_hn.strftime("%I:%M").lstrip("0")
+    periodo_hora = "a. m." if ahora_hn.hour < 12 else "p. m."
+    fecha_corta = f"{dia_nombre[:3]}, {ahora_hn.day} {mes_nombre}"
+    hora_corta = f"{hora_numero} {periodo_hora}"
 
     lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
     estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
     total_cotizaciones = len(lista_mis_cotizaciones)
+    notificaciones_encabezado = cargar_notificaciones_cliente(casillero)
+    total_notificaciones_nuevas = sum(
+        1 for notificacion in notificaciones_encabezado if not bool(notificacion[7])
+    )
     direcciones_guardadas = direcciones_sesion(casillero)
     opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
     if st.session_state.pop("_ccm_error_permisos", False):
@@ -13842,14 +13954,35 @@ elif st.session_state["rol"] == "cliente":
     with st.container(key="sticky_top_header"):
         nombre_header = html.escape(nombre_display)
         casillero_header = html.escape(casillero)
+        etiqueta_cotizaciones = "cotización" if total_cotizaciones == 1 else "cotizaciones"
+        badge_notificaciones = str(min(total_notificaciones_nuevas, 99))
+        mostrar_badge = "grid" if total_notificaciones_nuevas else "none"
         st.markdown(
-            html_encabezado_institucional(
-                f'<div class="app-greeting-title">{saludo_horario}, {nombre_header}</div>'
-                f'<div class="app-greeting-sub"><span class="app-header-casillero">Casillero: <b>{casillero_header}</b></span><span class="app-header-sep"> &bull; </span><span class="app-header-cots">{total_cotizaciones} Cotizaciones</span></div>'
-                f'<div class="app-header-time">🕒 {fecha_hora_texto}</div>'
-            ),
+            f'<style>:root{{--ccm-notif-badge:"{badge_notificaciones}";'
+            f'--ccm-notif-badge-display:{mostrar_badge};}}</style>',
             unsafe_allow_html=True,
         )
+        st.markdown(
+            '<section class="client-header-compact">'
+            f'<div class="client-header-title">{saludo_horario}, {nombre_header}</div>'
+            f'<div class="client-header-casillero">Casillero <b>{casillero_header}</b></div>'
+            '<div class="client-header-meta">'
+            f'<span>{total_cotizaciones} {etiqueta_cotizaciones}</span><i></i>'
+            f'<span>{html.escape(fecha_corta)}</span><i></i><span>{html.escape(hora_corta)}</span>'
+            '</div></section>',
+            unsafe_allow_html=True,
+        )
+        with st.container(key="header_notification_action"):
+            st.button(
+                "🔔",
+                key="btn_header_notificaciones",
+                help=(
+                    f"{total_notificaciones_nuevas} notificaciones nuevas"
+                    if total_notificaciones_nuevas
+                    else "Abrir notificaciones"
+                ),
+                on_click=abrir_notificaciones_desde_encabezado,
+            )
 
     sincronizar_altura_encabezado_fijo()
     detectar_avance_descarga_guia()
