@@ -1777,7 +1777,6 @@ def cargar_paquetes_db(casillero):
             FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
             WHERE p.codigo_casillero = ? AND COALESCE(p.visible_cliente, TRUE) = TRUE
             ORDER BY p.fecha_actualizacion DESC
-            LIMIT 500
             """,
             (cas,),
         ).fetchall()
@@ -1912,6 +1911,95 @@ def buscar_paquetes_admin(termino, limite=200):
             """,
             (patron, patron, patron, patron, patron, int(limite)),
         ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def buscar_tracking_exacto_admin(tracking):
+    codigo = str(tracking or "").strip()
+    if not codigo:
+        return None
+    with get_db() as conn:
+        filas = conn.execute(
+            """
+            SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
+                   fecha_actualizacion, cotizacion_id, tipo_contenedor,
+                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
+                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
+                   COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                   COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+            FROM paquetes
+            WHERE UPPER(TRIM(tracking)) = UPPER(TRIM(?))
+            LIMIT 2
+            """,
+            (codigo,),
+        ).fetchall()
+    if len(filas) > 1:
+        raise sqlite3.IntegrityError(
+            "Existen trackings duplicados por mayúsculas/minúsculas. Requieren depuración administrativa."
+        )
+    return filas[0] if filas else None
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_paquetes_casillero_admin(casillero):
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
+                   fecha_actualizacion, cotizacion_id, tipo_contenedor,
+                   recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
+                   ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
+                   COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                   COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+            FROM paquetes
+            WHERE codigo_casillero = ?
+            ORDER BY fecha_actualizacion DESC, tracking
+            """,
+            (cas,),
+        ).fetchall()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cargar_clientes_con_paquetes_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT u.codigo_casillero, u.nombre_completo, COUNT(p.tracking)
+            FROM usuarios u
+            LEFT JOIN paquetes p ON p.codigo_casillero = u.codigo_casillero
+            WHERE u.rol = 'cliente'
+            GROUP BY u.codigo_casillero, u.nombre_completo
+            ORDER BY u.nombre_completo
+            """
+        ).fetchall()
+
+
+def abrir_tracking_en_editor_admin(tracking=None):
+    codigo = str(tracking or st.session_state.get("admin_tracking_directo_input") or "").strip()
+    if not codigo:
+        st.session_state["_admin_tracking_busqueda_error"] = "Ingrese un tracking para buscar."
+        return
+    try:
+        paquete = buscar_tracking_exacto_admin(codigo)
+    except sqlite3.IntegrityError as exc:
+        st.session_state["_admin_tracking_busqueda_error"] = str(exc)
+        return
+    if not paquete:
+        st.session_state["_admin_tracking_busqueda_error"] = (
+            f"No se encontró ningún paquete con el tracking {codigo}."
+        )
+        return
+    tracking_real = str(paquete[0])
+    st.session_state["admin_pkg_busqueda"] = tracking_real
+    st.session_state["admin_pkg_registro_editar"] = tracking_real
+    st.session_state["_admin_tracking_busqueda_ok"] = (
+        f"Tracking {tracking_real} localizado. El editor quedó preparado."
+    )
 
 
 @st.cache_data(ttl=15, show_spinner=False)
@@ -5178,6 +5266,26 @@ def asegurar_esquema_trazabilidad_absoluta():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_paquetes_codigo_interno "
             "ON paquetes(codigo_interno) WHERE codigo_interno IS NOT NULL"
         )
+        duplicados_tracking = cursor.execute(
+            """
+            SELECT UPPER(TRIM(tracking)), COUNT(*)
+            FROM paquetes
+            GROUP BY UPPER(TRIM(tracking))
+            HAVING COUNT(*) > 1
+            LIMIT 1
+            """
+        ).fetchone()
+        if duplicados_tracking is None:
+            cursor.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_paquetes_tracking_normalizado "
+                "ON paquetes(UPPER(TRIM(tracking)))"
+            )
+        else:
+            print(
+                "[CCM trazabilidad] Existen trackings duplicados por formato; "
+                "se bloqueará su edición hasta depurarlos.",
+                flush=True,
+            )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_trazabilidad_cliente_fecha "
             "ON trazabilidad_paquetes(codigo_casillero, tracking, fecha_evento DESC)"
@@ -10960,6 +11068,9 @@ def pintar_control_cliente_360():
                     cargar_trazabilidad_paquete_db.clear()
                     cargar_paquetes_admin.clear()
                     buscar_paquetes_admin.clear()
+                    buscar_tracking_exacto_admin.clear()
+                    cargar_paquetes_casillero_admin.clear()
+                    cargar_clientes_con_paquetes_admin.clear()
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
@@ -12466,7 +12577,10 @@ elif st.session_state["rol"] == "cliente":
 
             if paquetes_mostrar:
                 st.markdown('<div class="envios-section-label">Seguimiento de paquetes</div>', unsafe_allow_html=True)
-                for p in paquetes_mostrar:
+                paquetes_render, total_paquetes_cliente, limite_paquetes_cliente = pagina_registros(
+                    paquetes_mostrar, "limite_paquetes_cliente", cantidad=20
+                )
+                for p in paquetes_render:
                     tracking_p = html.escape(str(p[0] or "Sin tracking"))
                     descripcion_p = html.escape(str(p[1] or "Carga registrada"))
                     contenedor_p = html.escape(str(p[2] or "Pendiente de asignar"))
@@ -12575,6 +12689,13 @@ elif st.session_state["rol"] == "cliente":
                                 )
                         else:
                             st.caption("La próxima actualización del operador aparecerá en esta línea de tiempo.")
+                if limite_paquetes_cliente < total_paquetes_cliente:
+                    st.button(
+                        f"Mostrar 20 envíos más ({limite_paquetes_cliente} de {total_paquetes_cliente})",
+                        key="btn_mas_paquetes_cliente", use_container_width=True,
+                        on_click=aumentar_limite_registros,
+                        args=("limite_paquetes_cliente", 20),
+                    )
             else:
                 st.markdown(
                     '<div class="envios-section-label">Seguimiento de paquetes</div>'
@@ -14401,6 +14522,86 @@ elif es_rol_admin():
                 int(cot_id_adm), formatear_casillero(cot_cas_adm), cot_fecha_adm
             )
 
+        with st.container(border=True, key="admin_package_lookup"):
+            st.markdown("#### Localización rápida")
+            st.caption("Use el tracking para un bulto específico o el casillero para revisar todos los paquetes del cliente.")
+            buscar_tracking_col, accion_tracking_col = st.columns([2.2, 1], gap="small")
+            with buscar_tracking_col:
+                st.text_input(
+                    "Tracking específico",
+                    key="admin_tracking_directo_input",
+                    placeholder="Ej. CN-84920317",
+                )
+            with accion_tracking_col:
+                st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+                st.button(
+                    "Buscar tracking", type="primary", key="admin_tracking_directo_btn",
+                    use_container_width=True, on_click=abrir_tracking_en_editor_admin,
+                )
+            error_tracking = st.session_state.pop("_admin_tracking_busqueda_error", "")
+            exito_tracking = st.session_state.pop("_admin_tracking_busqueda_ok", "")
+            if error_tracking:
+                st.error(error_tracking)
+            elif exito_tracking:
+                st.success(exito_tracking)
+
+            clientes_paquetes = cargar_clientes_con_paquetes_admin()
+            opciones_clientes_paquetes = {
+                f"{formatear_casillero(c[0])} · {c[1]} · {int(c[2] or 0)} paquete(s)": c
+                for c in clientes_paquetes
+            }
+            st.markdown("##### Paquetes agrupados por casillero")
+            if opciones_clientes_paquetes:
+                agrupado_col, agrupado_btn_col = st.columns([2.2, 1], gap="small")
+                with agrupado_col:
+                    cliente_paquetes_etiqueta = st.selectbox(
+                        "Cliente / casillero", list(opciones_clientes_paquetes),
+                        key="admin_paquetes_cliente_selector",
+                    )
+                with agrupado_btn_col:
+                    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+                    if st.button(
+                        "Mostrar paquetes", key="admin_paquetes_cliente_btn",
+                        use_container_width=True,
+                    ):
+                        st.session_state["_admin_casillero_paquetes_activo"] = formatear_casillero(
+                            opciones_clientes_paquetes[cliente_paquetes_etiqueta][0]
+                        )
+                        st.session_state["limite_paquetes_casillero_admin"] = 10
+                casillero_agrupado = st.session_state.get("_admin_casillero_paquetes_activo")
+                if casillero_agrupado:
+                    paquetes_agrupados = cargar_paquetes_casillero_admin(casillero_agrupado)
+                    st.markdown(
+                        f"**{casillero_agrupado}** · {len(paquetes_agrupados)} tracking(s) independientes"
+                    )
+                    paquetes_grupo_render, total_grupo, limite_grupo = pagina_registros(
+                        paquetes_agrupados, "limite_paquetes_casillero_admin", cantidad=10
+                    )
+                    for paquete_grupo in paquetes_grupo_render:
+                        info_grupo, accion_grupo = st.columns([3, 1], gap="small")
+                        with info_grupo:
+                            st.markdown(
+                                f"**{html.escape(str(paquete_grupo[0]))}** · "
+                                f"{html.escape(str(paquete_grupo[4] or 'Sin estado'))}  \n"
+                                f"{html.escape(str(paquete_grupo[2] or 'Sin descripción'))} · "
+                                f"Folio `{html.escape(str(paquete_grupo[18] or 'Pendiente'))}`"
+                            )
+                        with accion_grupo:
+                            st.button(
+                                "Abrir editor", key=f"admin_abrir_tracking_{paquete_grupo[0]}",
+                                use_container_width=True, on_click=abrir_tracking_en_editor_admin,
+                                args=(str(paquete_grupo[0]),),
+                            )
+                    if limite_grupo < total_grupo:
+                        st.button(
+                            f"Mostrar 10 paquetes más ({limite_grupo} de {total_grupo})",
+                            key="admin_mas_paquetes_casillero", use_container_width=True,
+                            on_click=aumentar_limite_registros,
+                            args=("limite_paquetes_casillero_admin", 10),
+                        )
+                    if not paquetes_agrupados:
+                        st.info("Este casillero todavía no tiene paquetes registrados.")
+
         with st.container(key="admin_package_editor"):
             st.markdown("#### Registrar o actualizar paquete")
             st.caption("Busque por tracking, folio, casillero, contenedor o ubicación antes de editar.")
@@ -14417,7 +14618,7 @@ elif es_rol_admin():
                 key="admin_pkg_registro_editar",
             )
             paquete_editar = next(
-                (p for p in paquetes_admin if str(p[0]) == opcion_registro),
+                (p for p in paquetes_editor if str(p[0]) == opcion_registro),
                 None,
             )
             sufijo_editor = hashlib.sha256(opcion_registro.encode("utf-8")).hexdigest()[:10]
@@ -14677,6 +14878,13 @@ elif es_rol_admin():
                             (tracking_limpio,),
                         )
                         anterior = cur.fetchone()
+                        duplicado_normalizado = cur.fetchone()
+                        if duplicado_normalizado is not None:
+                            st.error(
+                                "Este tracking está duplicado por diferencias de mayúsculas o espacios. "
+                                "No se permite editarlo hasta depurar los registros repetidos."
+                            )
+                            st.stop()
                         if anterior:
                             tracking_limpio = str(anterior[19])
                         estado_anterior = str(anterior[0] or "") if anterior else ""
@@ -14824,6 +15032,9 @@ elif es_rol_admin():
                     cargar_trazabilidad_paquete_db.clear()
                     cargar_paquetes_admin.clear()
                     buscar_paquetes_admin.clear()
+                    buscar_tracking_exacto_admin.clear()
+                    cargar_paquetes_casillero_admin.clear()
+                    cargar_clientes_con_paquetes_admin.clear()
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
