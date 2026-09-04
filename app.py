@@ -2702,6 +2702,102 @@ def cargar_casos_cliente(casillero):
         ).fetchall()
 
 
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_mensajes_caso(caso_id, casillero):
+    """Carga el hilo sin permitir consultar casos de otro casillero."""
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return []
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT id, autor_tipo, autor_nombre, mensaje, fecha_creacion
+            FROM casos_mensajes
+            WHERE caso_id = ? AND codigo_casillero = ?
+            ORDER BY fecha_creacion ASC, id ASC
+            """,
+            (int(caso_id), cas),
+        ).fetchall()
+
+
+def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=None):
+    """Agrega una respuesta al hilo y verifica la propiedad del caso en la misma transacción."""
+    cas = formatear_casillero(casillero)
+    texto = str(mensaje or "").strip()
+    autor = "operador" if str(autor_tipo).lower() == "operador" else "cliente"
+    if not cas or not texto:
+        return False
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, respuesta_operador, fecha_actualizacion FROM casos_cliente "
+            "WHERE id = ? AND codigo_casillero = ?",
+            (int(caso_id), cas),
+        )
+        caso_existente = cursor.fetchone()
+        if caso_existente is None:
+            return False
+        # Conserva la respuesta del esquema anterior antes de actualizar el campo
+        # de compatibilidad con la contestación más reciente.
+        respuesta_anterior = str(caso_existente[1] or "").strip()
+        if autor == "operador" and respuesta_anterior:
+            cursor.execute(
+                "SELECT COUNT(*) FROM casos_mensajes "
+                "WHERE caso_id=? AND codigo_casillero=? AND autor_tipo='operador'",
+                (int(caso_id), cas),
+            )
+            if int((cursor.fetchone() or (0,))[0] or 0) == 0:
+                cursor.execute(
+                    """
+                    INSERT INTO casos_mensajes (
+                        caso_id, codigo_casillero, autor_tipo, autor_nombre,
+                        mensaje, fecha_creacion
+                    ) VALUES (?, ?, 'operador', 'Equipo CCM', ?, ?)
+                    """,
+                    (
+                        int(caso_id), cas, respuesta_anterior,
+                        str(caso_existente[2] or fecha),
+                    ),
+                )
+        cursor.execute(
+            """
+            INSERT INTO casos_mensajes (
+                caso_id, codigo_casillero, autor_tipo, autor_nombre, mensaje, fecha_creacion
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(caso_id), cas, autor,
+                st.session_state.get("usuario") or ("Cliente" if autor == "cliente" else "Operador"),
+                texto, fecha,
+            ),
+        )
+        estado = nuevo_estado or ("Abierto" if autor == "cliente" else "Esperando cliente")
+        if autor == "operador":
+            cursor.execute(
+                "UPDATE casos_cliente SET estado=?, respuesta_operador=?, fecha_actualizacion=? "
+                "WHERE id=? AND codigo_casillero=?",
+                (estado, texto, fecha, int(caso_id), cas),
+            )
+        else:
+            cursor.execute(
+                "UPDATE casos_cliente SET estado=?, fecha_actualizacion=? "
+                "WHERE id=? AND codigo_casillero=?",
+                (estado, fecha, int(caso_id), cas),
+            )
+    cargar_casos_cliente.clear()
+    cargar_mensajes_caso.clear()
+    return True
+
+
+def abrir_conversacion_caso_cliente(caso_id):
+    st.session_state["cliente_caso_activo"] = int(caso_id)
+
+
+def cerrar_conversacion_caso_cliente():
+    st.session_state.pop("cliente_caso_activo", None)
+
+
 def crear_notificacion_cliente(
     casillero, titulo, mensaje, tipo="Información", prioridad="Normal",
     tracking="", canal="Portal", creado_por=None,
@@ -2742,37 +2838,160 @@ def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
     cargar_notificaciones_cliente.clear()
 
 
+def marcar_todas_notificaciones_cliente(casillero):
+    """Marca únicamente las notificaciones visibles del cliente autenticado."""
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE notificaciones_cliente SET leida = TRUE "
+            "WHERE codigo_casillero = ? AND visible = TRUE",
+            (cas,),
+        )
+    cargar_notificaciones_cliente.clear()
+
+
 def pintar_centro_notificaciones_cliente(casillero):
     notificaciones = cargar_notificaciones_cliente(casillero)
     if not notificaciones:
         return
     no_leidas = sum(1 for fila in notificaciones if not bool(fila[7]))
-    with st.expander(
-        f"🔔 Notificaciones{f' · {no_leidas} nuevas' if no_leidas else ''}",
-        expanded=bool(no_leidas),
-    ):
-        for fila in notificaciones[:8]:
-            nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila
-            borde = "#dc2626" if prioridad == "Urgente" else "#0757c8"
-            st.markdown(
-                f'<div style="margin:5px 0 7px;padding:11px 13px;background:#fff;'
-                f'border:1px solid #e2e8f0;border-left:3px solid {borde};border-radius:7px;">'
-                f'<div style="display:flex;justify-content:space-between;gap:10px;">'
-                f'<b style="color:#0f172a;font-size:.84rem;">{html.escape(str(titulo))}</b>'
-                f'<span style="color:#64748b;font-size:.68rem;white-space:nowrap;">{html.escape(str(fecha))}</span></div>'
-                f'<div style="margin-top:4px;color:#475569;font-size:.78rem;line-height:1.45;">'
-                f'{html.escape(str(mensaje))}</div>'
-                f'<div style="margin-top:5px;color:#64748b;font-size:.68rem;">'
-                f'{html.escape(str(tipo))} · {html.escape(str(canal))}'
-                f'{" · " + html.escape(str(tracking)) if tracking else ""}</div></div>',
-                unsafe_allow_html=True,
-            )
-            if not bool(leida):
-                st.button(
-                    "Marcar como leída", key=f"notif_read_{nid}",
-                    on_click=marcar_notificacion_cliente,
-                    args=(nid, casillero, True),
+    st.markdown(
+        """
+        <style>
+        .st-key-centro_notificaciones_cliente {
+            margin: 10px 0 16px;
+        }
+        .st-key-centro_notificaciones_cliente details {
+            overflow: hidden;
+            background: #ffffff !important;
+            border: 1px solid #d9e2ec !important;
+            border-radius: 8px !important;
+            box-shadow: 0 3px 12px rgba(15, 23, 42, .06) !important;
+        }
+        .st-key-centro_notificaciones_cliente details > summary {
+            min-height: 50px !important;
+            padding: 0 16px !important;
+            background: #ffffff !important;
+            border: 0 !important;
+        }
+        .st-key-centro_notificaciones_cliente details > summary:hover {
+            background: #f8fafc !important;
+        }
+        .st-key-centro_notificaciones_cliente details > summary * {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            font-weight: 800 !important;
+            opacity: 1 !important;
+        }
+        .st-key-centro_notificaciones_cliente details[open] > summary {
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .st-key-centro_notificaciones_cliente [data-testid="stExpanderDetails"] {
+            padding: 14px 16px 12px !important;
+            background: #f8fafc !important;
+        }
+        .st-key-centro_notificaciones_cliente [data-testid="stHorizontalBlock"] {
+            align-items: center;
+        }
+        .st-key-centro_notificaciones_cliente .stButton > button {
+            min-height: 36px;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 7px !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            font-size: .75rem !important;
+            font-weight: 750 !important;
+            box-shadow: none !important;
+        }
+        .st-key-centro_notificaciones_cliente .stButton > button:hover {
+            border-color: #0757c8 !important;
+            color: #0757c8 !important;
+            background: #f0f7ff !important;
+        }
+        @media (max-width: 700px) {
+            .st-key-centro_notificaciones_cliente details > summary {
+                min-height: 46px !important;
+                padding: 0 12px !important;
+            }
+            .st-key-centro_notificaciones_cliente [data-testid="stExpanderDetails"] {
+                padding: 10px !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    etiqueta = f"Notificaciones · {no_leidas} nuevas" if no_leidas else "Notificaciones"
+    with st.container(key="centro_notificaciones_cliente"):
+        # Siempre inicia contraído. El usuario decide cuándo consultar la bandeja.
+        with st.expander(etiqueta, expanded=False):
+            encabezado, accion_global = st.columns([4, 1.35])
+            with encabezado:
+                st.markdown(
+                    '<div style="color:#0f172a;font-size:.9rem;font-weight:800;">'
+                    'Centro de notificaciones</div>'
+                    '<div style="color:#64748b;font-size:.74rem;margin-top:2px;">'
+                    'Actualizaciones importantes de su casillero y sus envíos.</div>',
+                    unsafe_allow_html=True,
                 )
+            with accion_global:
+                if no_leidas:
+                    st.button(
+                        "Marcar todas leídas",
+                        key=f"notif_read_all_{formatear_casillero(casillero)}",
+                        use_container_width=True,
+                        on_click=marcar_todas_notificaciones_cliente,
+                        args=(casillero,),
+                    )
+
+            st.markdown('<div style="height:5px"></div>', unsafe_allow_html=True)
+            for fila in notificaciones[:8]:
+                nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila
+                prioridad_limpia = str(prioridad or "Normal")
+                color_prioridad = {
+                    "Urgente": ("#b91c1c", "#fef2f2"),
+                    "Alta": ("#b45309", "#fffbeb"),
+                    "Normal": ("#0757c8", "#eff6ff"),
+                }.get(prioridad_limpia, ("#475569", "#f1f5f9"))
+                color, fondo = color_prioridad
+                detalle, accion = st.columns([4.6, 1.15])
+                with detalle:
+                    st.markdown(
+                        f'<div style="margin:4px 0;padding:12px 14px;background:#fff;'
+                        f'border:1px solid #e2e8f0;border-left:4px solid {color};border-radius:7px;">'
+                        f'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
+                        f'<b style="color:#0f172a;font-size:.84rem;line-height:1.35;">{html.escape(str(titulo))}</b>'
+                        f'<span style="flex:none;color:{color};background:{fondo};border:1px solid {color}33;'
+                        f'border-radius:999px;padding:2px 7px;font-size:.62rem;font-weight:800;">'
+                        f'{html.escape(prioridad_limpia)}</span></div>'
+                        f'<div style="margin-top:5px;color:#475569;font-size:.77rem;line-height:1.45;">'
+                        f'{html.escape(str(mensaje))}</div>'
+                        f'<div style="display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:7px;'
+                        f'color:#64748b;font-size:.66rem;">'
+                        f'<span>{html.escape(str(tipo))} · {html.escape(str(canal))}</span>'
+                        f'<span>{html.escape(str(fecha))}</span>'
+                        f'{f"<span>Tracking: {html.escape(str(tracking))}</span>" if tracking else ""}'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                with accion:
+                    if not bool(leida):
+                        st.button(
+                            "Marcar leída", key=f"notif_read_{nid}",
+                            use_container_width=True,
+                            on_click=marcar_notificacion_cliente,
+                            args=(nid, casillero, True),
+                        )
+                    else:
+                        st.markdown(
+                            '<div style="text-align:center;color:#15803d;font-size:.72rem;'
+                            'font-weight:800;padding:11px 4px;">Leída</div>',
+                            unsafe_allow_html=True,
+                        )
+            if len(notificaciones) > 8:
+                st.caption(f"Mostrando las 8 notificaciones más recientes de {len(notificaciones)}.")
 
 
 def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
@@ -4238,56 +4457,180 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
-        with st.expander("🧾 Solicitudes y soporte", expanded=False):
-            st.caption("Registre una consulta o incidencia. El equipo podrá responderla desde su expediente.")
-            paquetes_soporte = cargar_paquetes_db(cas_formato)
-            tracking_soporte = st.selectbox(
-                "Envío relacionado",
-                ["Sin tracking"] + [str(p[0]) for p in paquetes_soporte],
-                key="cliente_caso_tracking",
+        casos_cliente = cargar_casos_cliente(cas_formato)
+        caso_activo = st.session_state.get("cliente_caso_activo")
+        if caso_activo and not any(int(caso[0]) == int(caso_activo) for caso in casos_cliente):
+            st.session_state.pop("cliente_caso_activo", None)
+            caso_activo = None
+        casos_pendientes = sum(
+            1 for caso in casos_cliente if str(caso[5]) not in ("Resuelto", "Cerrado")
+        )
+        etiqueta_soporte = (
+            f"Solicitudes y soporte · {casos_pendientes} activas"
+            if casos_pendientes else "Solicitudes y soporte"
+        )
+        with st.container(key="soporte_cliente_panel"):
+            st.markdown(
+                """
+                <style>
+                .st-key-soporte_cliente_panel details { background:#fff !important; border:1px solid #dbe3ee !important; border-radius:8px !important; box-shadow:0 3px 12px rgba(15,23,42,.05) !important; }
+                .st-key-soporte_cliente_panel details > summary { min-height:50px !important; padding:0 16px !important; background:#fff !important; }
+                .st-key-soporte_cliente_panel details > summary * { color:#0f172a !important; -webkit-text-fill-color:#0f172a !important; font-weight:800 !important; opacity:1 !important; }
+                .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"] { padding:14px 16px 16px !important; background:#f8fafc !important; }
+                .support-case-card { min-height:74px; padding:11px 13px; background:#fff; border:1px solid #e2e8f0; border-left:4px solid #0757c8; border-radius:7px; box-sizing:border-box; }
+                .support-case-card b { display:block; color:#0f172a; font-size:.82rem; line-height:1.35; }
+                .support-case-card span { display:block; margin-top:5px; color:#64748b; font-size:.68rem; line-height:1.35; }
+                .support-thread-head { padding:12px 14px; margin:8px 0 10px; background:#eaf3ff; border:1px solid #bfd7f5; border-radius:7px; }
+                .support-thread-head b { display:block; color:#0f172a; font-size:.86rem; }
+                .support-thread-head span { display:block; margin-top:3px; color:#52677f; font-size:.69rem; }
+                .support-message { max-width:88%; margin:7px 0; padding:10px 12px; background:#fff; border:1px solid #dbe3ee; border-radius:7px; color:#334155; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+                .support-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
+                .support-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
+                .st-key-soporte_cliente_panel .stButton > button { min-height:40px; border-radius:7px !important; font-weight:800 !important; }
+                @media(max-width:700px){ .support-message{max-width:96%} .st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
-            categoria_soporte = st.selectbox(
-                "Categoría",
-                ["Consulta", "Pago", "Documentos", "Demora", "Daño o faltante", "Datos de cuenta"],
-                key="cliente_caso_categoria",
-            )
-            asunto_soporte = st.text_input("Asunto", max_chars=120, key="cliente_caso_asunto")
-            detalle_soporte = st.text_area(
-                "Detalle", max_chars=1500, height=90, key="cliente_caso_detalle"
-            )
-            if st.button("Enviar solicitud", type="primary", key="cliente_caso_enviar"):
-                if not asunto_soporte.strip() or not detalle_soporte.strip():
-                    st.warning("Escriba el asunto y el detalle de la solicitud.")
-                else:
-                    fecha_caso = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-                    with get_db() as conn:
-                        conn.execute(
-                            """
-                            INSERT INTO casos_cliente (
-                                codigo_casillero, tracking, categoria, asunto, detalle,
-                                estado, prioridad, respuesta_operador, creado_por,
-                                fecha_creacion, fecha_actualizacion
-                            ) VALUES (?, ?, ?, ?, ?, 'Abierto', 'Normal', '', 'cliente', ?, ?)
-                            """,
-                            (
-                                cas_formato,
-                                None if tracking_soporte == "Sin tracking" else tracking_soporte,
-                                categoria_soporte, asunto_soporte.strip(), detalle_soporte.strip(),
-                                fecha_caso, fecha_caso,
-                            ),
+            with st.expander(etiqueta_soporte, expanded=bool(caso_activo)):
+                st.markdown(
+                    '<div style="color:#0f172a;font-size:.92rem;font-weight:850;">Centro de ayuda</div>'
+                    '<div style="margin:2px 0 10px;color:#64748b;font-size:.73rem;">'
+                    'Consulte el historial y continúe cualquier conversación sin perder respuestas.</div>',
+                    unsafe_allow_html=True,
+                )
+                tab_historial, tab_nueva = st.tabs(["Mis solicitudes", "Nueva solicitud"])
+                with tab_historial:
+                    if not casos_cliente:
+                        st.info("Todavía no tiene solicitudes. Use la pestaña Nueva solicitud para contactar al equipo.")
+                    else:
+                        for caso in casos_cliente[:10]:
+                            estado_texto = str(caso[5] or "Abierto")
+                            detalle_caso, accion_caso = st.columns([4.5, 1.35])
+                            with detalle_caso:
+                                st.markdown(
+                                    '<div class="support-case-card">'
+                                    f'<b>#{int(caso[0]):04d} · {html.escape(str(caso[3]))}</b>'
+                                    f'<span>{html.escape(estado_texto)} · {html.escape(str(caso[2]))} · '
+                                    f'Actualizado {html.escape(str(caso[10]))}</span></div>',
+                                    unsafe_allow_html=True,
+                                )
+                            with accion_caso:
+                                st.button(
+                                    "Abrir conversación",
+                                    key=f"cliente_abrir_caso_{caso[0]}",
+                                    use_container_width=True,
+                                    on_click=abrir_conversacion_caso_cliente,
+                                    args=(caso[0],),
+                                )
+
+                        caso_seleccionado = next(
+                            (caso for caso in casos_cliente if int(caso[0]) == int(caso_activo or 0)),
+                            None,
                         )
-                    cargar_casos_cliente.clear()
-                    st.success("Solicitud registrada. Puede revisar aquí la respuesta del operador.")
-                    st.rerun()
-            casos_cliente = cargar_casos_cliente(cas_formato)
-            if casos_cliente:
-                st.markdown("##### Historial")
-                for caso in casos_cliente[:5]:
-                    st.markdown(
-                        f"**#{int(caso[0]):04d} · {caso[3]}** — {caso[5]}  \n"
-                        f"{caso[4]}  \n"
-                        f"**Respuesta CCM:** {caso[7] or 'Pendiente de respuesta'}"
+                        if caso_seleccionado:
+                            caso_id = int(caso_seleccionado[0])
+                            mensajes = cargar_mensajes_caso(caso_id, cas_formato)
+                            st.markdown(
+                                '<div class="support-thread-head">'
+                                f'<b>Conversación #{caso_id:04d} · {html.escape(str(caso_seleccionado[3]))}</b>'
+                                f'<span>Estado: {html.escape(str(caso_seleccionado[5]))}'
+                                f'{" · Tracking: " + html.escape(str(caso_seleccionado[1])) if caso_seleccionado[1] else ""}</span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(
+                                '<div class="support-message client"><small>Usted · solicitud inicial</small>'
+                                f'{html.escape(str(caso_seleccionado[4]))}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            tiene_respuesta_nueva = any(str(m[1]) == "operador" for m in mensajes)
+                            if caso_seleccionado[7] and not tiene_respuesta_nueva:
+                                st.markdown(
+                                    '<div class="support-message"><small>Equipo CCM · respuesta anterior</small>'
+                                    f'{html.escape(str(caso_seleccionado[7]))}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            for mensaje in mensajes:
+                                clase = "client" if str(mensaje[1]) == "cliente" else ""
+                                autor = "Usted" if clase else "Equipo CCM"
+                                st.markdown(
+                                    f'<div class="support-message {clase}"><small>{autor} · '
+                                    f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            respuesta_cliente = st.text_area(
+                                "Continuar la conversación",
+                                max_chars=1500,
+                                height=90,
+                                placeholder="Escriba una respuesta o agregue información a su solicitud...",
+                                key=f"cliente_responder_caso_{caso_id}",
+                            )
+                            enviar_respuesta, cerrar_hilo = st.columns([1.6, 1])
+                            with enviar_respuesta:
+                                if st.button(
+                                    "Enviar respuesta", type="primary",
+                                    key=f"cliente_enviar_respuesta_{caso_id}", use_container_width=True,
+                                ):
+                                    if agregar_mensaje_caso(
+                                        caso_id, cas_formato, "cliente", respuesta_cliente, "Abierto"
+                                    ):
+                                        st.success("Respuesta enviada. El caso quedó activo para revisión.")
+                                        st.rerun()
+                                    else:
+                                        st.warning("Escriba una respuesta antes de enviarla.")
+                            with cerrar_hilo:
+                                st.button(
+                                    "Cerrar vista", key=f"cliente_cerrar_hilo_{caso_id}",
+                                    use_container_width=True, on_click=cerrar_conversacion_caso_cliente,
+                                )
+                with tab_nueva:
+                    st.caption("Cree una solicitud nueva solamente cuando no corresponda continuar un caso existente.")
+                    paquetes_soporte = cargar_paquetes_db(cas_formato)
+                    tracking_soporte = st.selectbox(
+                        "Envío relacionado",
+                        ["Sin tracking"] + [str(p[0]) for p in paquetes_soporte],
+                        key="cliente_caso_tracking",
                     )
+                    categoria_soporte = st.selectbox(
+                        "Categoría",
+                        ["Consulta", "Pago", "Documentos", "Demora", "Daño o faltante", "Datos de cuenta"],
+                        key="cliente_caso_categoria",
+                    )
+                    asunto_soporte = st.text_input("Asunto", max_chars=120, key="cliente_caso_asunto")
+                    detalle_soporte = st.text_area(
+                        "Detalle", max_chars=1500, height=90, key="cliente_caso_detalle"
+                    )
+                    if st.button("Crear solicitud", type="primary", key="cliente_caso_enviar"):
+                        if not asunto_soporte.strip() or not detalle_soporte.strip():
+                            st.warning("Escriba el asunto y el detalle de la solicitud.")
+                        else:
+                            fecha_caso = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                            with get_db() as conn:
+                                cursor = conn.cursor()
+                                parametros_caso = (
+                                    cas_formato,
+                                    None if tracking_soporte == "Sin tracking" else tracking_soporte,
+                                    categoria_soporte, asunto_soporte.strip(), detalle_soporte.strip(),
+                                    fecha_caso, fecha_caso,
+                                )
+                                sentencia_caso = """
+                                    INSERT INTO casos_cliente (
+                                        codigo_casillero, tracking, categoria, asunto, detalle,
+                                        estado, prioridad, respuesta_operador, creado_por,
+                                        fecha_creacion, fecha_actualizacion
+                                    ) VALUES (?, ?, ?, ?, ?, 'Abierto', 'Normal', '', 'cliente', ?, ?)
+                                """
+                                if USA_SUPABASE:
+                                    cursor.execute(sentencia_caso + " RETURNING id", parametros_caso)
+                                    nuevo_caso_id = int(cursor.fetchone()[0])
+                                else:
+                                    cursor.execute(sentencia_caso, parametros_caso)
+                                    nuevo_caso_id = int(cursor.lastrowid)
+                            cargar_casos_cliente.clear()
+                            st.session_state["cliente_caso_activo"] = nuevo_caso_id
+                            st.success("Solicitud registrada. Ya puede abrirla desde Mis solicitudes.")
+                            st.rerun()
         st.markdown(
             f'<section class="actividad-politicas" aria-label="Políticas de envío y productos restringidos">'
             f'<div class="actividad-politicas-copy"><span class="actividad-politicas-icon" aria-hidden="true">!</span>'
@@ -5695,6 +6038,19 @@ def asegurar_esquema_control_cliente():
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.casos_mensajes (
+                    id BIGSERIAL PRIMARY KEY,
+                    caso_id BIGINT NOT NULL REFERENCES public.casos_cliente(id) ON DELETE CASCADE,
+                    codigo_casillero TEXT NOT NULL,
+                    autor_tipo TEXT NOT NULL,
+                    autor_nombre TEXT,
+                    mensaje TEXT NOT NULL,
+                    fecha_creacion TEXT NOT NULL
+                )
+                """
+            )
         else:
             cursor.execute(
                 """
@@ -5753,6 +6109,20 @@ def asegurar_esquema_control_cliente():
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casos_mensajes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    caso_id INTEGER NOT NULL,
+                    codigo_casillero TEXT NOT NULL,
+                    autor_tipo TEXT NOT NULL,
+                    autor_nombre TEXT,
+                    mensaje TEXT NOT NULL,
+                    fecha_creacion TEXT NOT NULL,
+                    FOREIGN KEY(caso_id) REFERENCES casos_cliente(id) ON DELETE CASCADE
+                )
+                """
+            )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_fecha "
             "ON notificaciones_cliente(codigo_casillero, visible, fecha_creacion DESC)"
@@ -5760,6 +6130,10 @@ def asegurar_esquema_control_cliente():
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_casos_cliente_estado "
             "ON casos_cliente(codigo_casillero, estado, fecha_actualizacion DESC)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_casos_mensajes_hilo "
+            "ON casos_mensajes(caso_id, codigo_casillero, fecha_creacion, id)"
         )
         conn.commit()
 
@@ -6648,7 +7022,8 @@ def guardar_permisos(casillero, datos):
 def _migrar_casillero_tablas(conn, origen, destino):
     for tabla in (
         "cotizaciones", "paquetes", "eventos_tracking", "direcciones_entrega",
-        "carrito_catalogo", "permisos_usuario", "notificaciones_cliente", "casos_cliente",
+        "carrito_catalogo", "permisos_usuario", "notificaciones_cliente", "casos_mensajes",
+        "casos_cliente",
         "trazabilidad_paquetes", "acuerdos_pago", "envios", "recepciones_bodega",
         "excepciones_recepcion",
     ):
@@ -7728,6 +8103,7 @@ def logout():
         "guia_omitida",
         "guia_completada",
         "mostrar_guia",
+        "cliente_caso_activo",
     ]:
         st.session_state.pop(k, None)
     st.session_state["autenticado"] = False
@@ -7759,6 +8135,8 @@ def invalidar_cache_datos_admin():
     cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
+    cargar_casos_cliente.clear()
+    cargar_mensajes_caso.clear()
 
 
 @st.dialog("Editar cuenta", width="large")
@@ -7851,7 +8229,8 @@ def dialogo_editar_usuario_admin(usuario, root=False):
                         st.stop()
                     for tabla in (
                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
-                        "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
+                        "notificaciones_cliente", "casos_mensajes", "casos_cliente",
+                        "eventos_tracking", "paquetes", "cotizaciones",
                     ):
                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero=?", (cas_u,))
                     cur.execute("DELETE FROM usuarios WHERE id=?", (uid,))
@@ -11503,6 +11882,14 @@ def pintar_control_cliente_360():
             .control360-address small { display:block; margin-bottom:3px; color:#64748b; font-size:.65rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
             .control360-address b { display:block; color:#0f172a; font-size:.82rem; line-height:1.4; }
             .st-key-control360_action { padding:14px; background:#f8fafc; border:1px solid #dbe3ee; border-radius:8px; }
+            .c360-case-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin:10px 0 12px; padding:13px 15px; background:#f8fafc; border:1px solid #dbe3ee; border-left:4px solid #0757c8; border-radius:7px; }
+            .c360-case-head b { display:block; color:#0f172a; font-size:.88rem; line-height:1.35; }
+            .c360-case-head span { display:block; margin-top:4px; color:#64748b; font-size:.68rem; }
+            .c360-case-status { flex:none; padding:4px 8px; color:#0757c8 !important; background:#eaf3ff; border-radius:999px; font-size:.65rem !important; font-weight:850; }
+            .c360-thread { margin:12px 0; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+            .c360-message { max-width:88%; margin:7px 0; padding:10px 12px; color:#334155; background:#fff; border:1px solid #dbe3ee; border-radius:7px; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+            .c360-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
+            .c360-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
             [data-testid="stTabs"] [data-baseweb="tab-list"] {
                 display:flex !important;
                 gap:6px !important;
@@ -11553,6 +11940,8 @@ def pintar_control_cliente_360():
                 .control360-badge{align-self:flex-start}
                 .control360-profile-grid{grid-template-columns:1fr}
                 .control360-profile-item:nth-child(odd){border-right:0}
+                .c360-case-head{flex-direction:column}
+                .c360-message{max-width:96%}
                 [data-testid="stTabs"] [role="tab"] { flex:0 0 auto !important; min-width:112px !important; }
             }
         </style>
@@ -11948,28 +12337,118 @@ def pintar_control_cliente_360():
             st.info("No hay solicitudes o incidencias registradas.")
         else:
             opciones_caso = {f"#{int(c[0]):04d} · {c[3]} · {c[5]}": c for c in casos}
-            etiqueta_caso = st.selectbox("Caso", list(opciones_caso), key=f"c360_caso_{cas}")
+            st.markdown(
+                '<div class="control360-section">Bandeja de solicitudes</div>',
+                unsafe_allow_html=True,
+            )
+            etiqueta_caso = st.selectbox(
+                "Seleccione una solicitud", list(opciones_caso), key=f"c360_caso_{cas}"
+            )
             caso = opciones_caso[etiqueta_caso]
-            st.info(f"**Solicitud del cliente:** {caso[4]}")
+            caso_id = int(caso[0])
+            st.markdown(
+                '<div class="c360-case-head"><div>'
+                f'<b>#{caso_id:04d} · {html.escape(str(caso[3]))}</b>'
+                f'<span>{html.escape(str(caso[2]))}'
+                f'{" · Tracking: " + html.escape(str(caso[1])) if caso[1] else ""}'
+                f' · Actualizado {html.escape(str(caso[10]))}</span></div>'
+                f'<span class="c360-case-status">{html.escape(str(caso[5]))}</span></div>',
+                unsafe_allow_html=True,
+            )
+            mensajes_caso = cargar_mensajes_caso(caso_id, cas)
+            st.markdown(
+                '<div class="c360-message client"><small>Cliente · solicitud inicial</small>'
+                f'{html.escape(str(caso[4]))}</div>',
+                unsafe_allow_html=True,
+            )
+            tiene_respuesta_nueva = any(str(m[1]) == "operador" for m in mensajes_caso)
+            if caso[7] and not tiene_respuesta_nueva:
+                st.markdown(
+                    '<div class="c360-message"><small>Equipo CCM · respuesta anterior</small>'
+                    f'{html.escape(str(caso[7]))}</div>',
+                    unsafe_allow_html=True,
+                )
+            for mensaje in mensajes_caso:
+                es_cliente = str(mensaje[1]) == "cliente"
+                clase = "client" if es_cliente else ""
+                autor = "Cliente" if es_cliente else "Equipo CCM"
+                st.markdown(
+                    f'<div class="c360-message {clase}"><small>{autor} · '
+                    f'{html.escape(str(mensaje[4]))}</small>{html.escape(str(mensaje[3]))}</div>',
+                    unsafe_allow_html=True,
+                )
             estados_caso = ["Abierto", "En revisión", "Esperando cliente", "Resuelto", "Cerrado"]
-            estado_caso = st.selectbox("Estado", estados_caso, index=estados_caso.index(caso[5]) if caso[5] in estados_caso else 0, key=f"c360_caso_estado_{caso[0]}")
-            prioridad_caso = st.selectbox("Prioridad", ["Baja", "Normal", "Alta", "Urgente"], index=["Baja", "Normal", "Alta", "Urgente"].index(caso[6]) if caso[6] in ["Baja", "Normal", "Alta", "Urgente"] else 1, key=f"c360_caso_prio_{caso[0]}")
-            respuesta_caso = st.text_area("Respuesta al cliente", value=caso[7] or "", height=110, key=f"c360_caso_resp_{caso[0]}")
-            if st.button("Guardar respuesta", type="primary", key=f"c360_caso_save_{caso[0]}"):
+            estado_actual_caso = str(caso[5] or "Abierto")
+            estado_sugerido_caso = (
+                "Esperando cliente"
+                if estado_actual_caso in ("Abierto", "En revisión")
+                else estado_actual_caso
+            )
+            config_estado, config_prioridad = st.columns(2, gap="medium")
+            with config_estado:
+                estado_caso = st.selectbox(
+                    "Estado", estados_caso,
+                    index=estados_caso.index(estado_sugerido_caso)
+                    if estado_sugerido_caso in estados_caso else 0,
+                    key=f"c360_caso_estado_{caso_id}",
+                )
+            with config_prioridad:
+                prioridades_caso = ["Baja", "Normal", "Alta", "Urgente"]
+                prioridad_caso = st.selectbox(
+                    "Prioridad", prioridades_caso,
+                    index=prioridades_caso.index(caso[6]) if caso[6] in prioridades_caso else 1,
+                    key=f"c360_caso_prio_{caso_id}",
+                )
+            respuesta_caso = st.text_area(
+                "Nueva respuesta al cliente", height=100,
+                placeholder="Escriba una respuesta nueva; el historial anterior se conservará.",
+                key=f"c360_caso_resp_{caso_id}",
+            )
+            enviar_caso, actualizar_caso = st.columns([1.5, 1], gap="small")
+            with enviar_caso:
+                enviar_respuesta_caso = st.button(
+                    "Enviar respuesta", type="primary",
+                    key=f"c360_caso_save_{caso_id}", use_container_width=True,
+                )
+            with actualizar_caso:
+                actualizar_solo_caso = st.button(
+                    "Actualizar estado", key=f"c360_caso_estado_save_{caso_id}",
+                    use_container_width=True,
+                )
+            if enviar_respuesta_caso:
+                if not respuesta_caso.strip():
+                    st.warning("Escriba la respuesta que se enviará al cliente.")
+                elif agregar_mensaje_caso(
+                    caso_id, cas, "operador", respuesta_caso, estado_caso
+                ):
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE casos_cliente SET prioridad=? WHERE id=? AND codigo_casillero=?",
+                            (prioridad_caso, caso_id, cas),
+                        )
+                    crear_notificacion_cliente(
+                        cas, f"Nueva respuesta al caso #{caso_id:04d}", respuesta_caso.strip(),
+                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
+                    )
+                    cargar_casos_cliente.clear()
+                    st.success("Respuesta agregada al historial y enviada al portal del cliente.")
+                    st.rerun()
+            if actualizar_solo_caso:
                 fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     conn.execute(
-                        "UPDATE casos_cliente SET estado=?, prioridad=?, respuesta_operador=?, "
+                        "UPDATE casos_cliente SET estado=?, prioridad=?, "
                         "fecha_actualizacion=? WHERE id=? AND codigo_casillero=?",
-                        (estado_caso, prioridad_caso, respuesta_caso.strip(), fecha, int(caso[0]), cas),
+                        (estado_caso, prioridad_caso, fecha, caso_id, cas),
                     )
-                crear_notificacion_cliente(
-                    cas, f"Respuesta al caso #{int(caso[0]):04d}",
-                    respuesta_caso.strip() or f"Su solicitud cambió al estado {estado_caso}.",
-                    tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
-                )
                 cargar_casos_cliente.clear()
-                st.success("Caso actualizado y respuesta enviada al portal del cliente.")
+                if estado_caso != estado_actual_caso:
+                    crear_notificacion_cliente(
+                        cas, f"Estado del caso #{caso_id:04d}",
+                        f"Su solicitud ahora está en estado: {estado_caso}.",
+                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
+                    )
+                st.success("Estado y prioridad actualizados sin modificar la conversación.")
                 st.rerun()
 
     with tab_com:
@@ -15069,7 +15548,8 @@ elif es_rol_admin():
                                         st.stop()
                                     for tabla in (
                                         "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
-                                        "notificaciones_cliente", "casos_cliente", "eventos_tracking", "paquetes", "cotizaciones",
+                                        "notificaciones_cliente", "casos_mensajes", "casos_cliente",
+                                        "eventos_tracking", "paquetes", "cotizaciones",
                                     ):
                                         cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
                                     cur.execute(
@@ -15086,6 +15566,8 @@ elif es_rol_admin():
                                 cargar_estados_cotizaciones_db.clear()
                                 cargar_cotizaciones_confirmadas_admin.clear()
                                 cargar_resumen_operativo_admin.clear()
+                                cargar_casos_cliente.clear()
+                                cargar_mensajes_caso.clear()
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
 
