@@ -4541,7 +4541,9 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 """,
                 unsafe_allow_html=True,
             )
-            with st.expander(etiqueta_soporte, expanded=bool(caso_activo)):
+            # Al entrar en Actividad, la bandeja inicia cerrada. La conversación
+            # seleccionada se conserva y solo se muestra al pulsar la flecha.
+            with st.expander(etiqueta_soporte, expanded=False):
                 st.markdown(
                     '<div style="color:#0f172a;font-size:.92rem;font-weight:850;">Centro de ayuda</div>'
                     '<div style="margin:2px 0 10px;color:#64748b;font-size:.73rem;">'
