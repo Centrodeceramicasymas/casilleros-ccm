@@ -9356,7 +9356,7 @@ st.markdown(
         color: #475569;
         font-size: .7rem;
         font-weight: 850;
-        letter-spacing: .06em;
+        letter-spacing: 0;
         text-transform: uppercase;
     }
     .shipment-card {
@@ -9695,7 +9695,7 @@ st.markdown(
         color: #087050;
         font-size: .59rem;
         font-weight: 900;
-        letter-spacing: .05em;
+        letter-spacing: 0;
         text-transform: uppercase;
     }
     .quote-stage b {
@@ -9711,30 +9711,33 @@ st.markdown(
         line-height: 1.4;
     }
     .quote-origin-intro {
+        position: relative;
+        z-index: 2;
         display: grid;
         grid-template-columns: 34px minmax(0, 1fr);
         gap: 11px;
         align-items: start;
-        margin: 17px 0 9px;
-        padding: 12px 14px;
-        background: #f8fbff;
-        border: 1px solid #dbe7f5;
-        border-left: 4px solid #0757c8;
+        margin: 18px 0 16px;
+        padding: 14px 15px;
+        background: #eefaf7;
+        border: 1px solid #b7e2d5;
+        border-left: 4px solid #0f766e;
         border-radius: 8px;
     }
+    .quote-origin-intro .quote-stage-number { background:#0f766e; }
     .quote-origin-intro small {
         display: block;
         margin-bottom: 3px;
-        color: #0757c8;
+        color: #0f766e;
         font-size: .61rem;
         font-weight: 900;
-        letter-spacing: .06em;
+        letter-spacing: 0;
         text-transform: uppercase;
     }
     .quote-origin-intro b {
         display: block;
         color: #0f172a;
-        font-size: .94rem;
+        font-size: 1rem;
         line-height: 1.3;
     }
     .quote-origin-intro p {
@@ -9744,6 +9747,8 @@ st.markdown(
         line-height: 1.4;
     }
     [class*="st-key-cotizador_origen_"] {
+        position: relative;
+        z-index: 1;
         min-height: 112px;
         padding: 14px 15px 12px;
         background: #ffffff;
@@ -9752,8 +9757,8 @@ st.markdown(
         box-sizing: border-box;
     }
     .st-key-cotizador_origen_china {
-        background: #f0f7ff;
-        border: 2px solid #0757c8;
+        background: #f0fdf9;
+        border: 2px solid #0f766e;
     }
     .quote-route-head {
         display: flex;
@@ -9780,15 +9785,15 @@ st.markdown(
     .quote-route-badge {
         flex: none;
         padding: 4px 8px;
-        color: #0757c8;
-        background: #dbeafe;
+        color: #0f766e;
+        background: #ccfbef;
         border-radius: 999px;
         font-size: .61rem;
         font-weight: 850;
     }
     .quote-route-badge.soon { color:#64748b; background:#eef2f6; }
     .quote-route-copy { margin: 10px 0 0; color:#526175; font-size:.69rem; line-height:1.4; }
-    .quote-route-footer { margin-top:10px; padding-top:8px; color:#0757c8; border-top:1px solid #bfd7f5; font-size:.65rem; font-weight:850; }
+    .quote-route-footer { margin-top:10px; padding-top:8px; color:#0f766e; border-top:1px solid #b7e2d5; font-size:.65rem; font-weight:850; }
     .quote-route-footer.soon { color:#64748b; border-top-color:#e2e8f0; }
     .quote-subhead {
         margin: 14px 0 8px;
@@ -9829,6 +9834,12 @@ st.markdown(
     .st-key-vista_cotizador [data-testid="stNumberInputContainer"]:focus-within {
         border-color: #0757c8 !important;
         box-shadow: 0 0 0 2px rgba(7,87,200,.10) !important;
+    }
+    .st-key-vista_cotizador [data-testid="stElementContainer"]:has(.quote-origin-intro) {
+        position: relative !important;
+        z-index: 2 !important;
+        margin-bottom: 6px !important;
+        overflow: visible !important;
     }
     @media (max-width: 700px) {
         .quote-hero { padding: 14px 15px; }
@@ -13970,9 +13981,9 @@ elif st.session_state["rol"] == "cliente":
             )
             st.markdown(
                 '<section class="quote-origin-intro"><span class="quote-stage-number">1</span><div>'
-                '<small>Origen de la carga</small>'
-                '<b>¿Desde dónde se enviará su mercancía?</b>'
-                '<p>La ruta seleccionada determina las tarifas, límites y documentos disponibles.</p>'
+                '<small>Paso 1 · Ruta internacional</small>'
+                '<b>Origen de la carga</b>'
+                '<p>Seleccione desde dónde se enviará su mercancía. Esta elección determina las tarifas, límites y documentos disponibles.</p>'
                 '</div></section>',
                 unsafe_allow_html=True,
             )
