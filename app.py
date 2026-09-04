@@ -1075,6 +1075,9 @@ VIGENCIA_COTIZACION_CONFIRMADA_HORAS = 48
 VIGENCIA_COTIZACION_CONFIRMADA = timedelta(hours=VIGENCIA_COTIZACION_CONFIRMADA_HORAS)
 HISTORIAL_COTIZACIONES_MAX = 500
 ESTADOS_LOGISTICOS = (
+    "Etiqueta Oficial Emitida",
+    "Esperando Despacho del Proveedor",
+    "Despachado por Proveedor",
     "En Bodega China",
     "En Inspección",
     "En Consolidación",
@@ -1773,8 +1776,16 @@ def cargar_paquetes_db(casillero):
                    COALESCE(c.incidencia_estado, 'Sin incidencia'), p.codigo_interno,
                    COALESCE(p.cantidad_bultos, 1), COALESCE(p.bultos_verificados, 0),
                    p.responsable_actual, p.zona_almacen, p.ultima_verificacion,
-                   COALESCE(p.estado_integridad, 'Pendiente')
-            FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
+                   COALESCE(p.estado_integridad, 'Pendiente'), p.tracking_externo,
+                   p.envio_id, COALESCE(p.numero_bulto, 1),
+                   COALESCE(p.etiqueta_estado, 'No emitida'), p.proveedor_nombre,
+                   e.codigo_envio, e.cantidad_bultos,
+                   COALESCE((SELECT MAX(d.version) FROM documentos_paquete d
+                             WHERE d.tracking_ccm=p.codigo_interno
+                               AND d.tipo_documento='Etiqueta oficial CCM'), 1)
+            FROM paquetes p
+            LEFT JOIN control_envios c ON c.tracking = p.tracking
+            LEFT JOIN envios e ON e.id = p.envio_id
             WHERE p.codigo_casillero = ? AND COALESCE(p.visible_cliente, TRUE) = TRUE
             ORDER BY p.fecha_actualizacion DESC
             """,
@@ -1876,7 +1887,9 @@ def cargar_paquetes_admin():
                    ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
                    COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
                    COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
-                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente'),
+                   tracking_externo, envio_id, COALESCE(numero_bulto, 1),
+                   COALESCE(etiqueta_estado, 'No emitida'), proveedor_nombre
             FROM paquetes
             ORDER BY fecha_actualizacion DESC
             LIMIT 500
@@ -1899,17 +1912,20 @@ def buscar_paquetes_admin(termino, limite=200):
                    ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
                    COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
                    COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
-                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente'),
+                   tracking_externo, envio_id, COALESCE(numero_bulto, 1),
+                   COALESCE(etiqueta_estado, 'No emitida'), proveedor_nombre
             FROM paquetes
             WHERE LOWER(COALESCE(tracking, '')) LIKE ?
                OR LOWER(COALESCE(codigo_interno, '')) LIKE ?
                OR LOWER(COALESCE(codigo_casillero, '')) LIKE ?
                OR LOWER(COALESCE(contenedor_id, '')) LIKE ?
                OR LOWER(COALESCE(zona_almacen, '')) LIKE ?
+               OR LOWER(COALESCE(tracking_externo, '')) LIKE ?
             ORDER BY fecha_actualizacion DESC
             LIMIT ?
             """,
-            (patron, patron, patron, patron, patron, int(limite)),
+            (patron, patron, patron, patron, patron, patron, int(limite)),
         ).fetchall()
 
 
@@ -1927,16 +1943,37 @@ def buscar_tracking_exacto_admin(tracking):
                    ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
                    COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
                    COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
-                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente'),
+                   tracking_externo, envio_id, COALESCE(numero_bulto, 1),
+                   COALESCE(etiqueta_estado, 'No emitida'), proveedor_nombre
             FROM paquetes
             WHERE UPPER(TRIM(tracking)) = UPPER(TRIM(?))
+               OR UPPER(TRIM(COALESCE(codigo_interno, ''))) = UPPER(TRIM(?))
             LIMIT 2
             """,
-            (codigo,),
+            (codigo, codigo),
         ).fetchall()
+        if not filas:
+            filas = conn.execute(
+                """
+                SELECT tracking, codigo_casillero, descripcion, contenedor_id, estado,
+                       fecha_actualizacion, cotizacion_id, tipo_contenedor,
+                       recibido_bodega, pago_confirmado, costo_manipulacion_usd, fecha_recepcion,
+                       ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
+                       COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
+                       COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
+                       ultima_verificacion, COALESCE(estado_integridad, 'Pendiente'),
+                       tracking_externo, envio_id, COALESCE(numero_bulto, 1),
+                       COALESCE(etiqueta_estado, 'No emitida'), proveedor_nombre
+                FROM paquetes
+                WHERE UPPER(TRIM(COALESCE(tracking_externo, ''))) = UPPER(TRIM(?))
+                LIMIT 2
+                """,
+                (codigo,),
+            ).fetchall()
     if len(filas) > 1:
         raise sqlite3.IntegrityError(
-            "Existen trackings duplicados por mayúsculas/minúsculas. Requieren depuración administrativa."
+            "El tracking externo corresponde a varios bultos. Use el tracking CCM o abra el casillero agrupado."
         )
     return filas[0] if filas else None
 
@@ -1955,7 +1992,9 @@ def cargar_paquetes_casillero_admin(casillero):
                    ubicacion_actual, eta, proximo_paso, incidencia, visible_cliente,
                    COALESCE(version, 1), codigo_interno, COALESCE(cantidad_bultos, 1),
                    COALESCE(bultos_verificados, 0), responsable_actual, zona_almacen,
-                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente')
+                   ultima_verificacion, COALESCE(estado_integridad, 'Pendiente'),
+                   tracking_externo, envio_id, COALESCE(numero_bulto, 1),
+                   COALESCE(etiqueta_estado, 'No emitida'), proveedor_nombre
             FROM paquetes
             WHERE codigo_casillero = ?
             ORDER BY fecha_actualizacion DESC, tracking
@@ -2078,6 +2117,510 @@ def verificar_integridad_trazabilidad(tracking):
             return False, int(secuencia), len(movimientos)
         hash_previo = str(hash_evento)
     return True, None, len(movimientos)
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_cotizaciones_revision_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT c.id, c.codigo_casillero, c.total_usd,
+                   COALESCE(c.fecha_confirmacion, c.fecha_creacion, c.fecha),
+                   COALESCE(c.estado, 'pendiente_revision'), c.tipo_carga,
+                   c.destino_entrega, u.nombre_completo, u.telefono_principal,
+                   a.condicion_pago, a.estado_acuerdo, a.estado_pago,
+                   a.fecha_vencimiento, a.nota_cliente, a.nota_interna
+            FROM cotizaciones c
+            JOIN usuarios u ON u.codigo_casillero = c.codigo_casillero
+            LEFT JOIN acuerdos_pago a ON a.cotizacion_id = c.id
+            WHERE COALESCE(c.confirmada, FALSE) = TRUE
+            ORDER BY COALESCE(c.fecha_confirmacion, c.fecha_creacion, c.fecha) DESC, c.id DESC
+            LIMIT 500
+            """
+        ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_envios_aprobados_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT e.id, e.codigo_envio, e.cotizacion_id, e.codigo_casillero,
+                   e.cantidad_bultos, e.estado, e.proveedor_nombre,
+                   e.fecha_aprobacion, u.nombre_completo,
+                   SUM(CASE WHEN p.recibido_bodega = TRUE THEN 1 ELSE 0 END)
+            FROM envios e
+            JOIN usuarios u ON u.codigo_casillero = e.codigo_casillero
+            LEFT JOIN paquetes p ON p.envio_id = e.id
+            GROUP BY e.id, e.codigo_envio, e.cotizacion_id, e.codigo_casillero,
+                     e.cantidad_bultos, e.estado, e.proveedor_nombre,
+                     e.fecha_aprobacion, u.nombre_completo
+            ORDER BY e.fecha_actualizacion DESC
+            LIMIT 500
+            """
+        ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_bultos_envio_admin(envio_id):
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT tracking, codigo_interno, tracking_externo, numero_bulto,
+                   estado, etiqueta_estado, recibido_bodega, ubicacion_actual,
+                   fecha_actualizacion, descripcion, codigo_casillero,
+                   COALESCE((SELECT MAX(d.version) FROM documentos_paquete d
+                             WHERE d.tracking_ccm=paquetes.codigo_interno
+                               AND d.tipo_documento='Etiqueta oficial CCM'), 1)
+            FROM paquetes WHERE envio_id = ?
+            ORDER BY numero_bulto, tracking
+            """,
+            (int(envio_id),),
+        ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def buscar_bulto_ccm_admin(tracking_ccm):
+    codigo = str(tracking_ccm or "").strip().upper()
+    if not codigo:
+        return None
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT p.tracking, p.codigo_interno, p.codigo_casillero, p.descripcion,
+                   p.estado, p.recibido_bodega, p.numero_bulto, p.envio_id,
+                   p.etiqueta_estado, p.cantidad_bultos, p.bultos_verificados,
+                   p.responsable_actual, p.zona_almacen, p.tracking_externo,
+                   e.codigo_envio, e.cantidad_bultos, u.nombre_completo
+            FROM paquetes p
+            LEFT JOIN envios e ON e.id = p.envio_id
+            LEFT JOIN usuarios u ON u.codigo_casillero = p.codigo_casillero
+            WHERE UPPER(TRIM(p.codigo_interno)) = UPPER(TRIM(?))
+            """,
+            (codigo,),
+        ).fetchone()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_excepciones_recepcion_admin():
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT id, codigo_escaneado, categoria, detalle, estado,
+                   codigo_casillero, tracking_ccm, fotografia_url,
+                   responsable, resolucion, creado_por, fecha_creacion, fecha_actualizacion
+            FROM excepciones_recepcion
+            ORDER BY CASE WHEN estado IN ('Resuelta', 'Cerrada') THEN 1 ELSE 0 END,
+                     fecha_actualizacion DESC, id DESC
+            LIMIT 500
+            """
+        ).fetchall()
+
+
+def _codigo_operativo_unico(prefijo, longitud=8):
+    fecha = obtener_tiempo_honduras().strftime("%y%m")
+    return f"{prefijo}-{fecha}-{secrets.token_hex(max(3, longitud // 2)).upper()[:longitud]}"
+
+
+def actualizar_revision_cotizacion(
+    cotizacion_id, estado_revision, condicion_pago, estado_acuerdo,
+    estado_pago, monto, vencimiento, nota_cliente, nota_interna,
+):
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or "superadmin"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT codigo_casillero, COALESCE(confirmada, FALSE) FROM cotizaciones WHERE id = ?",
+            (int(cotizacion_id),),
+        )
+        cotizacion = cur.fetchone()
+        if not cotizacion or not bool(cotizacion[1]):
+            return False, "La cotización no está confirmada por el cliente."
+        cas = formatear_casillero(cotizacion[0])
+        cur.execute(
+            """
+            INSERT INTO acuerdos_pago (
+                cotizacion_id, codigo_casillero, condicion_pago, estado_acuerdo,
+                estado_pago, monto_acordado, fecha_vencimiento, nota_cliente,
+                nota_interna, aprobado_por, fecha_aprobacion, fecha_actualizacion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(cotizacion_id) DO UPDATE SET
+                condicion_pago=excluded.condicion_pago,
+                estado_acuerdo=excluded.estado_acuerdo,
+                estado_pago=excluded.estado_pago,
+                monto_acordado=excluded.monto_acordado,
+                fecha_vencimiento=excluded.fecha_vencimiento,
+                nota_cliente=excluded.nota_cliente,
+                nota_interna=excluded.nota_interna,
+                aprobado_por=excluded.aprobado_por,
+                fecha_aprobacion=excluded.fecha_aprobacion,
+                fecha_actualizacion=excluded.fecha_actualizacion
+            """,
+            (
+                int(cotizacion_id), cas, condicion_pago, estado_acuerdo,
+                estado_pago, float(monto or 0), str(vencimiento or "").strip() or None,
+                str(nota_cliente or "").strip(), str(nota_interna or "").strip(),
+                actor, fecha if estado_acuerdo == "Aprobado" else None, fecha,
+            ),
+        )
+        cur.execute(
+            "UPDATE cotizaciones SET estado = ? WHERE id = ? AND codigo_casillero = ?",
+            (estado_revision, int(cotizacion_id), cas),
+        )
+    crear_notificacion_cliente(
+        cas, f"Revisión de CCM-COT-{int(cotizacion_id):05d}",
+        str(nota_cliente or "").strip() or f"Su cotización cambió al estado {estado_revision.replace('_', ' ')}.",
+        tipo="Cotización", prioridad="Alta" if estado_revision == "requiere_correccion" else "Normal",
+    )
+    cargar_cotizaciones_revision_admin.clear()
+    cargar_estados_cotizaciones_db.clear()
+    cargar_cotizaciones_db.clear()
+    return True, "Revisión administrativa guardada."
+
+
+def aprobar_y_generar_tracking_cotizacion(
+    cotizacion_id, condicion_pago, estado_pago, monto, vencimiento,
+    cantidad_bultos, proveedor, nota_cliente, nota_interna,
+):
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or "superadmin"
+    cantidad = int(cantidad_bultos or 0)
+    if cantidad < 1 or cantidad > 500:
+        return False, "La cantidad de bultos debe estar entre 1 y 500.", None
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT codigo_casillero, COALESCE(confirmada, FALSE), total_usd,
+                   tipo_carga, destino_entrega
+            FROM cotizaciones WHERE id = ?
+            """,
+            (int(cotizacion_id),),
+        )
+        cot = cur.fetchone()
+        if not cot or not bool(cot[1]):
+            return False, "La cotización no fue confirmada por el cliente.", None
+        cas = formatear_casillero(cot[0])
+        cur.execute("SELECT id, codigo_envio FROM envios WHERE cotizacion_id = ?", (int(cotizacion_id),))
+        existente = cur.fetchone()
+        if existente:
+            return False, f"Esta cotización ya generó el envío {existente[1]}.", existente[1]
+        codigo_envio = _codigo_operativo_unico("CCM-ENV", 8)
+        token_bultos = secrets.token_hex(4).upper()
+        cur.execute(
+            """
+            INSERT INTO acuerdos_pago (
+                cotizacion_id, codigo_casillero, condicion_pago, estado_acuerdo,
+                estado_pago, monto_acordado, fecha_vencimiento, nota_cliente,
+                nota_interna, aprobado_por, fecha_aprobacion, fecha_actualizacion
+            ) VALUES (?, ?, ?, 'Aprobado', ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(cotizacion_id) DO UPDATE SET
+                condicion_pago=excluded.condicion_pago,
+                estado_acuerdo='Aprobado', estado_pago=excluded.estado_pago,
+                monto_acordado=excluded.monto_acordado,
+                fecha_vencimiento=excluded.fecha_vencimiento,
+                nota_cliente=excluded.nota_cliente, nota_interna=excluded.nota_interna,
+                aprobado_por=excluded.aprobado_por,
+                fecha_aprobacion=excluded.fecha_aprobacion,
+                fecha_actualizacion=excluded.fecha_actualizacion
+            """,
+            (
+                int(cotizacion_id), cas, condicion_pago, estado_pago, float(monto or 0),
+                str(vencimiento or "").strip() or None, str(nota_cliente or "").strip(),
+                str(nota_interna or "").strip(), actor, fecha, fecha,
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO envios (
+                codigo_envio, cotizacion_id, codigo_casillero, cantidad_bultos,
+                estado, proveedor_nombre, aprobado_por, fecha_aprobacion, fecha_actualizacion
+            ) VALUES (?, ?, ?, ?, 'Etiquetas emitidas', ?, ?, ?, ?)
+            """,
+            (codigo_envio, int(cotizacion_id), cas, cantidad, str(proveedor or "").strip(), actor, fecha, fecha),
+        )
+        cur.execute("SELECT id FROM envios WHERE codigo_envio = ?", (codigo_envio,))
+        envio_id = int(cur.fetchone()[0])
+        for numero in range(1, cantidad + 1):
+            tracking_ccm = f"CCM-PKG-{token_bultos}-{numero:03d}"
+            descripcion = f"Bulto {numero} de {cantidad} · {cot[3] or 'Carga cotizada'}"
+            cur.execute(
+                """
+                INSERT INTO paquetes (
+                    tracking, codigo_casillero, descripcion, contenedor_id, tipo_contenedor,
+                    cotizacion_id, recibido_bodega, pago_confirmado, costo_manipulacion_usd,
+                    fecha_recepcion, ubicacion_actual, eta, proximo_paso, incidencia,
+                    visible_cliente, estado, fecha_actualizacion, codigo_interno,
+                    cantidad_bultos, bultos_verificados, responsable_actual, zona_almacen,
+                    ultima_verificacion, estado_integridad, version, tracking_externo,
+                    envio_id, numero_bulto, etiqueta_estado, proveedor_nombre
+                ) VALUES (?, ?, ?, '', 'Bulto individual', ?, FALSE, ?, 0, NULL,
+                          'Proveedor en China', '', 'Despacho del proveedor', '', TRUE,
+                          'Etiqueta Oficial Emitida', ?, ?, 1, 0, 'Proveedor / cliente',
+                          'Pendiente de recepción', NULL, 'Pendiente', 1, NULL, ?, ?, 'Vigente', ?)
+                """,
+                (
+                    tracking_ccm, cas, descripcion, int(cotizacion_id),
+                    estado_pago == "Confirmado", fecha, tracking_ccm,
+                    envio_id, numero, str(proveedor or "").strip(),
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO documentos_paquete (
+                    tracking_ccm, tipo_documento, version, estado, fecha_emision, emitido_por
+                ) VALUES (?, 'Etiqueta oficial CCM', 1, 'Vigente', ?, ?)
+                """,
+                (tracking_ccm, fecha, actor),
+            )
+            registrar_trazabilidad_paquete(
+                cur, tracking_ccm, cas, "TRACKING_CCM_GENERADO", "", "Etiqueta Oficial Emitida",
+                {}, {"codigo_envio": codigo_envio, "cotizacion_id": int(cotizacion_id),
+                     "numero_bulto": numero, "total_bultos": cantidad},
+                "CCM aprobó la operación y emitió la etiqueta oficial del bulto.",
+                str(nota_interna or "").strip(), True, actor, fecha,
+            )
+            cur.execute(
+                """
+                INSERT INTO eventos_tracking (
+                    tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                    nota_interna, fecha_evento, creado_por, visible_cliente
+                ) VALUES (?, ?, 'Etiqueta Oficial Emitida', 'Proveedor en China', ?, ?, ?, ?, TRUE)
+                """,
+                (
+                    tracking_ccm, cas,
+                    "Etiqueta oficial disponible. Envíela al proveedor para identificar este bulto.",
+                    str(nota_interna or "").strip(), fecha, actor,
+                ),
+            )
+        cur.execute(
+            "UPDATE cotizaciones SET estado='aprobada_tracking_generado' WHERE id=? AND codigo_casillero=?",
+            (int(cotizacion_id), cas),
+        )
+    crear_notificacion_cliente(
+        cas, f"Envío {codigo_envio} aprobado",
+        f"CCM generó {cantidad} etiqueta(s) oficiales. Descárguelas desde Mis Envíos.",
+        tipo="Seguimiento", prioridad="Alta",
+    )
+    invalidar_cache_flujo_tracking()
+    return True, f"Envío {codigo_envio} creado con {cantidad} tracking(s) CCM.", codigo_envio
+
+
+def invalidar_cache_flujo_tracking():
+    cargar_cotizaciones_revision_admin.clear()
+    cargar_envios_aprobados_admin.clear()
+    cargar_bultos_envio_admin.clear()
+    buscar_bulto_ccm_admin.clear()
+    cargar_excepciones_recepcion_admin.clear()
+    cargar_paquetes_db.clear()
+    cargar_eventos_tracking_db.clear()
+    cargar_trazabilidad_cliente_db.clear()
+    cargar_trazabilidad_paquete_db.clear()
+    cargar_paquetes_admin.clear()
+    buscar_paquetes_admin.clear()
+    buscar_tracking_exacto_admin.clear()
+    cargar_paquetes_casillero_admin.clear()
+    cargar_clientes_con_paquetes_admin.clear()
+    cargar_metricas_paquetes_admin.clear()
+
+
+def registrar_recepcion_bodega(
+    tracking_ccm, condicion, peso_kg, largo_cm, ancho_cm, alto_cm,
+    fotografia_url, zona_almacen, observaciones,
+):
+    codigo = str(tracking_ccm or "").strip().upper()
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or "superadmin"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT tracking, codigo_casillero, estado, recibido_bodega,
+                   etiqueta_estado, numero_bulto, envio_id, descripcion,
+                   ubicacion_actual, responsable_actual, zona_almacen, cotizacion_id
+            FROM paquetes WHERE UPPER(TRIM(codigo_interno)) = UPPER(TRIM(?))
+            """,
+            (codigo,),
+        )
+        paquete = cur.fetchone()
+        if not paquete:
+            return False, "Tracking CCM no reconocido.", "desconocido"
+        if str(paquete[4]) != "Vigente":
+            return False, f"La etiqueta está {paquete[4]} y no puede recibirse.", "etiqueta_invalida"
+        cur.execute("SELECT fecha_recepcion, recibido_por, zona_almacen FROM recepciones_bodega WHERE tracking_ccm=?", (codigo,))
+        recepcion_previa = cur.fetchone()
+        if recepcion_previa or bool(paquete[3]):
+            detalle = recepcion_previa or ("fecha registrada", "operador anterior", paquete[10])
+            return False, f"Este bulto ya fue recibido: {detalle[0]} por {detalle[1]} en {detalle[2]}.", "duplicada"
+        diferencia_medidas = False
+        if paquete[11] and paquete[6]:
+            total_envio = cur.execute(
+                "SELECT cantidad_bultos FROM envios WHERE id=?", (int(paquete[6]),)
+            ).fetchone()
+            esperado = cur.execute(
+                "SELECT largo_cm, ancho_cm, alto_cm, peso_lb FROM cotizaciones WHERE id=?",
+                (int(paquete[11]),),
+            ).fetchone()
+            if total_envio and int(total_envio[0] or 0) == 1 and esperado:
+                reales = (float(largo_cm or 0), float(ancho_cm or 0), float(alto_cm or 0), float(peso_kg or 0))
+                esperados = (
+                    float(esperado[0] or 0), float(esperado[1] or 0),
+                    float(esperado[2] or 0), float(esperado[3] or 0) / 2.20462,
+                )
+                diferencia_medidas = any(
+                    valor_esperado > 0 and abs(valor_real - valor_esperado) / valor_esperado > 0.15
+                    for valor_real, valor_esperado in zip(reales, esperados)
+                )
+        integridad = (
+            "Diferencia detectada" if diferencia_medidas
+            else "Verificado" if condicion == "Sin daños visibles"
+            else "Dañado"
+        )
+        nuevo_estado = "En Bodega China" if integridad == "Verificado" else "Incidencia"
+        cur.execute(
+            """
+            INSERT INTO recepciones_bodega (
+                tracking_ccm, codigo_casillero, condicion, peso_real_kg,
+                largo_real_cm, ancho_real_cm, alto_real_cm, fotografia_url,
+                zona_almacen, observaciones, recibido_por, fecha_recepcion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                codigo, paquete[1], condicion, float(peso_kg or 0), float(largo_cm or 0),
+                float(ancho_cm or 0), float(alto_cm or 0), str(fotografia_url or "").strip(),
+                str(zona_almacen).strip(), str(observaciones or "").strip(), actor, fecha,
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE paquetes SET recibido_bodega=TRUE, fecha_recepcion=?, estado=?,
+                ubicacion_actual='Bodega CCM Shanghái', proximo_paso=?,
+                incidencia=?, bultos_verificados=1, responsable_actual=?, zona_almacen=?,
+                ultima_verificacion=?, estado_integridad=?, fecha_actualizacion=?, version=version+1
+            WHERE tracking=?
+            """,
+            (
+                fecha, nuevo_estado,
+                "Inspección de ingreso" if integridad == "Verificado" else "Revisión de incidencia",
+                "" if integridad == "Verificado" else condicion,
+                actor, str(zona_almacen).strip(), fecha, integridad, fecha, paquete[0],
+            ),
+        )
+        mensaje = (
+            "Su bulto fue recibido y verificado en la bodega de Shanghái."
+            if integridad == "Verificado"
+            else f"Su bulto fue recibido con una incidencia: {'diferencia de peso o medidas' if diferencia_medidas else condicion}."
+        )
+        registrar_trazabilidad_paquete(
+            cur, paquete[0], paquete[1], "RECEPCION_BODEGA_CHINA",
+            paquete[2], nuevo_estado,
+            {"ubicacion": paquete[8], "responsable": paquete[9], "zona": paquete[10]},
+            {"condicion": condicion, "peso_kg": float(peso_kg or 0),
+             "dimensiones_cm": [float(largo_cm or 0), float(ancho_cm or 0), float(alto_cm or 0)],
+             "zona": str(zona_almacen).strip(), "integridad": integridad},
+            mensaje, str(observaciones or "").strip(), True, actor, fecha,
+        )
+        cur.execute(
+            """
+            INSERT INTO eventos_tracking (
+                tracking, codigo_casillero, estado, ubicacion, mensaje_cliente,
+                nota_interna, fecha_evento, creado_por, visible_cliente
+            ) VALUES (?, ?, ?, 'Bodega CCM Shanghái', ?, ?, ?, ?, TRUE)
+            """,
+            (paquete[0], paquete[1], nuevo_estado, mensaje, str(observaciones or "").strip(), fecha, actor),
+        )
+        if paquete[6]:
+            cur.execute(
+                """
+                UPDATE envios SET
+                    estado = CASE
+                        WHEN (SELECT COUNT(*) FROM paquetes WHERE envio_id=? AND recibido_bodega=TRUE)
+                             = cantidad_bultos THEN 'Recibido completo en China'
+                        ELSE 'Recepción parcial en China'
+                    END,
+                    fecha_actualizacion=? WHERE id=?
+                """,
+                (int(paquete[6]), fecha, int(paquete[6])),
+            )
+    crear_notificacion_cliente(
+        paquete[1], f"Recepción confirmada · {codigo}", mensaje,
+        tipo="Seguimiento", prioridad="Urgente" if integridad == "Dañado" else "Normal",
+        tracking=paquete[0],
+    )
+    invalidar_cache_flujo_tracking()
+    return True, mensaje, "recibida"
+
+
+def registrar_excepcion_recepcion(codigo, categoria, detalle, fotografia_url=""):
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or "superadmin"
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO excepciones_recepcion (
+                codigo_escaneado, categoria, detalle, estado, fotografia_url,
+                creado_por, fecha_creacion, fecha_actualizacion
+            ) VALUES (?, ?, ?, 'Abierta', ?, ?, ?, ?)
+            """,
+            (str(codigo or "").strip(), categoria, str(detalle or "").strip(),
+             str(fotografia_url or "").strip(), actor, fecha, fecha),
+        )
+    cargar_excepciones_recepcion_admin.clear()
+    return True
+
+
+def cambiar_estado_etiqueta(tracking_ccm, accion):
+    codigo = str(tracking_ccm or "").strip().upper()
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or "superadmin"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tracking, codigo_casillero, estado, etiqueta_estado FROM paquetes "
+            "WHERE UPPER(TRIM(codigo_interno))=UPPER(TRIM(?))",
+            (codigo,),
+        )
+        paquete = cur.fetchone()
+        if not paquete:
+            return False, "No se encontró el bulto."
+        if bool(conn.execute("SELECT 1 FROM recepciones_bodega WHERE tracking_ccm=?", (codigo,)).fetchone()):
+            return False, "Una etiqueta recibida físicamente ya no puede anularse ni reemitirse."
+        if accion == "anular":
+            nuevo_estado = "Anulada"
+            cur.execute("UPDATE documentos_paquete SET estado='Anulada' WHERE tracking_ccm=? AND estado='Vigente'", (codigo,))
+        elif accion == "reemitir":
+            nuevo_estado = "Vigente"
+            cur.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM documentos_paquete "
+                "WHERE tracking_ccm=? AND tipo_documento='Etiqueta oficial CCM'",
+                (codigo,),
+            )
+            version = int((cur.fetchone() or (0,))[0] or 0) + 1
+            cur.execute("UPDATE documentos_paquete SET estado='Reemplazada' WHERE tracking_ccm=? AND estado='Vigente'", (codigo,))
+            cur.execute(
+                "INSERT INTO documentos_paquete (tracking_ccm, tipo_documento, version, estado, fecha_emision, emitido_por) "
+                "VALUES (?, 'Etiqueta oficial CCM', ?, 'Vigente', ?, ?)",
+                (codigo, version, fecha, actor),
+            )
+        else:
+            return False, "Acción de etiqueta no reconocida."
+        cur.execute(
+            "UPDATE paquetes SET etiqueta_estado=?, fecha_actualizacion=?, version=version+1 WHERE tracking=?",
+            (nuevo_estado, fecha, paquete[0]),
+        )
+        registrar_trazabilidad_paquete(
+            cur, paquete[0], paquete[1], "ETIQUETA_REEMITIDA" if accion == "reemitir" else "ETIQUETA_ANULADA",
+            paquete[2], paquete[2], {"etiqueta": paquete[3]}, {"etiqueta": nuevo_estado},
+            f"La etiqueta oficial fue {nuevo_estado.lower()} por CCM.", "", True, actor, fecha,
+        )
+    crear_notificacion_cliente(
+        paquete[1], f"Etiqueta {nuevo_estado.lower()} · {codigo}",
+        f"La etiqueta oficial del bulto fue {nuevo_estado.lower()}. Use únicamente la versión vigente.",
+        tipo="Documentos", prioridad="Alta", tracking=paquete[0],
+    )
+    invalidar_cache_flujo_tracking()
+    return True, f"Etiqueta {nuevo_estado.lower()} correctamente."
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -2388,7 +2931,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
             cur.execute(
                 f"""
                 UPDATE cotizaciones
-                SET confirmada = TRUE, fecha_confirmacion = ?, estado = 'confirmada'
+                SET confirmada = TRUE, fecha_confirmacion = ?, estado = 'pendiente_revision'
                 WHERE id = ? AND codigo_casillero IN ({marcadores})
                   AND COALESCE(confirmada, FALSE) = FALSE
                   AND COALESCE(estado, 'emitida') = 'emitida'
@@ -4155,8 +4698,11 @@ def generar_pdf_etiqueta_proveedor(
 /F1 16 Tf
 40 728 Td
 (CENTRO DE CERAMICAS Y MAS - HONDURAS) Tj
+/F1 13 Tf
+0 -18 Td
+(DOCUMENTO PRELIMINAR - NO ES ETIQUETA OFICIAL DE RECEPCION) Tj
 /F1 9 Tf
-0 -16 Td
+0 -18 Td
 (EMITIDO EL: {fecha_txt}) Tj
 /F1 10 Tf
 0 -16 Td
@@ -4210,6 +4756,108 @@ def generar_pdf_etiqueta_proveedor(
 (2. Packages received without the Client Code will NOT be processed.) Tj
 0 -12 Td
 (3. Send domestic tracking number to the buyer immediately upon dispatch.) Tj
+ET"""
+    return compilar_pdf_simple(stream)
+
+
+def _codigo_barras_code39_pdf(valor, y=500, alto=62, ancho_fino=1.15):
+    patrones = {
+        "0":"nnnwwnwnn","1":"wnnwnnnnw","2":"nnwwnnnnw","3":"wnwwnnnnn",
+        "4":"nnnwwnnnw","5":"wnnwwnnnn","6":"nnwwwnnnn","7":"nnnwnnwnw",
+        "8":"wnnwnnwnn","9":"nnwwnnwnn","A":"wnnnnwnnw","B":"nnwnnwnnw",
+        "C":"wnwnnwnnn","D":"nnnnwwnnw","E":"wnnnwwnnn","F":"nnwnwwnnn",
+        "G":"nnnnnwwnw","H":"wnnnnwwnn","I":"nnwnnwwnn","J":"nnnnwwwnn",
+        "K":"wnnnnnnww","L":"nnwnnnnww","M":"wnwnnnnwn","N":"nnnnwnnww",
+        "O":"wnnnwnnwn","P":"nnwnwnnwn","Q":"nnnnnnwww","R":"wnnnnnwwn",
+        "S":"nnwnnnwwn","T":"nnnnwnwwn","U":"wwnnnnnnw","V":"nwwnnnnnw",
+        "W":"wwwnnnnnn","X":"nwnnwnnnw","Y":"wwnnwnnnn","Z":"nwwnwnnnn",
+        "-":"nwnnnnwnw",".":"wwnnnnwnn"," ":"nwwnnnwnn","*":"nwnnwnwnn",
+    }
+    codigo = "*" + "".join(c for c in str(valor or "").upper() if c in patrones and c != "*") + "*"
+    anchos = []
+    for caracter in codigo:
+        for modulo in patrones[caracter]:
+            anchos.append(ancho_fino * (3 if modulo == "w" else 1))
+        anchos.append(ancho_fino)
+    x = max(36.0, (595.0 - sum(anchos)) / 2.0)
+    comandos = ["q", "0 0 0 rg"]
+    indice = 0
+    for caracter in codigo:
+        patron = patrones[caracter]
+        for posicion, modulo in enumerate(patron):
+            ancho = ancho_fino * (3 if modulo == "w" else 1)
+            if posicion % 2 == 0:
+                comandos.append(f"{x:.2f} {y:.2f} {ancho:.2f} {alto:.2f} re f")
+            x += ancho
+            indice += 1
+        x += ancho_fino
+    comandos.append("Q")
+    return "\n".join(comandos)
+
+
+def _texto_pdf_seguro(valor, max_chars=100):
+    texto = re.sub(r"[\r\n\t]+", " ", str(valor or "")).strip()[:max_chars]
+    return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+@st.cache_data(ttl=900, show_spinner=False, max_entries=256)
+def generar_pdf_etiqueta_oficial_bulto(
+    tracking_ccm, codigo_envio, casillero, nombre, telefono, proveedor,
+    numero_bulto, total_bultos, descripcion, destino_entrega,
+    fecha_emision=None, version=1,
+):
+    tracking = _texto_pdf_seguro(str(tracking_ccm or "").upper(), 48)
+    fecha_txt = _texto_pdf_seguro(
+        fecha_emision or obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"), 40
+    )
+    barras = _codigo_barras_code39_pdf(tracking)
+    destino = _texto_pdf_seguro(str(destino_entrega or "Retiro en Almacén").upper(), 90)
+    envio_pdf = _texto_pdf_seguro(codigo_envio, 40)
+    casillero_pdf = _texto_pdf_seguro(casillero, 30)
+    nombre_pdf = _texto_pdf_seguro(nombre, 70)
+    telefono_pdf = _texto_pdf_seguro(telefono, 30)
+    proveedor_pdf = _texto_pdf_seguro(proveedor or "POR DEFINIR", 70)
+    descripcion_pdf = _texto_pdf_seguro(descripcion, 95)
+    stream = f"""{barras}
+BT
+/F1 16 Tf
+40 728 Td
+(CENTRO DE CERAMICAS Y MAS - ETIQUETA OFICIAL) Tj
+/F1 9 Tf
+0 -17 Td
+(VERSION: {int(version)}   EMISION: {fecha_txt}) Tj
+/F1 15 Tf
+0 -25 Td
+(TRACKING CCM: {tracking}) Tj
+/F1 11 Tf
+0 -18 Td
+(ENVIO: {envio_pdf}   BULTO: {int(numero_bulto)} DE {int(total_bultos)}) Tj
+/F1 10 Tf
+0 -18 Td
+(CASILLERO: {casillero_pdf}) Tj
+0 -14 Td
+(CLIENTE: {nombre_pdf}) Tj
+0 -14 Td
+(TELEFONO: {telefono_pdf}) Tj
+0 -14 Td
+(PROVEEDOR: {proveedor_pdf}) Tj
+0 -14 Td
+(DESTINO FINAL: {destino}) Tj
+0 -20 Td
+(DESCRIPCION: {descripcion_pdf}) Tj
+0 -95 Td
+/F1 9 Tf
+(CODIGO CODE 39 - ESCANEAR TRACKING CCM IMPRESO) Tj
+0 -22 Td
+(PEGAR ESTA ETIQUETA EN AL MENOS DOS LADOS DEL BULTO.) Tj
+0 -14 Td
+(NO CUBRIR EL CODIGO DE BARRAS. NO REUTILIZAR ESTA ETIQUETA.) Tj
+0 -22 Td
+(SHIP TO: No. 1333 Renmintang Road, Heqing Town,) Tj
+0 -14 Td
+(Pudong New Area, Shanghai, China.) Tj
+0 -14 Td
+(NOTIFICAR ANTES DEL DESPACHO: WHATSAPP +504 9577-1099) Tj
 ET"""
     return compilar_pdf_simple(stream)
 
@@ -5310,6 +5958,206 @@ def asegurar_esquema_trazabilidad_absoluta():
         conn.commit()
 
 
+def asegurar_esquema_flujo_tracking():
+    """Crea el flujo comercial que antecede a la recepción física del bulto."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if USA_SUPABASE:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='paquetes'"
+            )
+            columnas = {str(f[0]) for f in cursor.fetchall()}
+            faltantes = {
+                "tracking_externo": "ALTER TABLE public.paquetes ADD COLUMN tracking_externo TEXT",
+                "envio_id": "ALTER TABLE public.paquetes ADD COLUMN envio_id BIGINT",
+                "numero_bulto": "ALTER TABLE public.paquetes ADD COLUMN numero_bulto INTEGER NOT NULL DEFAULT 1",
+                "etiqueta_estado": "ALTER TABLE public.paquetes ADD COLUMN etiqueta_estado TEXT NOT NULL DEFAULT 'No emitida'",
+                "proveedor_nombre": "ALTER TABLE public.paquetes ADD COLUMN proveedor_nombre TEXT",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.acuerdos_pago (
+                    id BIGSERIAL PRIMARY KEY,
+                    cotizacion_id BIGINT NOT NULL UNIQUE REFERENCES public.cotizaciones(id) ON DELETE RESTRICT,
+                    codigo_casillero TEXT NOT NULL,
+                    condicion_pago TEXT NOT NULL,
+                    estado_acuerdo TEXT NOT NULL,
+                    estado_pago TEXT NOT NULL DEFAULT 'Pendiente',
+                    monto_acordado DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    fecha_vencimiento TEXT,
+                    nota_cliente TEXT,
+                    nota_interna TEXT,
+                    aprobado_por TEXT,
+                    fecha_aprobacion TEXT,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.envios (
+                    id BIGSERIAL PRIMARY KEY,
+                    codigo_envio TEXT NOT NULL UNIQUE,
+                    cotizacion_id BIGINT NOT NULL UNIQUE REFERENCES public.cotizaciones(id) ON DELETE RESTRICT,
+                    codigo_casillero TEXT NOT NULL,
+                    cantidad_bultos INTEGER NOT NULL,
+                    estado TEXT NOT NULL,
+                    proveedor_nombre TEXT,
+                    aprobado_por TEXT NOT NULL,
+                    fecha_aprobacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.documentos_paquete (
+                    id BIGSERIAL PRIMARY KEY,
+                    tracking_ccm TEXT NOT NULL,
+                    tipo_documento TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    estado TEXT NOT NULL,
+                    fecha_emision TEXT NOT NULL,
+                    emitido_por TEXT NOT NULL,
+                    UNIQUE(tracking_ccm, tipo_documento, version)
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.recepciones_bodega (
+                    id BIGSERIAL PRIMARY KEY,
+                    tracking_ccm TEXT NOT NULL UNIQUE,
+                    codigo_casillero TEXT NOT NULL,
+                    condicion TEXT NOT NULL,
+                    peso_real_kg DOUBLE PRECISION,
+                    largo_real_cm DOUBLE PRECISION,
+                    ancho_real_cm DOUBLE PRECISION,
+                    alto_real_cm DOUBLE PRECISION,
+                    fotografia_url TEXT,
+                    zona_almacen TEXT NOT NULL,
+                    observaciones TEXT,
+                    recibido_por TEXT NOT NULL,
+                    fecha_recepcion TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.excepciones_recepcion (
+                    id BIGSERIAL PRIMARY KEY,
+                    codigo_escaneado TEXT,
+                    categoria TEXT NOT NULL,
+                    detalle TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'Abierta',
+                    codigo_casillero TEXT,
+                    tracking_ccm TEXT,
+                    fotografia_url TEXT,
+                    responsable TEXT,
+                    resolucion TEXT,
+                    creado_por TEXT NOT NULL,
+                    fecha_creacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+        else:
+            cursor.execute("PRAGMA table_info(paquetes)")
+            columnas = {str(f[1]) for f in cursor.fetchall()}
+            faltantes = {
+                "tracking_externo": "ALTER TABLE paquetes ADD COLUMN tracking_externo TEXT",
+                "envio_id": "ALTER TABLE paquetes ADD COLUMN envio_id INTEGER",
+                "numero_bulto": "ALTER TABLE paquetes ADD COLUMN numero_bulto INTEGER NOT NULL DEFAULT 1",
+                "etiqueta_estado": "ALTER TABLE paquetes ADD COLUMN etiqueta_estado TEXT NOT NULL DEFAULT 'No emitida'",
+                "proveedor_nombre": "ALTER TABLE paquetes ADD COLUMN proveedor_nombre TEXT",
+            }
+            for columna, sentencia in faltantes.items():
+                if columna not in columnas:
+                    cursor.execute(sentencia)
+            cursor.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS acuerdos_pago (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cotizacion_id INTEGER NOT NULL UNIQUE,
+                    codigo_casillero TEXT NOT NULL,
+                    condicion_pago TEXT NOT NULL,
+                    estado_acuerdo TEXT NOT NULL,
+                    estado_pago TEXT NOT NULL DEFAULT 'Pendiente',
+                    monto_acordado REAL NOT NULL DEFAULT 0,
+                    fecha_vencimiento TEXT,
+                    nota_cliente TEXT,
+                    nota_interna TEXT,
+                    aprobado_por TEXT,
+                    fecha_aprobacion TEXT,
+                    fecha_actualizacion TEXT NOT NULL,
+                    FOREIGN KEY(cotizacion_id) REFERENCES cotizaciones(id) ON DELETE RESTRICT
+                );
+                CREATE TABLE IF NOT EXISTS envios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_envio TEXT NOT NULL UNIQUE,
+                    cotizacion_id INTEGER NOT NULL UNIQUE,
+                    codigo_casillero TEXT NOT NULL,
+                    cantidad_bultos INTEGER NOT NULL,
+                    estado TEXT NOT NULL,
+                    proveedor_nombre TEXT,
+                    aprobado_por TEXT NOT NULL,
+                    fecha_aprobacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL,
+                    FOREIGN KEY(cotizacion_id) REFERENCES cotizaciones(id) ON DELETE RESTRICT
+                );
+                CREATE TABLE IF NOT EXISTS documentos_paquete (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tracking_ccm TEXT NOT NULL,
+                    tipo_documento TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    estado TEXT NOT NULL,
+                    fecha_emision TEXT NOT NULL,
+                    emitido_por TEXT NOT NULL,
+                    UNIQUE(tracking_ccm, tipo_documento, version)
+                );
+                CREATE TABLE IF NOT EXISTS recepciones_bodega (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tracking_ccm TEXT NOT NULL UNIQUE,
+                    codigo_casillero TEXT NOT NULL,
+                    condicion TEXT NOT NULL,
+                    peso_real_kg REAL,
+                    largo_real_cm REAL,
+                    ancho_real_cm REAL,
+                    alto_real_cm REAL,
+                    fotografia_url TEXT,
+                    zona_almacen TEXT NOT NULL,
+                    observaciones TEXT,
+                    recibido_por TEXT NOT NULL,
+                    fecha_recepcion TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS excepciones_recepcion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_escaneado TEXT,
+                    categoria TEXT NOT NULL,
+                    detalle TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'Abierta',
+                    codigo_casillero TEXT,
+                    tracking_ccm TEXT,
+                    fotografia_url TEXT,
+                    responsable TEXT,
+                    resolucion TEXT,
+                    creado_por TEXT NOT NULL,
+                    fecha_creacion TEXT NOT NULL,
+                    fecha_actualizacion TEXT NOT NULL
+                );
+                """
+            )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_envios_casillero ON envios(codigo_casillero, fecha_actualizacion DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquetes_envio ON paquetes(envio_id, numero_bulto)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquetes_tracking_externo ON paquetes(tracking_externo)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_excepciones_estado ON excepciones_recepcion(estado, fecha_actualizacion DESC)")
+        conn.commit()
+
+
 @st.cache_resource(show_spinner=False)
 def inicializar_persistencia():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
@@ -5318,6 +6166,7 @@ def inicializar_persistencia():
     asegurar_esquema_paquetes_operativo()
     asegurar_esquema_control_cliente()
     asegurar_esquema_trazabilidad_absoluta()
+    asegurar_esquema_flujo_tracking()
     asegurar_esquema_direcciones()
     asegurar_indices_rendimiento()
     return True
@@ -5800,7 +6649,8 @@ def _migrar_casillero_tablas(conn, origen, destino):
     for tabla in (
         "cotizaciones", "paquetes", "eventos_tracking", "direcciones_entrega",
         "carrito_catalogo", "permisos_usuario", "notificaciones_cliente", "casos_cliente",
-        "trazabilidad_paquetes",
+        "trazabilidad_paquetes", "acuerdos_pago", "envios", "recepciones_bodega",
+        "excepciones_recepcion",
     ):
         try:
             conn.execute(
@@ -6989,8 +7839,9 @@ def dialogo_editar_usuario_admin(usuario, root=False):
                 with get_db() as conn:
                     cur = conn.cursor()
                     cur.execute(
-                        "SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero=?",
-                        (cas_u,),
+                        "SELECT (SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero=?) + "
+                        "(SELECT COUNT(*) FROM acuerdos_pago WHERE codigo_casillero=?)",
+                        (cas_u, cas_u),
                     )
                     if int((cur.fetchone() or (0,))[0] or 0) > 0:
                         st.error(
@@ -10831,7 +11682,10 @@ def pintar_control_cliente_360():
             etiqueta_cot = st.selectbox("Cotización", list(opciones_cot), key=f"c360_cot_{cas}")
             cot = opciones_cot[etiqueta_cot]
             st.caption(f"Emitida: {cot[2]} · Destino: {cot[7] or 'No indicado'} · Tipo: {cot[6] or 'No indicado'}")
-            estados_cot = ["emitida", "en_revision", "confirmada", "vencida", "cancelada"]
+            estados_cot = [
+                "emitida", "pendiente_revision", "en_revision", "requiere_correccion",
+                "aprobada_tracking_generado", "confirmada", "rechazada", "vencida", "cancelada",
+            ]
             estado_actual_cot = str(cot[4] or "emitida")
             nuevo_estado_cot = st.selectbox(
                 "Estado administrativo", estados_cot,
@@ -10845,9 +11699,21 @@ def pintar_control_cliente_360():
             notificar_cot = st.toggle("Notificar este cambio en el portal", value=True, key=f"c360_cot_notif_{cot[0]}")
             if st.button("Guardar control de cotización", type="primary", key=f"c360_cot_save_{cot[0]}"):
                 fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
-                confirmada = nuevo_estado_cot == "confirmada"
+                confirmada = nuevo_estado_cot in {
+                    "confirmada", "pendiente_revision", "en_revision",
+                    "requiere_correccion", "aprobada_tracking_generado",
+                }
                 fecha_confirmacion = fecha if confirmada and not cot[5] else cot[5] if confirmada else None
                 with get_db() as conn:
+                    if nuevo_estado_cot == "aprobada_tracking_generado":
+                        envio_valido = conn.execute(
+                            "SELECT 1 FROM envios WHERE cotizacion_id=?", (int(cot[0]),)
+                        ).fetchone()
+                        if envio_valido is None:
+                            st.error(
+                                "Este estado solo puede asignarse desde Aprobaciones al generar los trackings."
+                            )
+                            st.stop()
                     conn.execute(
                         "UPDATE cotizaciones SET estado=?, confirmada=?, fecha_confirmacion=? "
                         "WHERE id=? AND codigo_casillero=?",
@@ -10955,7 +11821,7 @@ def pintar_control_cliente_360():
                         if estado_previo_360 is None:
                             st.error("El paquete ya no existe o fue reasignado. Actualice el expediente.")
                             st.stop()
-                        if estado_env in ESTADOS_LOGISTICOS and not recibido_env:
+                        if indice_estado_logistico(estado_env) >= indice_estado_logistico("En Bodega China") and not recibido_env:
                             st.error("No puede avanzar un envío sin confirmar su recepción física.")
                             st.stop()
                         if (
@@ -11805,8 +12671,8 @@ elif st.session_state["rol"] == "cliente":
                     f'<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border-left:5px solid #22c55e;'
                     f'border-radius:12px;padding:14px 16px;margin:10px 0 14px;color:#166534;">'
                     f'<div style="font-weight:800;font-size:1rem;">✅ CCM-COT-{int(confirmada_flash):05d} confirmada correctamente</div>'
-                    f'<div style="margin-top:4px;font-size:.9rem;">La tarifa quedó confirmada por 48 horas. '
-                    f'CCM habilitará los documentos después de la validación operativa.</div></div>',
+                    f'<div style="margin-top:4px;font-size:.9rem;">La solicitud pasó a revisión administrativa. '
+                    f'CCM acordará las condiciones de pago antes de generar los trackings y etiquetas oficiales.</div></div>',
                     unsafe_allow_html=True,
                 )
             elif error_confirmacion:
@@ -11834,6 +12700,7 @@ elif st.session_state["rol"] == "cliente":
                     consolidada = es_cotizacion_confirmada(conf_c)
                     estado_admin_cot = estados_cotizaciones_cliente.get(int(id_cot_item), "confirmada" if consolidada else "emitida")
                     cotizacion_operable = estado_admin_cot == "emitida"
+                    aprobada_operativa = estado_admin_cot == "aprobada_tracking_generado"
                     fecha_confirmacion = confirmaciones_cotizaciones.get(int(id_cot_item))
                     estado_txt = texto_estado_cotizacion(fec_c, conf_c, ahora_hn, fecha_confirmacion)
                     color_estado = "#1d4ed8" if consolidada else "#166534"
@@ -11848,7 +12715,9 @@ elif st.session_state["rol"] == "cliente":
                         if not consolidada and cotizacion_operable
                         else f'<span style="display:inline-flex;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(estado_admin_cot.replace("_", " ").title())}</span>'
                         if not consolidada
-                        else '<span style="display:inline-flex;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">✅ Confirmada · 48 h</span>'
+                        else '<span style="display:inline-flex;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">Aprobada · Tracking generado</span>'
+                        if aprobada_operativa
+                        else f'<span style="display:inline-flex;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(estado_admin_cot.replace("_", " ").title())}</span>'
                     )
                     with st.container(key=f"tarjeta_cot_{id_cot_item}"):
                         with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
@@ -12420,13 +13289,21 @@ elif st.session_state["rol"] == "cliente":
                             ahora_hn,
                             fecha_confirmacion,
                         )
+                        estado_operativo_emit = estados_cotizaciones_cliente.get(
+                            int(id_c), "confirmada" if tarifa_consolidada else "emitida"
+                        )
                         if tarifa_consolidada:
                             titulo_emitida = (
-                                f"Cotización CCM-COT-{id_c:05d} consolidada. El PDF Tarifa está listo."
+                                f"Cotización CCM-COT-{id_c:05d} · "
+                                + (
+                                    "Aprobada y con tracking generado."
+                                    if estado_operativo_emit == "aprobada_tracking_generado"
+                                    else "En revisión administrativa."
+                                )
                             )
                             contenido_emitida = (
                                 f'<div style="color:#166534;font-size:.9rem;font-weight:700;margin-top:8px;">'
-                                f'✅ {estado_doc}</div>'
+                                f'{html.escape(estado_operativo_emit.replace("_", " ").title())}</div>'
                             )
                         else:
                             titulo_emitida = (
@@ -12437,7 +13314,7 @@ elif st.session_state["rol"] == "cliente":
                                 f'<div style="margin-bottom:8px;font-weight:800;">⏳ {estado_doc}</div>'
                                 '<div style="background:rgba(255,255,255,.72);border-radius:9px;padding:10px 12px;margin:7px 0;">'
                                 '<b>1. Envíe el PDF únicamente al fabricante o proveedor.</b><br>'
-                                'El botón <b>“Descargar Formato / Documento para el Fabricante”</b> genera el documento para coordinar su mercancía con él.'
+                                'El botón <b>“Descargar instrucciones preliminares”</b> entrega la dirección y requisitos. No funciona como etiqueta oficial de recepción.'
                                 '</div>'
                                 '<div style="background:rgba(255,255,255,.72);border-radius:9px;padding:10px 12px;margin-top:7px;">'
                                 '<b>2. Confirme esta tarifa dentro de 1 hora.</b><br>'
@@ -12481,9 +13358,9 @@ elif st.session_state["rol"] == "cliente":
                             with st.container(key="guia_foco_pdf_fab"):
                                 if pdf_fab:
                                     if st.download_button(
-                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        "Descargar instrucciones preliminares",
                                         pdf_fab,
-                                        f"Shipping_Label_Fabricante_{casillero}.pdf",
+                                        f"Instrucciones_Preliminares_{casillero}.pdf",
                                         "application/pdf",
                                         key=f"dl_pdf_fab_{id_c}",
                                         use_container_width=True,
@@ -12491,7 +13368,7 @@ elif st.session_state["rol"] == "cliente":
                                         avanzar_guia_si(3, 4)
                                 else:
                                     st.button(
-                                        "🏷️ Descargar Formato / Documento para el Fabricante",
+                                        "Descargar instrucciones preliminares",
                                         key=f"dl_pdf_fab_fallback_{id_c}",
                                         use_container_width=True,
                                         disabled=True,
@@ -12609,6 +13486,13 @@ elif st.session_state["rol"] == "cliente":
                     zona_p = html.escape(str(p[27] or "Ubicación física pendiente")) if len(p) > 27 else "Ubicación física pendiente"
                     ultima_verificacion_p = html.escape(str(p[28] or "Sin verificación")) if len(p) > 28 else "Sin verificación"
                     integridad_p = html.escape(str(p[29] or "Pendiente")) if len(p) > 29 else "Pendiente"
+                    tracking_externo_p = html.escape(str(p[30] or "Pendiente del proveedor")) if len(p) > 30 else "Pendiente del proveedor"
+                    numero_bulto_p = int(p[32] or 1) if len(p) > 32 else 1
+                    etiqueta_estado_p = str(p[33] or "No emitida") if len(p) > 33 else "No emitida"
+                    proveedor_p = str(p[34] or "") if len(p) > 34 else ""
+                    codigo_envio_p = str(p[35] or "") if len(p) > 35 else ""
+                    total_envio_p = int(p[36] or 1) if len(p) > 36 else 1
+                    version_etiqueta_p = int(p[37] or 1) if len(p) > 37 else 1
                     fecha_actualizacion_dt = parsear_fecha_cotizacion(p[4])
                     horas_sin_actualizar = (
                         max(0.0, (obtener_tiempo_honduras() - fecha_actualizacion_dt).total_seconds() / 3600.0)
@@ -12628,6 +13512,7 @@ elif st.session_state["rol"] == "cliente":
                         f'<span class="shipment-status">{estado_p}</span></div>'
                         f'<div class="shipment-description">{descripcion_p}</div>'
                         f'<div class="shipment-meta"><span>Folio interno: <b>{codigo_interno_p}</b></span>'
+                        f'<span>Tracking externo: <b>{tracking_externo_p}</b></span>'
                         f'<span>Bultos: <b>{bultos_verificados_p}/{total_bultos_p}</b></span>'
                         f'<span>Custodia: <b>{responsable_p}</b></span><span>Zona: <b>{zona_p}</b></span></div>'
                         f'<div class="shipment-meta"><span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
@@ -12661,6 +13546,20 @@ elif st.session_state["rol"] == "cliente":
                     if evidencia_p:
                         st.link_button(
                             "Ver evidencia de entrega", evidencia_p,
+                            use_container_width=True,
+                        )
+                    if codigo_envio_p and etiqueta_estado_p == "Vigente":
+                        pdf_etiqueta_cliente = generar_pdf_etiqueta_oficial_bulto(
+                            p[23] or p[0], codigo_envio_p, casillero, nombre_completo,
+                            tel_cli, proveedor_p, numero_bulto_p, total_envio_p,
+                            p[1] or "Carga aprobada", destino_para_documentos(), p[4], version_etiqueta_p,
+                        )
+                        st.download_button(
+                            f"Descargar etiqueta oficial · Bulto {numero_bulto_p} de {total_envio_p}",
+                            pdf_etiqueta_cliente,
+                            f"Etiqueta_Oficial_{p[23] or p[0]}.pdf",
+                            "application/pdf",
+                            key=f"cliente_dl_etiqueta_{p[23] or p[0]}",
                             use_container_width=True,
                         )
                     movimientos_paquete = trazabilidad_por_tracking.get(str(p[0] or ""), [])
@@ -12708,7 +13607,11 @@ elif st.session_state["rol"] == "cliente":
                 )
             st.markdown('<div class="envios-section-label">Cotizaciones confirmadas y documentos</div>', unsafe_allow_html=True)
             cotizaciones_despacho = ordenar_cotizaciones_desc(
-                [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
+                [
+                    row for row in lista_mis_cotizaciones
+                    if es_cotizacion_confirmada(row[8])
+                    and estados_cotizaciones_cliente.get(int(row[0])) == "aprobada_tracking_generado"
+                ]
             )
             try:
                 foco_envios = int(st.session_state.get("cotizacion_envio_foco") or 0)
@@ -12839,7 +13742,11 @@ elif st.session_state["rol"] == "cliente":
                 cargar_paquetes_db(casillero)
             )
             cotizaciones_ficha = ordenar_cotizaciones_desc(
-                [row for row in lista_mis_cotizaciones if es_cotizacion_confirmada(row[8])]
+                [
+                    row for row in lista_mis_cotizaciones
+                    if es_cotizacion_confirmada(row[8])
+                    and estados_cotizaciones_cliente.get(int(row[0])) == "aprobada_tracking_generado"
+                ]
             )
             if cotizaciones_ficha:
                 fichas_render, total_fichas, limite_fichas = pagina_registros(
@@ -12993,6 +13900,7 @@ elif es_rol_admin():
                 align-items: stretch !important;
                 width: 100% !important;
                 gap: 8px !important;
+                flex-wrap: wrap !important;
                 background: transparent;
                 border: 0;
                 border-radius: 7px;
@@ -13002,8 +13910,8 @@ elif es_rol_admin():
             .st-key-admin_nav [data-testid="stSegmentedControl"] label,
             .st-key-admin_nav [role="radiogroup"] > label,
             .st-key-admin_nav [data-baseweb="radio"] {
-                flex: 1 1 0 !important;
-                min-width: 0 !important;
+                flex: 1 1 120px !important;
+                min-width: 112px !important;
                 min-height: 48px !important;
                 display: flex !important;
                 align-items: center !important;
@@ -13676,9 +14584,14 @@ elif es_rol_admin():
 
     opciones_admin = ["Usuarios", "Paquetes"]
     if root:
-        opciones_admin = ["Usuarios", "Control 360", "Paquetes", "Anuncios", "Tarifas", "Sistema"]
+        opciones_admin = [
+            "Usuarios", "Aprobaciones", "Recepción", "Control 360",
+            "Paquetes", "Anuncios", "Tarifas", "Sistema",
+        ]
     etiquetas_admin = {
         "Usuarios": "👥 Usuarios",
+        "Aprobaciones": "✓ Aprobaciones",
+        "Recepción": "▣ Recepción",
         "Control 360": "🎛️ Control 360",
         "Anuncios": "📣 Anuncios",
         "Paquetes": "📦 Paquetes",
@@ -14144,8 +15057,9 @@ elif es_rol_admin():
                                 with get_db() as conn:
                                     cur = conn.cursor()
                                     cur.execute(
-                                        "SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero = ?",
-                                        (cas_u,),
+                                        "SELECT (SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero=?) + "
+                                        "(SELECT COUNT(*) FROM acuerdos_pago WHERE codigo_casillero=?)",
+                                        (cas_u, cas_u),
                                     )
                                     if int((cur.fetchone() or (0,))[0] or 0) > 0:
                                         st.error(
@@ -14336,6 +15250,354 @@ elif es_rol_admin():
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error("Ya existe un casillero, DNI o correo con esos datos.")
+
+    if admin_seccion == "Aprobaciones" and root:
+        st.markdown(
+            '<div class="admin-section-heading">Aprobación comercial y generación de tracking</div>'
+            '<div class="admin-section-copy">La confirmación del cliente inicia la revisión; solo esta área puede crear envíos y etiquetas oficiales.</div>',
+            unsafe_allow_html=True,
+        )
+        revisiones = cargar_cotizaciones_revision_admin()
+        pendientes_revision = [
+            r for r in revisiones
+            if str(r[4]) not in ("aprobada_tracking_generado", "rechazada", "cancelada")
+        ]
+        ap1, ap2, ap3 = st.columns(3, gap="medium")
+        ap1.metric("Pendientes de revisión", len(pendientes_revision))
+        ap2.metric("Cotizaciones confirmadas", len(revisiones))
+        ap3.metric("Envíos generados", len(cargar_envios_aprobados_admin()))
+        if revisiones:
+            opciones_revision = {
+                f"CCM-COT-{int(r[0]):05d} · {formatear_casillero(r[1])} · {r[7]} · {str(r[4]).replace('_', ' ').title()}": r
+                for r in revisiones
+            }
+            revision_etiqueta = st.selectbox(
+                "Cotización confirmada", list(opciones_revision), key="admin_revision_cotizacion"
+            )
+            rev = opciones_revision[revision_etiqueta]
+            ya_generada = str(rev[4]) == "aprobada_tracking_generado"
+            st.info(
+                f"Cliente: {rev[7]} · Casillero: {formatear_casillero(rev[1])} · "
+                f"Total cotizado: ${float(rev[2] or 0):,.2f} · Confirmación: {rev[3]}"
+            )
+            condiciones_pago = ["Pago inmediato", "Anticipo", "Contra entrega", "Crédito aprobado", "Pago diferido"]
+            estados_pago_revision = ["Pendiente", "Parcial", "Confirmado", "Diferido autorizado"]
+            condicion_actual = rev[9] if rev[9] in condiciones_pago else "Pago inmediato"
+            pago_actual = rev[11] if rev[11] in estados_pago_revision else "Pendiente"
+            ar1, ar2, ar3 = st.columns(3, gap="medium")
+            with ar1:
+                condicion_revision = st.selectbox(
+                    "Condición acordada", condiciones_pago,
+                    index=condiciones_pago.index(condicion_actual), key=f"revision_condicion_{rev[0]}",
+                )
+            with ar2:
+                estado_pago_revision = st.selectbox(
+                    "Estado real del pago", estados_pago_revision,
+                    index=estados_pago_revision.index(pago_actual), key=f"revision_pago_{rev[0]}",
+                )
+            with ar3:
+                monto_revision = st.number_input(
+                    "Monto acordado (USD)", min_value=0.0,
+                    value=float(rev[2] or 0), step=1.0, key=f"revision_monto_{rev[0]}",
+                )
+            ar4, ar5 = st.columns(2, gap="medium")
+            with ar4:
+                vencimiento_revision = st.text_input(
+                    "Vencimiento del acuerdo", value=str(rev[12] or ""),
+                    placeholder="AAAA-MM-DD (opcional)", key=f"revision_vence_{rev[0]}",
+                )
+            with ar5:
+                cantidad_revision = st.number_input(
+                    "Cantidad de cajas / bultos", min_value=1, max_value=500,
+                    value=1, step=1, key=f"revision_bultos_{rev[0]}", disabled=ya_generada,
+                )
+            proveedor_revision = st.text_input(
+                "Proveedor o fabricante", key=f"revision_proveedor_{rev[0]}",
+                placeholder="Nombre comercial del proveedor en China", disabled=ya_generada,
+            )
+            nota_cliente_revision = st.text_area(
+                "Mensaje para el cliente", value=str(rev[13] or ""), height=80,
+                key=f"revision_nota_cliente_{rev[0]}",
+            )
+            nota_interna_revision = st.text_area(
+                "Nota interna", value=str(rev[14] or ""), height=70,
+                key=f"revision_nota_interna_{rev[0]}",
+            )
+            ac1, ac2, ac3 = st.columns(3, gap="small")
+            with ac1:
+                if st.button(
+                    "Guardar revisión", key=f"revision_guardar_{rev[0]}",
+                    use_container_width=True, disabled=ya_generada,
+                ):
+                    ok, mensaje = actualizar_revision_cotizacion(
+                        rev[0], "en_revision", condicion_revision, "En revisión",
+                        estado_pago_revision, monto_revision, vencimiento_revision,
+                        nota_cliente_revision, nota_interna_revision,
+                    )
+                    (st.success if ok else st.error)(mensaje)
+                    if ok:
+                        st.rerun()
+            with ac2:
+                if st.button(
+                    "Solicitar corrección", key=f"revision_corregir_{rev[0]}",
+                    use_container_width=True, disabled=ya_generada,
+                ):
+                    ok, mensaje = actualizar_revision_cotizacion(
+                        rev[0], "requiere_correccion", condicion_revision, "Información pendiente",
+                        estado_pago_revision, monto_revision, vencimiento_revision,
+                        nota_cliente_revision or "CCM necesita información adicional para continuar.",
+                        nota_interna_revision,
+                    )
+                    (st.success if ok else st.error)(mensaje)
+                    if ok:
+                        st.rerun()
+            with ac3:
+                if st.button(
+                    "Rechazar", key=f"revision_rechazar_{rev[0]}",
+                    use_container_width=True, disabled=ya_generada,
+                ):
+                    ok, mensaje = actualizar_revision_cotizacion(
+                        rev[0], "rechazada", condicion_revision, "Rechazado",
+                        estado_pago_revision, monto_revision, vencimiento_revision,
+                        nota_cliente_revision or "La operación no fue aprobada por CCM.",
+                        nota_interna_revision,
+                    )
+                    (st.success if ok else st.error)(mensaje)
+                    if ok:
+                        st.rerun()
+            if st.button(
+                "Aprobar acuerdo y generar trackings CCM", type="primary",
+                key=f"revision_aprobar_{rev[0]}", use_container_width=True,
+                disabled=ya_generada,
+            ):
+                if vencimiento_revision and not _fecha_es_valida(vencimiento_revision):
+                    st.error("La fecha de vencimiento debe usar el formato AAAA-MM-DD.")
+                elif not proveedor_revision.strip():
+                    st.error("Indique el proveedor antes de generar las etiquetas.")
+                elif estado_pago_revision not in ("Confirmado", "Diferido autorizado", "Parcial"):
+                    st.error("El pago debe estar confirmado, parcial o diferido autorizado para aprobar.")
+                else:
+                    ok, mensaje, _ = aprobar_y_generar_tracking_cotizacion(
+                        rev[0], condicion_revision, estado_pago_revision, monto_revision,
+                        vencimiento_revision, cantidad_revision, proveedor_revision,
+                        nota_cliente_revision, nota_interna_revision,
+                    )
+                    (st.success if ok else st.error)(mensaje)
+                    if ok:
+                        st.rerun()
+        else:
+            st.info("No existen cotizaciones confirmadas pendientes de revisión.")
+
+        envios_emitidos = cargar_envios_aprobados_admin()
+        if envios_emitidos:
+            with st.expander("Envíos aprobados y etiquetas oficiales", expanded=False):
+                opciones_envio_aprobado = {
+                    f"{e[1]} · {e[8]} · {int(e[9] or 0)}/{int(e[4])} recibidos": e
+                    for e in envios_emitidos
+                }
+                envio_aprobado_etiqueta = st.selectbox(
+                    "Envío", list(opciones_envio_aprobado), key="admin_envio_etiquetas"
+                )
+                envio_aprobado = opciones_envio_aprobado[envio_aprobado_etiqueta]
+                bultos_aprobados = cargar_bultos_envio_admin(envio_aprobado[0])
+                with get_db() as conn:
+                    datos_doc = conn.execute(
+                        """
+                        SELECT u.nombre_completo, u.telefono_principal, c.destino_entrega
+                        FROM usuarios u JOIN cotizaciones c ON c.codigo_casillero=u.codigo_casillero
+                        WHERE c.id=?
+                        """,
+                        (int(envio_aprobado[2]),),
+                    ).fetchone() or (envio_aprobado[8], "", "Retiro en Almacén")
+                for bulto in bultos_aprobados:
+                    pdf_oficial = generar_pdf_etiqueta_oficial_bulto(
+                        bulto[1], envio_aprobado[1], envio_aprobado[3], datos_doc[0],
+                        datos_doc[1], envio_aprobado[6], bulto[3], envio_aprobado[4],
+                        bulto[9], datos_doc[2], envio_aprobado[7], int(bulto[11] or 1),
+                    )
+                    col_etiqueta, col_descarga, col_estado_etiqueta = st.columns([2.2, 1, 1], gap="small")
+                    with col_etiqueta:
+                        st.markdown(
+                            f"**{bulto[1]}** · Bulto {int(bulto[3])} de {int(envio_aprobado[4])} · "
+                            f"{bulto[4]} · Etiqueta {bulto[5]}"
+                        )
+                    with col_descarga:
+                        st.download_button(
+                            "Descargar etiqueta", pdf_oficial,
+                            f"Etiqueta_Oficial_{bulto[1]}.pdf", "application/pdf",
+                            key=f"admin_dl_etiqueta_{bulto[1]}", use_container_width=True,
+                            disabled=str(bulto[5]) != "Vigente",
+                        )
+                    with col_estado_etiqueta:
+                        accion_etiqueta = "anular" if str(bulto[5]) == "Vigente" else "reemitir"
+                        texto_accion_etiqueta = "Anular" if accion_etiqueta == "anular" else "Reemitir"
+                        if st.button(
+                            texto_accion_etiqueta,
+                            key=f"admin_estado_etiqueta_{bulto[1]}_{bulto[11]}",
+                            use_container_width=True,
+                        ):
+                            ok, mensaje = cambiar_estado_etiqueta(bulto[1], accion_etiqueta)
+                            (st.success if ok else st.error)(mensaje)
+                            if ok:
+                                st.rerun()
+
+    if admin_seccion == "Recepción" and root:
+        st.markdown(
+            '<div class="admin-section-heading">Recepción y escaneo en Shanghái</div>'
+            '<div class="admin-section-copy">Escanee el tracking CCM impreso. Cada código admite una sola recepción confirmada.</div>',
+            unsafe_allow_html=True,
+        )
+        scan1, scan2 = st.columns([2.2, 1], gap="small")
+        with scan1:
+            codigo_recepcion = st.text_input(
+                "Tracking CCM", key="recepcion_tracking_ccm",
+                placeholder="Escanee o escriba CCM-PKG-...",
+            ).strip().upper()
+        with scan2:
+            st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+            buscar_recepcion = st.button(
+                "Verificar etiqueta", type="primary", key="recepcion_buscar",
+                use_container_width=True,
+            )
+        if buscar_recepcion:
+            st.session_state["_recepcion_codigo_activo"] = codigo_recepcion
+        codigo_activo_recepcion = st.session_state.get("_recepcion_codigo_activo", "")
+        bulto_recepcion = buscar_bulto_ccm_admin(codigo_activo_recepcion) if codigo_activo_recepcion else None
+        if codigo_activo_recepcion and bulto_recepcion:
+            if str(bulto_recepcion[8]) == "Vigente":
+                st.success(
+                    f"Etiqueta válida: {bulto_recepcion[1]} · {bulto_recepcion[16]} · "
+                    f"{bulto_recepcion[14] or 'Envío sin código'} · Bulto {bulto_recepcion[6]} de {bulto_recepcion[15] or 1}"
+                )
+            else:
+                st.error(f"La etiqueta está {bulto_recepcion[8]} y no puede utilizarse para recepción.")
+                if st.button(
+                    "Registrar uso de etiqueta inválida",
+                    key=f"recepcion_etiqueta_invalida_{bulto_recepcion[1]}",
+                ):
+                    registrar_excepcion_recepcion(
+                        bulto_recepcion[1], "Etiqueta cancelada",
+                        f"Se intentó recibir una etiqueta con estado {bulto_recepcion[8]}.",
+                    )
+                    st.success("Intento registrado en excepciones.")
+                    st.rerun()
+            if bool(bulto_recepcion[5]):
+                st.warning("Este bulto ya figura como recibido. No se creará una segunda recepción.")
+                if st.button(
+                    "Registrar intento duplicado",
+                    key=f"recepcion_duplicada_{bulto_recepcion[1]}",
+                ):
+                    registrar_excepcion_recepcion(
+                        bulto_recepcion[1], "Recepción duplicada",
+                        "Se escaneó nuevamente un bulto que ya tenía recepción confirmada.",
+                    )
+                    st.success("Intento duplicado registrado para auditoría.")
+                    st.rerun()
+            condicion_recepcion = st.selectbox(
+                "Condición física",
+                ["Sin daños visibles", "Caja golpeada", "Caja abierta", "Humedad", "Contenido incompleto", "Etiqueta dañada"],
+                key=f"recepcion_condicion_{bulto_recepcion[1]}",
+            )
+            rr1, rr2, rr3, rr4 = st.columns(4, gap="small")
+            with rr1:
+                peso_recepcion = st.number_input("Peso real (kg)", min_value=0.0, step=0.1, key=f"recepcion_peso_{bulto_recepcion[1]}")
+            with rr2:
+                largo_recepcion = st.number_input("Largo (cm)", min_value=0.0, step=1.0, key=f"recepcion_largo_{bulto_recepcion[1]}")
+            with rr3:
+                ancho_recepcion = st.number_input("Ancho (cm)", min_value=0.0, step=1.0, key=f"recepcion_ancho_{bulto_recepcion[1]}")
+            with rr4:
+                alto_recepcion = st.number_input("Alto (cm)", min_value=0.0, step=1.0, key=f"recepcion_alto_{bulto_recepcion[1]}")
+            zona_recepcion = st.text_input(
+                "Zona física de almacenamiento *", key=f"recepcion_zona_{bulto_recepcion[1]}",
+                placeholder="Ej. CHN-A3-R02",
+            )
+            foto_recepcion = st.text_input(
+                "URL de fotografía *", key=f"recepcion_foto_{bulto_recepcion[1]}",
+                placeholder="https://...",
+            )
+            observacion_recepcion = st.text_area(
+                "Observaciones internas", key=f"recepcion_obs_{bulto_recepcion[1]}", height=75,
+            )
+            if st.button(
+                "Confirmar recepción física", type="primary",
+                key=f"recepcion_confirmar_{bulto_recepcion[1]}",
+                use_container_width=True,
+                disabled=bool(bulto_recepcion[5]) or str(bulto_recepcion[8]) != "Vigente",
+            ):
+                if not zona_recepcion.strip():
+                    st.error("Indique la zona física donde quedará almacenado el bulto.")
+                elif min(peso_recepcion, largo_recepcion, ancho_recepcion, alto_recepcion) <= 0:
+                    st.error("Registre el peso y las tres dimensiones reales del bulto.")
+                elif not foto_recepcion.strip():
+                    st.error("Adjunte la URL de una fotografía de recepción.")
+                elif foto_recepcion and not url_anuncio_segura(foto_recepcion):
+                    st.error("La fotografía debe usar una URL pública HTTP o HTTPS válida.")
+                else:
+                    ok, mensaje, _ = registrar_recepcion_bodega(
+                        bulto_recepcion[1], condicion_recepcion, peso_recepcion,
+                        largo_recepcion, ancho_recepcion, alto_recepcion,
+                        foto_recepcion, zona_recepcion, observacion_recepcion,
+                    )
+                    (st.success if ok else st.error)(mensaje)
+                    if ok:
+                        st.session_state.pop("_recepcion_codigo_activo", None)
+                        st.rerun()
+        elif codigo_activo_recepcion:
+            st.error("Tracking CCM no reconocido. No se asignará automáticamente a ningún cliente.")
+            categoria_excepcion = st.selectbox(
+                "Tipo de excepción",
+                ["Tracking desconocido", "Paquete sin etiqueta", "Código ilegible", "Etiqueta cancelada", "Bulto adicional", "Producto restringido"],
+                key="recepcion_excepcion_categoria",
+            )
+            detalle_excepcion = st.text_area(
+                "Detalle de la excepción", key="recepcion_excepcion_detalle", height=80,
+            )
+            foto_excepcion = st.text_input("URL de fotografía", key="recepcion_excepcion_foto")
+            if st.button("Registrar en excepciones", key="recepcion_excepcion_guardar"):
+                if not detalle_excepcion.strip():
+                    st.warning("Describa la situación antes de registrar la excepción.")
+                else:
+                    registrar_excepcion_recepcion(
+                        codigo_activo_recepcion, categoria_excepcion,
+                        detalle_excepcion, foto_excepcion,
+                    )
+                    st.success("Excepción registrada sin asignar el paquete a un cliente.")
+                    st.rerun()
+
+        excepciones = cargar_excepciones_recepcion_admin()
+        if excepciones:
+            with st.expander(f"Excepciones de recepción · {len(excepciones)}", expanded=False):
+                opciones_excepcion = {
+                    f"#{int(e[0]):04d} · {e[2]} · {e[4]} · {e[1] or 'Sin código'}": e
+                    for e in excepciones
+                }
+                excepcion_sel = st.selectbox(
+                    "Excepción", list(opciones_excepcion), key="recepcion_excepcion_admin"
+                )
+                excepcion = opciones_excepcion[excepcion_sel]
+                st.info(excepcion[3])
+                estado_excepcion = st.selectbox(
+                    "Estado", ["Abierta", "En investigación", "Identificada", "Resuelta", "Cerrada"],
+                    index=["Abierta", "En investigación", "Identificada", "Resuelta", "Cerrada"].index(excepcion[4])
+                    if excepcion[4] in ["Abierta", "En investigación", "Identificada", "Resuelta", "Cerrada"] else 0,
+                    key=f"recepcion_exc_estado_{excepcion[0]}",
+                )
+                resolucion_excepcion = st.text_area(
+                    "Resolución", value=str(excepcion[9] or ""),
+                    key=f"recepcion_exc_res_{excepcion[0]}", height=80,
+                )
+                if st.button("Guardar resolución", key=f"recepcion_exc_save_{excepcion[0]}"):
+                    fecha_exc = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE excepciones_recepcion SET estado=?, resolucion=?, responsable=?, "
+                            "fecha_actualizacion=? WHERE id=?",
+                            (estado_excepcion, resolucion_excepcion.strip(),
+                             st.session_state.get("usuario") or "superadmin", fecha_exc, int(excepcion[0])),
+                        )
+                    cargar_excepciones_recepcion_admin.clear()
+                    st.success("Excepción actualizada.")
+                    st.rerun()
 
     if admin_seccion == "Control 360" and root:
         pintar_control_cliente_360()
@@ -14642,7 +15904,7 @@ elif es_rol_admin():
             pkg1, pkg2 = st.columns(2, gap="medium")
             with pkg1:
                 t_in = st.text_input(
-                    "Tracking *",
+                    "Tracking CCM *",
                     value=str(paquete_editar[0]) if paquete_editar else "",
                     key=f"admin_pkg_tracking_{sufijo_editor}",
                     placeholder="Ej. CN-84920317",
@@ -14659,6 +15921,20 @@ elif es_rol_admin():
                     ),
                     placeholder="Ej. CCM-15011985",
                     disabled=bool(paquete_editar),
+                )
+            ext1, ext2 = st.columns(2, gap="medium")
+            with ext1:
+                tracking_externo_in = st.text_input(
+                    "Tracking externo del proveedor",
+                    value=str(paquete_editar[25] or "") if paquete_editar else "",
+                    key=f"admin_pkg_tracking_externo_{sufijo_editor}",
+                    placeholder="Ej. SF123456789CN",
+                )
+            with ext2:
+                proveedor_paquete_in = st.text_input(
+                    "Proveedor / fabricante",
+                    value=str(paquete_editar[29] or "") if paquete_editar else "",
+                    key=f"admin_pkg_proveedor_{sufijo_editor}",
                 )
             d_in = st.text_input(
                 "Descripción de la carga *",
@@ -14707,7 +15983,7 @@ elif es_rol_admin():
                     placeholder="Ej. CCM-CNT-014",
                 )
             with pkg4:
-                tipos_carga = ["40' High Cube", "40' estándar", "20' estándar", "Carga consolidada", "Palé"]
+                tipos_carga = ["Bulto individual", "40' High Cube", "40' estándar", "20' estándar", "Carga consolidada", "Palé"]
                 tipo_actual = str(paquete_editar[7] or "") if paquete_editar else ""
                 tipo_cont_in = st.selectbox(
                     "Tipo de carga",
@@ -14800,7 +16076,13 @@ elif es_rol_admin():
                 type="primary",
                 key=f"admin_pkg_guardar_{sufijo_editor}",
                 use_container_width=True,
+                disabled=not bool(paquete_editar),
             )
+            if not paquete_editar:
+                st.info(
+                    "Los paquetes nuevos se generan desde Aprobaciones después de validar el acuerdo de pago. "
+                    "Busque un tracking existente para editarlo."
+                )
 
         if guardar_paquete:
             cas_paquete = formatear_casillero(c_in)
@@ -14829,7 +16111,7 @@ elif es_rol_admin():
                 st.error("Los bultos verificados no pueden superar los bultos declarados.")
             elif estado_integridad_in == "Verificado" and int(bultos_verificados_in) != int(cantidad_bultos_in):
                 st.error("Para marcar el control como Verificado, todos los bultos deben estar comprobados.")
-            elif e_in in ESTADOS_LOGISTICOS and not recibido_in:
+            elif indice_estado_logistico(e_in) >= indice_estado_logistico("En Bodega China") and not recibido_in:
                 st.error("Confirme la recepción física en China antes de asignar un estado logístico normal.")
             elif (
                 indice_estado_logistico(e_in) >= indice_estado_logistico("En Consolidación")
@@ -14973,6 +16255,14 @@ elif es_rol_admin():
                                 "Recargue el registro antes de volver a intentarlo."
                             )
                             st.stop()
+                        cur.execute(
+                            "UPDATE paquetes SET tracking_externo=?, proveedor_nombre=? WHERE tracking=?",
+                            (
+                                tracking_externo_in.strip() or None,
+                                proveedor_paquete_in.strip() or None,
+                                tracking_limpio,
+                            ),
+                        )
                         datos_anteriores = {
                             "estado": anterior[0], "ubicacion": anterior[1], "eta": anterior[2],
                             "proximo_paso": anterior[3], "incidencia": anterior[4],
@@ -14993,6 +16283,8 @@ elif es_rol_admin():
                             "zona": zona_almacen_in.strip(), "integridad": estado_integridad_in,
                             "descripcion": d_in.strip(), "contenedor": cont_in.strip(),
                             "codigo_interno": codigo_interno,
+                            "tracking_externo": tracking_externo_in.strip(),
+                            "proveedor": proveedor_paquete_in.strip(),
                         }
                         mensaje_evento = mensaje_cliente_in.strip() or f"Estado confirmado: {e_in}."
                         tipo_movimiento = "ALTA" if anterior is None else (
@@ -15047,6 +16339,9 @@ elif es_rol_admin():
                     {
                         "Tracking": [p[0] for p in paquetes_admin],
                         "Folio interno": [p[18] or "Pendiente" for p in paquetes_admin],
+                        "Tracking externo": [p[25] or "Pendiente" for p in paquetes_admin],
+                        "ID envío": [p[26] or "—" for p in paquetes_admin],
+                        "Bulto": [p[27] or 1 for p in paquetes_admin],
                         "Casillero": [formatear_casillero(p[1]) for p in paquetes_admin],
                         "Contenedor": [p[3] or "—" for p in paquetes_admin],
                         "Tipo": [p[7] or "—" for p in paquetes_admin],
