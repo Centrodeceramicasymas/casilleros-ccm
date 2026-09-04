@@ -2683,8 +2683,7 @@ def cargar_notificaciones_cliente(casillero, incluir_ocultas=False):
         ).fetchall()
 
 
-@st.cache_data(ttl=10, show_spinner=False)
-def cargar_casos_cliente(casillero):
+def consultar_casos_soporte_db(casillero):
     cas = formatear_casillero(casillero)
     if not cas:
         return []
@@ -2703,7 +2702,23 @@ def cargar_casos_cliente(casillero):
 
 
 @st.cache_data(ttl=10, show_spinner=False)
-def cargar_mensajes_caso(caso_id, casillero):
+def cargar_casos_soporte_v2(casillero):
+    return consultar_casos_soporte_db(casillero)
+
+
+def obtener_casos_soporte(casillero):
+    """Usa caché y continúa con consulta directa si Streamlit invalida mal su clave."""
+    try:
+        return cargar_casos_soporte_v2(casillero)
+    except KeyError:
+        try:
+            cargar_casos_soporte_v2.clear()
+        except Exception:
+            pass
+        return consultar_casos_soporte_db(casillero)
+
+
+def consultar_hilo_soporte_db(caso_id, casillero):
     """Carga el hilo sin permitir consultar casos de otro casillero."""
     cas = formatear_casillero(casillero)
     if not cas:
@@ -2718,6 +2733,22 @@ def cargar_mensajes_caso(caso_id, casillero):
             """,
             (int(caso_id), cas),
         ).fetchall()
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def cargar_hilo_soporte_v2(caso_id, casillero):
+    return consultar_hilo_soporte_db(caso_id, casillero)
+
+
+def obtener_hilo_soporte(caso_id, casillero):
+    try:
+        return cargar_hilo_soporte_v2(caso_id, casillero)
+    except KeyError:
+        try:
+            cargar_hilo_soporte_v2.clear()
+        except Exception:
+            pass
+        return consultar_hilo_soporte_db(caso_id, casillero)
 
 
 def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=None):
@@ -2785,8 +2816,8 @@ def agregar_mensaje_caso(caso_id, casillero, autor_tipo, mensaje, nuevo_estado=N
                 "WHERE id=? AND codigo_casillero=?",
                 (estado, fecha, int(caso_id), cas),
             )
-    cargar_casos_cliente.clear()
-    cargar_mensajes_caso.clear()
+    cargar_casos_soporte_v2.clear()
+    cargar_hilo_soporte_v2.clear()
     return True
 
 
@@ -4457,7 +4488,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 use_container_width=True,
                 on_click=ir_a_fichas,
             )
-        casos_cliente = cargar_casos_cliente(cas_formato)
+        casos_cliente = obtener_casos_soporte(cas_formato)
         caso_activo = st.session_state.get("cliente_caso_activo")
         if caso_activo and not any(int(caso[0]) == int(caso_activo) for caso in casos_cliente):
             st.session_state.pop("cliente_caso_activo", None)
@@ -4530,7 +4561,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                         )
                         if caso_seleccionado:
                             caso_id = int(caso_seleccionado[0])
-                            mensajes = cargar_mensajes_caso(caso_id, cas_formato)
+                            mensajes = obtener_hilo_soporte(caso_id, cas_formato)
                             st.markdown(
                                 '<div class="support-thread-head">'
                                 f'<b>Conversación #{caso_id:04d} · {html.escape(str(caso_seleccionado[3]))}</b>'
@@ -4627,7 +4658,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                                 else:
                                     cursor.execute(sentencia_caso, parametros_caso)
                                     nuevo_caso_id = int(cursor.lastrowid)
-                            cargar_casos_cliente.clear()
+                            cargar_casos_soporte_v2.clear()
                             st.session_state["cliente_caso_activo"] = nuevo_caso_id
                             st.success("Solicitud registrada. Ya puede abrirla desde Mis solicitudes.")
                             st.rerun()
@@ -6130,6 +6161,14 @@ def asegurar_esquema_control_cliente():
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_casos_cliente_estado "
             "ON casos_cliente(codigo_casillero, estado, fecha_actualizacion DESC)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_casos_cliente_fecha "
+            "ON casos_cliente(codigo_casillero, fecha_actualizacion DESC, id DESC)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_todas "
+            "ON notificaciones_cliente(codigo_casillero, fecha_creacion DESC, id DESC)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_casos_mensajes_hilo "
@@ -8135,8 +8174,10 @@ def invalidar_cache_datos_admin():
     cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
-    cargar_casos_cliente.clear()
-    cargar_mensajes_caso.clear()
+    cargar_casos_soporte_v2.clear()
+    cargar_hilo_soporte_v2.clear()
+    cargar_clientes_control360_v2.clear()
+    cargar_expediente_control360_v2.clear()
 
 
 @st.dialog("Editar cuenta", width="large")
@@ -11850,6 +11891,55 @@ st.markdown(
 # ---------------------------------------------------------
 # 7. PANTALLA DE ACCESO PÚBLICA (LOGIN / REGISTRO / RECUPERACIÓN)
 # ---------------------------------------------------------
+@st.cache_data(ttl=30, show_spinner=False)
+def cargar_clientes_control360_v2():
+    """Evita repetir la consulta del directorio en cada interacción del panel."""
+    with get_db() as conn:
+        return conn.execute(
+            """
+            SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal,
+                   activo, dni, departamento, ciudad, direccion_exacta
+            FROM usuarios WHERE rol = 'cliente'
+            ORDER BY nombre_completo LIMIT 500
+            """
+        ).fetchall()
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def cargar_expediente_control360_v2(casillero):
+    """Agrupa las dos consultas operativas más costosas del expediente."""
+    cas = formatear_casillero(casillero)
+    with get_db() as conn:
+        cotizaciones = conn.execute(
+            """
+            SELECT id, total_usd, COALESCE(fecha_creacion, fecha), confirmada,
+                   COALESCE(estado, 'emitida'), fecha_confirmacion, tipo_carga,
+                   destino_entrega, detalle_tarifa, tarifa_snapshot_json
+            FROM cotizaciones WHERE codigo_casillero = ?
+            ORDER BY COALESCE(fecha_creacion, fecha) DESC, id DESC LIMIT 200
+            """,
+            (cas,),
+        ).fetchall()
+        paquetes = conn.execute(
+            """
+            SELECT p.tracking, p.descripcion, p.contenedor_id, p.estado, p.fecha_actualizacion,
+                   p.cotizacion_id, p.tipo_contenedor, p.recibido_bodega, p.pago_confirmado,
+                   p.costo_manipulacion_usd, p.fecha_recepcion, p.ubicacion_actual, p.eta,
+                   p.proximo_paso, p.incidencia, p.visible_cliente,
+                   COALESCE(c.estado_pago, 'Pendiente'), c.referencia_pago,
+                   c.comprobante_pago_url, COALESCE(c.estado_documentos, 'Bloqueados'),
+                   COALESCE(c.incidencia_estado, 'Sin incidencia'), c.responsable_incidencia,
+                   c.fecha_compromiso, c.receptor_entrega, c.fecha_entrega,
+                   c.evidencia_entrega_url, COALESCE(c.canal_notificacion, 'Portal')
+            FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
+            WHERE p.codigo_casillero = ?
+            ORDER BY p.fecha_actualizacion DESC LIMIT 200
+            """,
+            (cas,),
+        ).fetchall()
+    return cotizaciones, paquetes
+
+
 def pintar_control_cliente_360():
     """Expediente operativo completo, disponible únicamente para el superusuario."""
     st.markdown(
@@ -11890,6 +11980,11 @@ def pintar_control_cliente_360():
             .c360-message { max-width:88%; margin:7px 0; padding:10px 12px; color:#334155; background:#fff; border:1px solid #dbe3ee; border-radius:7px; font-size:.77rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
             .c360-message.client { margin-left:auto; background:#edf6ff; border-color:#bfd7f5; }
             .c360-message small { display:block; margin-bottom:4px; color:#64748b; font-size:.62rem; font-weight:800; }
+            .st-key-control360_nav [role="radiogroup"] { display:flex !important; gap:6px !important; padding:6px !important; overflow-x:auto !important; background:#eef3f8 !important; border:1px solid #d8e1ec !important; border-radius:9px !important; }
+            .st-key-control360_nav [role="radiogroup"] label { flex:1 0 auto !important; min-height:42px !important; margin:0 !important; padding:8px 13px !important; justify-content:center !important; background:#fff !important; border:1px solid #d7e0eb !important; border-radius:7px !important; box-shadow:0 1px 3px rgba(15,23,42,.05) !important; }
+            .st-key-control360_nav [role="radiogroup"] label:has(input:checked) { background:#0757c8 !important; border-color:#0757c8 !important; box-shadow:0 4px 10px rgba(7,87,200,.20) !important; }
+            .st-key-control360_nav [role="radiogroup"] label p { color:#334155 !important; -webkit-text-fill-color:#334155 !important; font-size:.76rem !important; font-weight:800 !important; white-space:nowrap; }
+            .st-key-control360_nav [role="radiogroup"] label:has(input:checked) p { color:#fff !important; -webkit-text-fill-color:#fff !important; }
             [data-testid="stTabs"] [data-baseweb="tab-list"] {
                 display:flex !important;
                 gap:6px !important;
@@ -11948,15 +12043,7 @@ def pintar_control_cliente_360():
         """,
         unsafe_allow_html=True,
     )
-    with get_db() as conn:
-        usuarios = conn.execute(
-            """
-            SELECT codigo_casillero, nombre_completo, correo_principal, telefono_principal,
-                   activo, dni, departamento, ciudad, direccion_exacta
-            FROM usuarios WHERE rol = 'cliente'
-            ORDER BY nombre_completo LIMIT 500
-            """
-        ).fetchall()
+    usuarios = cargar_clientes_control360_v2()
     if not usuarios:
         st.info("No hay cuentas de cliente registradas.")
         return
@@ -11980,35 +12067,8 @@ def pintar_control_cliente_360():
         unsafe_allow_html=True,
     )
 
-    with get_db() as conn:
-        cotizaciones = conn.execute(
-            """
-            SELECT id, total_usd, COALESCE(fecha_creacion, fecha), confirmada,
-                   COALESCE(estado, 'emitida'), fecha_confirmacion, tipo_carga,
-                   destino_entrega, detalle_tarifa, tarifa_snapshot_json
-            FROM cotizaciones WHERE codigo_casillero = ?
-            ORDER BY COALESCE(fecha_creacion, fecha) DESC, id DESC LIMIT 200
-            """,
-            (cas,),
-        ).fetchall()
-        paquetes = conn.execute(
-            """
-            SELECT p.tracking, p.descripcion, p.contenedor_id, p.estado, p.fecha_actualizacion,
-                   p.cotizacion_id, p.tipo_contenedor, p.recibido_bodega, p.pago_confirmado,
-                   p.costo_manipulacion_usd, p.fecha_recepcion, p.ubicacion_actual, p.eta,
-                   p.proximo_paso, p.incidencia, p.visible_cliente,
-                   COALESCE(c.estado_pago, 'Pendiente'), c.referencia_pago,
-                   c.comprobante_pago_url, COALESCE(c.estado_documentos, 'Bloqueados'),
-                   COALESCE(c.incidencia_estado, 'Sin incidencia'), c.responsable_incidencia,
-                   c.fecha_compromiso, c.receptor_entrega, c.fecha_entrega,
-                   c.evidencia_entrega_url, COALESCE(c.canal_notificacion, 'Portal')
-            FROM paquetes p LEFT JOIN control_envios c ON c.tracking = p.tracking
-            WHERE p.codigo_casillero = ?
-            ORDER BY p.fecha_actualizacion DESC LIMIT 200
-            """,
-            (cas,),
-        ).fetchall()
-    casos = cargar_casos_cliente(cas)
+    cotizaciones, paquetes = cargar_expediente_control360_v2(cas)
+    casos = obtener_casos_soporte(cas)
     notificaciones = cargar_notificaciones_cliente(cas, incluir_ocultas=True)
     pendientes = sum(1 for c in casos if str(c[5]) not in ("Resuelto", "Cerrado"))
     en_transito = sum(1 for p in paquetes if str(p[3]) not in ("Entregado", "Incidencia", "Retenido"))
@@ -12018,10 +12078,18 @@ def pintar_control_cliente_360():
     m3.metric("Casos abiertos", pendientes)
     m4.metric("Notificaciones", len(notificaciones))
 
-    tab_resumen, tab_cot, tab_env, tab_casos, tab_com, tab_seg = st.tabs(
-        ["Resumen", "Cotizaciones", "Envíos", "Casos", "Comunicaciones", "Seguridad"]
-    )
-    with tab_resumen:
+    secciones_control360 = [
+        "Resumen", "Cotizaciones", "Envíos", "Casos", "Comunicaciones", "Seguridad"
+    ]
+    with st.container(key="control360_nav"):
+        seccion_control360 = st.radio(
+            "Sección del expediente",
+            secciones_control360,
+            horizontal=True,
+            label_visibility="collapsed",
+            key=f"control360_seccion_{cas}",
+        )
+    if seccion_control360 == "Resumen":
         correo_texto = str(correo or "—")
         correo_href = "mailto:" + urllib.parse.quote(correo_texto, safe="@.+") if correo else ""
         correo_html = (
@@ -12060,7 +12128,7 @@ def pintar_control_cliente_360():
                 }, hide_index=True, use_container_width=True,
             )
 
-    with tab_cot:
+    if seccion_control360 == "Cotizaciones":
         if not cotizaciones:
             st.info("Este cliente todavía no tiene cotizaciones.")
         else:
@@ -12118,6 +12186,7 @@ def pintar_control_cliente_360():
                 cargar_estados_cotizaciones_db.clear()
                 cargar_cotizaciones_confirmadas_admin.clear()
                 cargar_resumen_operativo_admin.clear()
+                cargar_expediente_control360_v2.clear()
                 st.success("Cotización actualizada y registrada en el expediente.")
                 st.rerun()
             with st.expander("Detalle comercial guardado"):
@@ -12128,7 +12197,7 @@ def pintar_control_cliente_360():
                     except (TypeError, ValueError, json.JSONDecodeError):
                         st.code(str(cot[9]), language="text")
 
-    with tab_env:
+    if seccion_control360 == "Envíos":
         if not paquetes:
             st.info("No hay paquetes registrados para este cliente. Use la sección Paquetes para crear el primero.")
         else:
@@ -12329,10 +12398,11 @@ def pintar_control_cliente_360():
                     cargar_metricas_paquetes_admin.clear()
                     cargar_eventos_tracking_admin.clear()
                     cargar_resumen_operativo_admin.clear()
+                    cargar_expediente_control360_v2.clear()
                     st.success("Control del envío actualizado; el cliente recibió una notificación.")
                     st.rerun()
 
-    with tab_casos:
+    if seccion_control360 == "Casos":
         if not casos:
             st.info("No hay solicitudes o incidencias registradas.")
         else:
@@ -12355,7 +12425,7 @@ def pintar_control_cliente_360():
                 f'<span class="c360-case-status">{html.escape(str(caso[5]))}</span></div>',
                 unsafe_allow_html=True,
             )
-            mensajes_caso = cargar_mensajes_caso(caso_id, cas)
+            mensajes_caso = obtener_hilo_soporte(caso_id, cas)
             st.markdown(
                 '<div class="c360-message client"><small>Cliente · solicitud inicial</small>'
                 f'{html.escape(str(caso[4]))}</div>',
@@ -12430,7 +12500,7 @@ def pintar_control_cliente_360():
                         cas, f"Nueva respuesta al caso #{caso_id:04d}", respuesta_caso.strip(),
                         tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
                     )
-                    cargar_casos_cliente.clear()
+                    cargar_casos_soporte_v2.clear()
                     st.success("Respuesta agregada al historial y enviada al portal del cliente.")
                     st.rerun()
             if actualizar_solo_caso:
@@ -12441,7 +12511,7 @@ def pintar_control_cliente_360():
                         "fecha_actualizacion=? WHERE id=? AND codigo_casillero=?",
                         (estado_caso, prioridad_caso, fecha, caso_id, cas),
                     )
-                cargar_casos_cliente.clear()
+                cargar_casos_soporte_v2.clear()
                 if estado_caso != estado_actual_caso:
                     crear_notificacion_cliente(
                         cas, f"Estado del caso #{caso_id:04d}",
@@ -12451,7 +12521,7 @@ def pintar_control_cliente_360():
                 st.success("Estado y prioridad actualizados sin modificar la conversación.")
                 st.rerun()
 
-    with tab_com:
+    if seccion_control360 == "Comunicaciones":
         tipo_notif = st.selectbox("Tipo", ["Información", "Cotización", "Seguimiento", "Pago", "Documentos", "Soporte"], key=f"c360_not_tipo_{cas}")
         prioridad_notif = st.selectbox("Prioridad", ["Baja", "Normal", "Alta", "Urgente"], index=1, key=f"c360_not_prio_{cas}")
         titulo_notif = st.text_input("Título", max_chars=120, key=f"c360_not_titulo_{cas}")
@@ -12497,12 +12567,13 @@ def pintar_control_cliente_360():
                 st.success("Visibilidad de la notificación actualizada.")
                 st.rerun()
 
-    with tab_seg:
+    if seccion_control360 == "Seguridad":
         with st.container(key="control360_action"):
             cuenta_habilitada = st.toggle("Permitir inicio de sesión", value=bool(activo), key=f"c360_activo_{cas}")
             if st.button("Guardar estado de la cuenta", key=f"c360_activo_save_{cas}"):
                 with get_db() as conn:
                     conn.execute("UPDATE usuarios SET activo=? WHERE codigo_casillero=? AND rol='cliente'", (bool(cuenta_habilitada), cas))
+                cargar_clientes_control360_v2.clear()
                 st.success("Estado de acceso actualizado.")
                 st.rerun()
         clave_temporal = st.text_input("Nueva contraseña", type="password", key=f"c360_pwd_{cas}", placeholder="Vacío para generar una clave temporal")
@@ -15566,8 +15637,8 @@ elif es_rol_admin():
                                 cargar_estados_cotizaciones_db.clear()
                                 cargar_cotizaciones_confirmadas_admin.clear()
                                 cargar_resumen_operativo_admin.clear()
-                                cargar_casos_cliente.clear()
-                                cargar_mensajes_caso.clear()
+                                cargar_casos_soporte_v2.clear()
+                                cargar_hilo_soporte_v2.clear()
                                 st.success("Cuenta eliminada.")
                                 st.rerun()
 
