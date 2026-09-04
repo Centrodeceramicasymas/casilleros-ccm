@@ -8803,11 +8803,12 @@ st.markdown(
     }
 
     .app-header-blue {
-        background: linear-gradient(135deg, #004ac1 0%, #00368c 100%) !important;
-        padding: var(--header-blue-pad-y) var(--header-blue-pad-x) !important;
-        border-radius: 12px !important;
+        background: #0649ad !important;
+        padding: 14px 18px 15px !important;
+        border: 1px solid rgba(255, 255, 255, .12) !important;
+        border-radius: 8px !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 14px rgba(0, 74, 193, 0.22) !important;
+        box-shadow: 0 8px 20px rgba(4, 52, 126, .18) !important;
         max-width: 100% !important;
         width: 100% !important;
         box-sizing: border-box !important;
@@ -8816,7 +8817,7 @@ st.markdown(
         z-index: 10 !important;
         display: flex !important;
         flex-direction: column !important;
-        gap: 1px !important;
+        gap: 3px !important;
         container-type: inline-size;
         overflow: hidden !important;
     }
@@ -8830,9 +8831,9 @@ st.markdown(
         justify-content: center !important;
         width: 100% !important;
         min-width: 0 !important;
-        margin: 0 0 6px 0 !important;
-        padding: 2px 0 8px 0 !important;
-        border-bottom: 1px solid rgba(219, 234, 254, 0.35) !important;
+        margin: 0 0 9px 0 !important;
+        padding: 0 0 10px 0 !important;
+        border-bottom: 1px solid rgba(219, 234, 254, .38) !important;
         box-sizing: border-box !important;
     }
 
@@ -8840,11 +8841,12 @@ st.markdown(
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
-        gap: 1px !important;
+        align-items: center !important;
+        gap: 4px !important;
         width: 100% !important;
         min-width: 0 !important;
-        text-align: left !important;
-        text-align-last: left !important;
+        text-align: center !important;
+        text-align-last: center !important;
     }
 
     .app-header-brand {
@@ -8852,7 +8854,7 @@ st.markdown(
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 !important;
-        padding: 0 2px !important;
+        padding: 0 4px !important;
         box-sizing: border-box !important;
         border-bottom: none !important;
         color: #ffffff !important;
@@ -8862,10 +8864,10 @@ st.markdown(
         text-wrap: nowrap !important;
         text-align: center !important;
         text-align-last: center !important;
-        letter-spacing: 0.04em !important;
-        word-spacing: 0.02em !important;
+        letter-spacing: 0 !important;
+        word-spacing: 0 !important;
         line-height: 1.2 !important;
-        font-size: var(--brand-size) !important;
+        font-size: clamp(1rem, 3.9vw, 1.22rem) !important;
         overflow: hidden !important;
         text-overflow: clip !important;
     }
@@ -8873,13 +8875,14 @@ st.markdown(
     .st-key-sticky_top_header [data-testid="stMarkdown"],
     .st-key-sticky_top_header [data-testid="stMarkdown"] p,
     .st-key-sticky_top_header [data-testid="stMarkdownContainer"] {
-        text-align: left !important;
-        text-align-last: left !important;
+        text-align: center !important;
+        text-align-last: center !important;
         word-spacing: normal !important;
     }
 
     .app-greeting-title {
-        font-size: var(--greeting-title) !important;
+        width: 100% !important;
+        font-size: clamp(1.05rem, 4.5vw, 1.32rem) !important;
         font-weight: 800 !important;
         margin: 0 !important;
         color: #ffffff !important;
@@ -8889,6 +8892,8 @@ st.markdown(
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         max-width: 100% !important;
+        text-align: center !important;
+        text-align-last: center !important;
     }
 
     /* Acceso público: imagen operativa y formulario en una sola composición. */
@@ -9256,15 +9261,18 @@ st.markdown(
     }
 
     .app-greeting-sub {
-        font-size: var(--greeting-sub) !important;
+        width: 100% !important;
+        font-size: clamp(.76rem, 3.2vw, .9rem) !important;
         color: #dbeafe !important;
-        margin-top: 0 !important;
-        font-weight: 500 !important;
+        margin-top: 1px !important;
+        font-weight: 600 !important;
         line-height: 1.35 !important;
-        white-space: normal !important;
-        overflow-wrap: break-word !important;
-        word-break: break-word !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
         max-width: 100% !important;
+        text-align: center !important;
+        text-align-last: center !important;
     }
 
     .app-header-casillero,
@@ -9276,13 +9284,18 @@ st.markdown(
     }
 
     .app-header-time {
-        font-size: var(--greeting-time) !important;
-        color: #bfdbfe !important;
-        margin-top: 2px !important;
+        width: 100% !important;
+        font-size: clamp(.71rem, 3vw, .82rem) !important;
+        color: #d6e7ff !important;
+        margin-top: 3px !important;
         font-weight: 600 !important;
         line-height: 1.35 !important;
-        white-space: normal !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
         max-width: 100% !important;
+        text-align: center !important;
+        text-align-last: center !important;
     }
 
     /* iPhone / Android compacto */
@@ -9297,27 +9310,26 @@ st.markdown(
             --sticky-delivery: 0px;
         }
         .app-header-blue {
-            border-radius: 11px !important;
+            padding: 13px 12px 14px !important;
+            border-radius: 8px !important;
             margin-bottom: 3px !important;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
-            font-size: clamp(1.05rem, 0.55rem + 2.6vw, 1.2rem) !important;
-            letter-spacing: 0.02em !important;
+            font-size: clamp(.96rem, 4.3vw, 1.12rem) !important;
+            letter-spacing: 0 !important;
         }
         .app-greeting-sub {
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 2px !important;
+            display: block !important;
+            white-space: nowrap !important;
         }
         .app-header-sep {
-            display: none !important;
+            display: inline !important;
         }
         .app-header-casillero,
         .app-header-cots {
-            display: block !important;
+            display: inline !important;
         }
         .inicio-placeholder { min-height: 260px; }
         .inicio-placeholder-body { min-height: 180px; }
@@ -9337,13 +9349,13 @@ st.markdown(
             --header-blue-pad-x: 14px;
         }
         .app-header-blue {
-            border-radius: 14px !important;
+            border-radius: 8px !important;
         }
         .app-header-brand {
             white-space: nowrap !important;
             text-wrap: nowrap !important;
             font-size: clamp(1.12rem, 0.7rem + 1.8vw, 1.25rem) !important;
-            letter-spacing: 0.035em !important;
+            letter-spacing: 0 !important;
         }
     }
 
@@ -9357,10 +9369,10 @@ st.markdown(
             --header-blue-pad-y: 14px;
             --header-blue-pad-x: 18px;
         }
-        .app-header-blue { border-radius: 16px !important; margin-bottom: 8px !important; }
+        .app-header-blue { border-radius: 8px !important; margin-bottom: 8px !important; }
         .app-header-brand {
             font-size: clamp(1.25rem, 0.85rem + 1.1vw, 1.4rem) !important;
-            letter-spacing: 0.045em !important;
+            letter-spacing: 0 !important;
         }
         .app-greeting-sub {
             white-space: nowrap !important;
@@ -9383,10 +9395,10 @@ st.markdown(
             --header-blue-pad-y: 16px;
             --header-blue-pad-x: 22px;
         }
-        .app-header-blue { border-radius: 18px !important; margin-bottom: 10px !important; }
+        .app-header-blue { border-radius: 8px !important; margin-bottom: 10px !important; }
         .app-header-brand {
             font-size: clamp(1.45rem, 1.05rem + 0.7vw, 1.65rem) !important;
-            letter-spacing: 0.05em !important;
+            letter-spacing: 0 !important;
         }
         .app-greeting-sub {
             white-space: nowrap !important;
