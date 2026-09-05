@@ -37,7 +37,7 @@ st.set_page_config(
 # Cliente AliExpress inlined: Streamlit Cloud a veces no incluye módulos extra.
 APP_KEY_DEFAULT = "544082"
 GATEWAY_DEFAULT = "https://api-sg.aliexpress.com/sync"
-TIMEOUT_S = 25
+TIMEOUT_S = 15
 PAGE_SIZE = 20
 TZ_CN = timezone(timedelta(hours=8))
 ENLACE_POLITICAS_ENVIO = (
@@ -865,6 +865,37 @@ if USA_SUPABASE:
     sqlite3.OperationalError = psycopg.OperationalError
 
 
+def reemplazar_marcadores_qmark(sql):
+    """Convierte parámetros qmark sin alterar signos ? dentro de literales SQL."""
+    salida = []
+    comilla_simple = False
+    comilla_doble = False
+    indice = 0
+    while indice < len(sql):
+        caracter = sql[indice]
+        siguiente = sql[indice + 1] if indice + 1 < len(sql) else ""
+        if caracter == "'" and not comilla_doble:
+            salida.append(caracter)
+            if comilla_simple and siguiente == "'":
+                salida.append(siguiente)
+                indice += 2
+                continue
+            comilla_simple = not comilla_simple
+        elif caracter == '"' and not comilla_simple:
+            salida.append(caracter)
+            if comilla_doble and siguiente == '"':
+                salida.append(siguiente)
+                indice += 2
+                continue
+            comilla_doble = not comilla_doble
+        elif caracter == "?" and not comilla_simple and not comilla_doble:
+            salida.append("%s")
+        else:
+            salida.append(caracter)
+        indice += 1
+    return "".join(salida)
+
+
 def traducir_sql_postgres(sql):
     """Compatibilidad temporal entre las consultas históricas SQLite y PostgreSQL."""
     sql_pg = str(sql)
@@ -911,7 +942,7 @@ def traducir_sql_postgres(sql):
         sql_pg = re.sub(
             rf"\b{campo_bool}\s*=\s*0\b", f"{campo_bool} = FALSE", sql_pg, flags=re.I
         )
-    return sql_pg.replace("?", "%s")
+    return reemplazar_marcadores_qmark(sql_pg)
 
 
 class CursorPostgresCompatible:
@@ -1426,6 +1457,15 @@ CLAVE_INICIAL_SUPERADMIN = leer_clave_inicial_superadmin()
 # Hubs y módulos base siguen abiertos; Envíos solo se ve en la barra al abrir Mis Cotizaciones.
 # En producción los permisos deben salir de la tabla permisos_usuario.
 PERMISOS_ABIERTOS_TEMPORAL = False
+try:
+    _registro_autoactivo_valor = st.secrets.get(
+        "CCM_REGISTRO_AUTOACTIVO", os.environ.get("CCM_REGISTRO_AUTOACTIVO", "false")
+    )
+except Exception:
+    _registro_autoactivo_valor = os.environ.get("CCM_REGISTRO_AUTOACTIVO", "false")
+REGISTRO_PUBLICO_AUTOACTIVO = str(_registro_autoactivo_valor).strip().lower() in (
+    "1", "true", "yes", "si", "sí"
+)
 HUB_PERMISO_COL = {"china": "hub_china", "eeuu": "hub_eeuu", "honduras": "hub_honduras"}
 MODULO_PERMISO_COL = {
     "Cotizador": "mod_cotizador",
@@ -1733,6 +1773,23 @@ def cargar_cotizaciones_db(casillero):
         return cur.fetchall()
 
 
+@st.cache_data(ttl=20, show_spinner=False, max_entries=2048)
+def cargar_total_cotizaciones_cliente(casillero):
+    """Conteo liviano para el encabezado; evita cargar hasta 500 filas en cada vista."""
+    cas = formatear_casillero(casillero or "")
+    variantes = coincidencias_casillero(cas)
+    if not variantes:
+        return 0
+    marcadores = ",".join("?" for _ in variantes)
+    with get_db() as conn:
+        fila = conn.execute(
+            f"SELECT COUNT(*) FROM cotizaciones WHERE codigo_casillero IN ({marcadores}) "
+            "AND (COALESCE(confirmada, FALSE) = TRUE OR COALESCE(estado, 'emitida') <> 'vencida')",
+            tuple(variantes),
+        ).fetchone()
+    return int((fila or (0,))[0] or 0)
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def cargar_confirmaciones_db(casillero):
     """Reutiliza el snapshot limitado de cotizaciones; no abre otra conexión."""
@@ -1762,8 +1819,8 @@ def cargar_estados_cotizaciones_db(casillero):
     return {int(fila[0]): str(fila[1] or "emitida") for fila in filas}
 
 
-@st.cache_data(ttl=15, show_spinner=False)
-def cargar_paquetes_db(casillero):
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_paquetes_db(casillero, version_cache=0):
     """Snapshot breve de paquetes para que la navegación no abra otra conexión."""
     cas = formatear_casillero(casillero or "")
     if not cas:
@@ -1798,8 +1855,8 @@ def cargar_paquetes_db(casillero):
         ).fetchall()
 
 
-@st.cache_data(ttl=15, show_spinner=False)
-def cargar_eventos_tracking_db(casillero):
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_eventos_tracking_db(casillero, version_cache=0):
     """Eventos visibles del casillero para construir una línea de tiempo real."""
     cas = formatear_casillero(casillero or "")
     if not cas:
@@ -1811,14 +1868,14 @@ def cargar_eventos_tracking_db(casillero):
             FROM eventos_tracking
             WHERE codigo_casillero = ? AND COALESCE(visible_cliente, TRUE) = TRUE
             ORDER BY fecha_evento DESC, id DESC
-            LIMIT 1000
+            LIMIT 500
             """,
             (cas,),
         ).fetchall()
 
 
-@st.cache_data(ttl=10, show_spinner=False)
-def cargar_trazabilidad_cliente_db(casillero):
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_trazabilidad_cliente_db(casillero, version_cache=0):
     cas = formatear_casillero(casillero or "")
     if not cas:
         return []
@@ -1830,17 +1887,18 @@ def cargar_trazabilidad_cliente_db(casillero):
             FROM trazabilidad_paquetes
             WHERE codigo_casillero = ? AND visible_cliente = TRUE
             ORDER BY fecha_evento DESC, secuencia DESC
-            LIMIT 2000
+            LIMIT 1000
             """,
             (cas,),
         ).fetchall()
 
 
 def refrescar_seguimiento_cliente():
-    cargar_paquetes_db.clear()
-    cargar_eventos_tracking_db.clear()
-    cargar_trazabilidad_cliente_db.clear()
-    cargar_notificaciones_cliente.clear()
+    # Una versión de sesión fuerza una lectura nueva solo para este cliente.
+    # Limpiar el decorador completo expulsaba la caché de todos los usuarios.
+    st.session_state["_seguimiento_cache_version"] = (
+        int(st.session_state.get("_seguimiento_cache_version") or 0) + 1
+    )
     st.session_state["_seguimiento_actualizado_en"] = obtener_tiempo_honduras().strftime("%H:%M:%S")
 
 
@@ -2295,12 +2353,15 @@ def aprobar_y_generar_tracking_cotizacion(
         return False, "La cantidad de bultos debe estar entre 1 y 500.", None
     with get_db() as conn:
         cur = conn.cursor()
+        if not USA_SUPABASE:
+            cur.execute("BEGIN IMMEDIATE")
+        bloqueo_cotizacion = " FOR UPDATE" if USA_SUPABASE else ""
         cur.execute(
             """
             SELECT codigo_casillero, COALESCE(confirmada, FALSE), total_usd,
                    tipo_carga, destino_entrega
             FROM cotizaciones WHERE id = ?
-            """,
+            """ + bloqueo_cotizacion,
             (int(cotizacion_id),),
         )
         cot = cur.fetchone()
@@ -2439,13 +2500,16 @@ def registrar_recepcion_bodega(
     actor = st.session_state.get("usuario") or "superadmin"
     with get_db() as conn:
         cur = conn.cursor()
+        if not USA_SUPABASE:
+            cur.execute("BEGIN IMMEDIATE")
+        bloqueo_paquete = " FOR UPDATE" if USA_SUPABASE else ""
         cur.execute(
             """
             SELECT tracking, codigo_casillero, estado, recibido_bodega,
                    etiqueta_estado, numero_bulto, envio_id, descripcion,
                    ubicacion_actual, responsable_actual, zona_almacen, cotizacion_id
             FROM paquetes WHERE UPPER(TRIM(codigo_interno)) = UPPER(TRIM(?))
-            """,
+            """ + bloqueo_paquete,
             (codigo,),
         )
         paquete = cur.fetchone()
@@ -2686,6 +2750,21 @@ def cargar_notificaciones_cliente(casillero, incluir_ocultas=False):
             """,
             (cas,),
         ).fetchall()
+
+
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def contar_notificaciones_no_leidas(casillero):
+    """Obtiene solo el número que necesita la campana del encabezado."""
+    cas = formatear_casillero(casillero)
+    if not cas:
+        return 0
+    with get_db() as conn:
+        fila = conn.execute(
+            "SELECT COUNT(*) FROM notificaciones_cliente "
+            "WHERE codigo_casillero = ? AND visible = TRUE AND leida = FALSE",
+            (cas,),
+        ).fetchone()
+    return int((fila or (0,))[0] or 0)
 
 
 def consultar_casos_soporte_db(casillero):
@@ -2939,6 +3018,7 @@ def crear_notificacion_cliente(
             ),
         )
     cargar_notificaciones_cliente.clear()
+    contar_notificaciones_no_leidas.clear()
     return True
 
 
@@ -2952,6 +3032,7 @@ def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
             (bool(visible), int(notificacion_id), cas),
         )
     cargar_notificaciones_cliente.clear()
+    contar_notificaciones_no_leidas.clear()
 
 
 def marcar_todas_notificaciones_cliente(casillero):
@@ -2966,6 +3047,7 @@ def marcar_todas_notificaciones_cliente(casillero):
             (cas,),
         )
     cargar_notificaciones_cliente.clear()
+    contar_notificaciones_no_leidas.clear()
 
 
 def pintar_centro_notificaciones_cliente(casillero):
@@ -3232,20 +3314,6 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
     try:
         with get_db() as conn:
             cur = conn.cursor()
-            if USA_SUPABASE:
-                cur.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_schema = 'public' AND table_name = 'cotizaciones'"
-                )
-                columnas = {fila[0] for fila in cur.fetchall()}
-            else:
-                columnas = {fila[1] for fila in cur.execute("PRAGMA table_info(cotizaciones)").fetchall()}
-            requeridas = {"id", "codigo_casillero", "confirmada", "fecha_confirmacion"}
-            faltantes = sorted(requeridas - columnas)
-            if faltantes:
-                raise sqlite3.OperationalError(
-                    "Faltan columnas en cotizaciones: " + ", ".join(faltantes)
-                )
             # El ID es la llave primaria global de la cotización. Verificar la
             # fila antes de actualizar evita que variaciones CCM-/sin prefijo
             # impidan confirmar una tarifa que ya fue mostrada al cliente.
@@ -3299,6 +3367,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         # La siguiente ejecución debe leer la confirmación recién persistida,
         # nunca el resultado anterior guardado por la caché.
         cargar_cotizaciones_db.clear()
+        cargar_total_cotizaciones_cliente.clear()
         cargar_estados_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
         cargar_cotizaciones_confirmadas_admin.clear()
@@ -3426,6 +3495,7 @@ def emitir_tarifa_desde_snapshot():
             id_generado = cur.lastrowid
             conn.commit()
         cargar_cotizaciones_db.clear()
+        cargar_total_cotizaciones_cliente.clear()
         cargar_estados_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
         cargar_resumen_operativo_admin.clear()
@@ -3975,9 +4045,8 @@ def ir_a(vista, hub="_omit"):
         preparar_nueva_cotizacion()
     st.session_state["sub_tab_inicio"] = vista
     st.session_state["vista_activa"] = vista
-    cas = formatear_casillero(st.session_state.get("casillero", ""))
-    if cas:
-        st.query_params["casillero"] = cas
+    if "casillero" in st.query_params:
+        del st.query_params["casillero"]
     st.query_params["vista"] = vista
     hub_actual = st.session_state.get("hub")
     if hub_actual:
@@ -4256,6 +4325,13 @@ def html_globo_guia():
 
 def aplicar_clase_guia_js():
     paso = guia_paso_actual() if guia_esta_activa() else 0
+    guia_js_previamente_activa = bool(st.session_state.get("_guia_js_previamente_activa"))
+    if paso <= 0 and not guia_js_previamente_activa:
+        return
+    if paso > 0:
+        st.session_state["_guia_js_previamente_activa"] = True
+    else:
+        st.session_state.pop("_guia_js_previamente_activa", None)
     components.html(
         f"""
         <script>
@@ -5753,7 +5829,11 @@ def estado_intentos_acceso():
 def clave_intento_acceso(identificador):
     bruto = str(identificador or "").strip()
     normalizado = normalizar_correo(bruto) if "@" in bruto else formatear_casillero(bruto).upper()
-    return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
+    try:
+        ip_cliente = str(getattr(st.context, "ip_address", "") or "").strip()
+    except Exception:
+        ip_cliente = ""
+    return hashlib.sha256(f"{normalizado}|{ip_cliente}".encode("utf-8")).hexdigest()
 
 
 def comprobar_limite_acceso(identificador, max_intentos=5, ventana_s=600, bloqueo_s=300):
@@ -6108,12 +6188,32 @@ def asegurar_indices_rendimiento():
         "ON usuarios(rol, nombre_completo)",
         "CREATE INDEX IF NOT EXISTS idx_carrito_casillero_sku "
         "ON carrito_catalogo(codigo_casillero, sku)",
+        "CREATE INDEX IF NOT EXISTS idx_paquetes_codigo_interno_normalizado "
+        "ON paquetes(UPPER(TRIM(codigo_interno)))",
+        "CREATE INDEX IF NOT EXISTS idx_paquetes_tracking_externo_normalizado "
+        "ON paquetes(UPPER(TRIM(tracking_externo)))",
     )
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             for sentencia in sentencias:
                 cursor.execute(sentencia)
+            dni_duplicado = cursor.execute(
+                "SELECT TRIM(dni), COUNT(*) FROM usuarios "
+                "WHERE dni IS NOT NULL AND TRIM(dni) <> '' "
+                "GROUP BY TRIM(dni) HAVING COUNT(*) > 1 LIMIT 1"
+            ).fetchone()
+            if dni_duplicado is None:
+                cursor.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_dni_unico "
+                    "ON usuarios(TRIM(dni)) WHERE dni IS NOT NULL AND TRIM(dni) <> ''"
+                )
+            else:
+                print(
+                    "[CCM integridad] Hay identidades duplicadas; el índice único de DNI "
+                    "se activará después de depurarlas.",
+                    flush=True,
+                )
             conn.commit()
         return True
     except Exception as exc:
@@ -6566,6 +6666,18 @@ def registrar_trazabilidad_paquete(
     cas = formatear_casillero(casillero) if "formatear_casillero" in globals() else str(casillero or "").strip()
     if not tracking_limpio or not cas:
         raise ValueError("Tracking y casillero son obligatorios para registrar trazabilidad.")
+    # Serializa la asignación de secuencia por paquete. Sin este bloqueo, dos
+    # operadores podían calcular simultáneamente el mismo MAX(secuencia) + 1.
+    if USA_SUPABASE:
+        cursor.execute(
+            "SELECT tracking FROM paquetes WHERE tracking = ? FOR UPDATE",
+            (tracking_limpio,),
+        )
+    else:
+        cursor.execute(
+            "UPDATE paquetes SET tracking = tracking WHERE tracking = ?",
+            (tracking_limpio,),
+        )
     cursor.execute(
         "SELECT secuencia, hash_evento FROM trazabilidad_paquetes "
         "WHERE tracking = ? ORDER BY secuencia DESC LIMIT 1",
@@ -6953,14 +7065,31 @@ def asegurar_esquema_flujo_tracking():
 @st.cache_resource(show_spinner=False)
 def inicializar_persistencia_v3():
     """Prepara esquema e índices una vez por proceso, no una vez por botón."""
-    init_db()
-    asegurar_esquema_cotizaciones()
-    asegurar_esquema_paquetes_operativo()
-    asegurar_esquema_control_cliente()
-    asegurar_esquema_trazabilidad_absoluta()
-    asegurar_esquema_flujo_tracking()
-    asegurar_esquema_direcciones()
-    asegurar_indices_rendimiento()
+    conexion_bloqueo = None
+    cursor_bloqueo = None
+    try:
+        if USA_SUPABASE:
+            # Bloqueo de sesión dedicado: evita que dos réplicas ejecuten ALTER
+            # TABLE al mismo tiempo durante un despliegue o reinicio simultáneo.
+            conexion_bloqueo = psycopg.connect(DATABASE_URL, connect_timeout=20)
+            cursor_bloqueo = conexion_bloqueo.cursor()
+            cursor_bloqueo.execute("SELECT pg_advisory_lock(%s)", (74219032,))
+        init_db()
+        asegurar_esquema_cotizaciones()
+        asegurar_esquema_paquetes_operativo()
+        asegurar_esquema_control_cliente()
+        asegurar_esquema_trazabilidad_absoluta()
+        asegurar_esquema_flujo_tracking()
+        asegurar_esquema_direcciones()
+        asegurar_indices_rendimiento()
+    finally:
+        if cursor_bloqueo is not None:
+            try:
+                cursor_bloqueo.execute("SELECT pg_advisory_unlock(%s)", (74219032,))
+            finally:
+                cursor_bloqueo.close()
+        if conexion_bloqueo is not None:
+            conexion_bloqueo.close()
     return True
 
 
@@ -7263,16 +7392,19 @@ def normalizar_rol(rol):
 
 
 def permisos_default(rol="cliente"):
-    return {
+    permisos = {
         "hub_china": 1,
-        "hub_eeuu": 1,
-        "hub_honduras": 1,
+        "hub_eeuu": 0,
+        "hub_honduras": 0,
         "mod_cotizador": 1,
         "mod_catalogo": 1,
         "mod_cotizaciones": 1,
         "mod_envios": 1,
         "mod_fichas": 1,
     }
+    if normalizar_rol(rol) in ROLES_ADMIN:
+        permisos.update({"hub_eeuu": 1, "hub_honduras": 1})
+    return permisos
 
 
 def permisos_denegados():
@@ -7331,19 +7463,6 @@ def asegurar_permisos_casillero(casillero, rol="cliente"):
                 ),
             )
     st.session_state.pop(f"_ccm_permisos_{cas}", None)
-
-
-def abrir_permisos_todos_los_usuarios():
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
-            """
-            UPDATE permisos_usuario SET
-                hub_china=TRUE, hub_eeuu=TRUE, hub_honduras=TRUE,
-                mod_cotizador=TRUE, mod_catalogo=TRUE, mod_cotizaciones=TRUE, mod_envios=TRUE, mod_fichas=TRUE
-            """
-        )
-        conn.commit()
 
 
 def permisos_de(casillero=None):
@@ -7607,7 +7726,6 @@ if not st.session_state.get("_ccm_arranque_db_realizado"):
     if not USA_SUPABASE:
         migrar_prefijo_casillero()
         asegurar_superadmin()
-        abrir_permisos_todos_los_usuarios()
         restaurar_datos_operativos_cliente()
     st.session_state["_ccm_arranque_db_realizado"] = True
 purgar_cotizaciones_si_corresponde()
@@ -8038,6 +8156,17 @@ def consultar_producto_enlace_eeuu(enlace):
             timeout=(3.05, 8),
         )
         respuesta.raise_for_status()
+        tipo_contenido = respuesta.headers.get("content-type", "").lower()
+        if tipo_contenido and not any(
+            permitido in tipo_contenido
+            for permitido in ("text/html", "application/xhtml+xml")
+        ):
+            respuesta.close()
+            return {"error": "El enlace no devolvió una página HTML de producto."}
+        longitud_declarada = respuesta.headers.get("content-length", "")
+        if longitud_declarada.isdigit() and int(longitud_declarada) > 2_500_000:
+            respuesta.close()
+            return {"error": "La página es demasiado grande para procesarla automáticamente."}
         contenido = bytearray()
         for bloque in respuesta.iter_content(chunk_size=65536):
             contenido.extend(bloque)
@@ -8307,7 +8436,10 @@ def pintar_cotizador_eeuu(casillero):
                     st.warning("La tienda no publicó datos accesibles. Complete los campos manualmente o use una captura del producto.")
         foto_manual = st.file_uploader("Si la tienda bloquea la imagen, sube una foto del producto", type=["jpg", "jpeg", "png", "webp"], key="us_foto_manual")
         if foto_manual:
-            st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
+            if int(getattr(foto_manual, "size", 0) or 0) > 8_000_000:
+                st.error("La imagen supera el límite de 8 MB. Redúzcala antes de continuar.")
+            else:
+                st.session_state["us_imagen_producto_bytes"] = foto_manual.getvalue()
     imagen_producto = st.session_state.get("us_imagen_producto_bytes") or st.session_state.get("us_imagen_producto")
 
     st.markdown("<div class='usq-section-title'><span>3</span> Detalles del paquete</div>", unsafe_allow_html=True)
@@ -8486,8 +8618,8 @@ if st.session_state.get("autenticado", False):
     if cas_actual:
         st.session_state["casillero"] = cas_actual
         try:
-            if st.query_params.get("casillero") != cas_actual:
-                st.query_params["casillero"] = cas_actual
+            if "casillero" in st.query_params:
+                del st.query_params["casillero"]
         except Exception:
             pass
 
@@ -8546,6 +8678,7 @@ def logout():
         "_ccm_control360_expediente_cache_v3",
         "_ccm_soporte_casos_cache_v3",
         "_ccm_soporte_hilo_cache_v3",
+        "_session_password_fingerprint",
     ]:
         st.session_state.pop(k, None)
     prefijos_soporte = (
@@ -8563,6 +8696,26 @@ def logout():
     st.rerun()
 
 
+@st.cache_data(ttl=30, show_spinner=False, max_entries=2048)
+def cargar_estado_cuenta_sesion(casillero, correo):
+    """Revalida activación, rol y credenciales sin consultar la BD en cada clic."""
+    cas = formatear_casillero(casillero)
+    correo_normalizado = normalizar_correo(correo)
+    if not cas or not correo_normalizado:
+        return None
+    with get_db() as conn:
+        fila = conn.execute(
+            "SELECT rol, activo, password_hash FROM usuarios "
+            "WHERE codigo_casillero = ? AND LOWER(TRIM(correo_principal)) = ?",
+            (cas, correo_normalizado),
+        ).fetchone()
+    if not fila:
+        return None
+    return str(fila[0] or "cliente"), bool(fila[1]), hashlib.sha256(
+        str(fila[2] or "").encode("utf-8")
+    ).hexdigest()
+
+
 def abrir_creacion_usuario_admin():
     st.session_state["_admin_dialog_crear"] = True
     st.session_state["_admin_user_table_version"] = (
@@ -8570,13 +8723,61 @@ def abrir_creacion_usuario_admin():
     )
 
 
+@st.cache_data(ttl=20, show_spinner=False, max_entries=4)
+def cargar_resumen_usuarios_admin(incluir_administradores):
+    """Agrupa las cuatro consultas del panel y evita repetirlas en cada widget."""
+    with get_db() as conn:
+        c = conn.cursor()
+        if incluir_administradores:
+            c.execute(
+                """
+                SELECT id, codigo_casillero, nombre_completo, dni, correo_principal,
+                       telefono_principal, departamento, ciudad, direccion_exacta, rol, activo
+                FROM usuarios ORDER BY rol DESC, nombre_completo LIMIT 500
+                """
+            )
+        else:
+            c.execute(
+                """
+                SELECT id, codigo_casillero, nombre_completo, dni, correo_principal,
+                       telefono_principal, departamento, ciudad, direccion_exacta, rol, activo
+                FROM usuarios WHERE rol = 'cliente' ORDER BY nombre_completo LIMIT 500
+                """
+            )
+        filas = c.fetchall()
+        filtro_metricas = "" if incluir_administradores else "WHERE rol = 'cliente'"
+        c.execute(
+            f"""
+            SELECT COUNT(*),
+                   SUM(CASE WHEN activo = TRUE THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN rol IN ('admin', 'superadmin') THEN 1 ELSE 0 END)
+            FROM usuarios {filtro_metricas}
+            """
+        )
+        metricas = c.fetchone() or (0, 0, 0)
+        c.execute("SELECT codigo_casillero, COUNT(*) FROM cotizaciones GROUP BY codigo_casillero")
+        cotizaciones = {str(cas): int(total or 0) for cas, total in c.fetchall()}
+        c.execute(
+            "SELECT codigo_casillero, COUNT(*), MAX(fecha_actualizacion) "
+            "FROM paquetes GROUP BY codigo_casillero"
+        )
+        paquetes = {
+            str(cas): (int(total or 0), ultima or "—")
+            for cas, total, ultima in c.fetchall()
+        }
+    return filas, metricas, cotizaciones, paquetes
+
+
 def reiniciar_tabla_usuarios_admin():
+    cargar_resumen_usuarios_admin.clear()
+    cargar_estado_cuenta_sesion.clear()
     st.session_state["_admin_user_table_version"] = (
         int(st.session_state.get("_admin_user_table_version") or 0) + 1
     )
 
 
 def invalidar_cache_datos_admin():
+    cargar_resumen_usuarios_admin.clear()
     cargar_paquetes_db.clear()
     cargar_eventos_tracking_db.clear()
     cargar_paquetes_admin.clear()
@@ -8660,6 +8861,7 @@ def dialogo_editar_usuario_admin(usuario, root=False):
             clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
             with get_db() as conn:
                 conn.execute("UPDATE usuarios SET password_hash=? WHERE id=?", (hash_pwd(clave), uid))
+            cargar_estado_cuenta_sesion.clear()
             st.success("Contraseña actualizada. Se muestra una sola vez.")
             st.code(clave, language="text")
         if rol_u != "superadmin":
@@ -8727,6 +8929,7 @@ def dialogo_editar_usuario_admin(usuario, root=False):
                         n_dir.strip(), nuevo_cas, n_rol, bool(n_act), uid,
                     ),
                 )
+            cargar_estado_cuenta_sesion.clear()
             guardar_permisos(
                 nuevo_cas,
                 {
@@ -13587,6 +13790,7 @@ def pintar_control_cliente_360():
             if st.button("Guardar estado de la cuenta", key=f"c360_activo_save_{cas}"):
                 with get_db() as conn:
                     conn.execute("UPDATE usuarios SET activo=? WHERE codigo_casillero=? AND rol='cliente'", (bool(cuenta_habilitada), cas))
+                cargar_estado_cuenta_sesion.clear()
                 invalidar_cache_clientes_control360()
                 st.success("Estado de acceso actualizado.")
                 st.rerun()
@@ -13595,6 +13799,7 @@ def pintar_control_cliente_360():
             clave = clave_temporal.strip() or generar_clave_provisional()
             with get_db() as conn:
                 conn.execute("UPDATE usuarios SET password_hash=? WHERE codigo_casillero=? AND rol='cliente'", (hash_pwd(clave), cas))
+            cargar_estado_cuenta_sesion.clear()
             st.success("Contraseña restablecida. Comparta la clave por un canal privado.")
             st.code(clave, language="text")
         st.markdown('<div class="control360-section">Permisos del portal</div>', unsafe_allow_html=True)
@@ -13677,14 +13882,20 @@ def pintar_formulario_acceso():
 
             if user and verificar_pwd(u_pass, user[8]):
                 limpiar_fallos_acceso(u_ident)
+                hash_sesion = str(user[8] or "")
                 if not str(user[8] or "").startswith("scrypt$"):
+                    hash_sesion = hash_pwd(u_pass)
                     with get_db() as conn:
-                        conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(u_pass), user[0]))
+                        conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_sesion, user[0]))
+                    cargar_estado_cuenta_sesion.clear()
                 if user[5] == 0:
                     st.error("Cuenta inactiva. Contacte al soporte.")
                 else:
                     st.session_state["autenticado"] = True
                     st.session_state["rol"] = normalizar_rol(user[4])
+                    st.session_state["_session_password_fingerprint"] = hashlib.sha256(
+                        hash_sesion.encode("utf-8")
+                    ).hexdigest()
                     perfil_login = cargar_perfil_usuario(user[1])
                     if perfil_login:
                         aplicar_perfil_en_sesion(perfil_login)
@@ -13699,7 +13910,8 @@ def pintar_formulario_acceso():
                     st.session_state["sub_tab_inicio"] = "Inicio"
                     st.session_state["hub"] = None
                     hidratar_cotizaciones_sesion(formatear_casillero(user[1]))
-                    st.query_params["casillero"] = formatear_casillero(user[1])
+                    if "casillero" in st.query_params:
+                        del st.query_params["casillero"]
                     st.query_params["vista"] = "Inicio"
                     st.rerun()
             else:
@@ -13723,6 +13935,29 @@ def pintar_formulario_acceso():
         '<div class="login-security-note">Acceso cifrado para clientes y personal autorizado.</div>',
         unsafe_allow_html=True,
     )
+
+
+if st.session_state.get("autenticado"):
+    try:
+        estado_cuenta_actual = cargar_estado_cuenta_sesion(
+            st.session_state.get("casillero"), st.session_state.get("usuario")
+        )
+    except Exception as exc:
+        registrar_error_datos(exc, "Revalidación de sesión")
+        # Las áreas administrativas fallan cerradas; al cliente se le permite
+        # conservar la vista durante una interrupción breve de la base de datos.
+        estado_cuenta_actual = None if es_rol_admin() else "no_disponible"
+    if estado_cuenta_actual is None:
+        logout()
+    elif estado_cuenta_actual != "no_disponible":
+        rol_actual_bd, cuenta_activa_bd, huella_clave_bd = estado_cuenta_actual
+        huella_clave_sesion = st.session_state.get("_session_password_fingerprint")
+        if not cuenta_activa_bd or (
+            huella_clave_sesion and huella_clave_sesion != huella_clave_bd
+        ):
+            logout()
+        st.session_state["rol"] = normalizar_rol(rol_actual_bd)
+        st.session_state["_session_password_fingerprint"] = huella_clave_bd
 
 
 if not st.session_state["autenticado"]:
@@ -13752,11 +13987,21 @@ if not st.session_state["autenticado"]:
             correo_creado = html.escape(str(creado.get("correo") or ""))
             casillero_creado = html.escape(str(creado.get("casillero") or ""))
             clave_creada = html.escape(str(creado.get("password") or ""))
+            cuenta_registro_activa = bool(creado.get("activo"))
+            titulo_registro = (
+                "Casillero creado correctamente"
+                if cuenta_registro_activa else "Solicitud de casillero registrada"
+            )
+            estado_registro = (
+                "La cuenta está activa. Guarde las credenciales antes de continuar."
+                if cuenta_registro_activa
+                else "La cuenta está pendiente de aprobación administrativa. Guarde las credenciales."
+            )
             st.markdown(
                 f"""
                 <div class="reg-confirm-card">
-                    <h4>Casillero creado correctamente</h4>
-                    <p>La cuenta está activa. Guarde las credenciales antes de continuar.</p>
+                    <h4>{html.escape(titulo_registro)}</h4>
+                    <p>{html.escape(estado_registro)}</p>
                     <div class="reg-confirm-grid">
                         <div class="reg-confirm-data"><span>Cliente</span>{nombre_creado}</div>
                         <div class="reg-confirm-data"><span>Correo</span>{correo_creado}</div>
@@ -13976,23 +14221,31 @@ if not st.session_state["autenticado"]:
                                 unsafe_allow_html=True,
                             )
                         else:
-                            cur.execute(
-                                "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', TRUE, ?)",
-                                (
-                                    n_cod,
-                                    d["nom"],
-                                    d["dni"],
-                                    correo_registrado,
-                                    d["tel"],
-                                    d["dep"],
-                                    d["ciu"],
-                                    d["dir"],
-                                    rub,
-                                    mod,
-                                    hash_pwd(n_pwd),
-                                    f_crea,
-                                ),
-                            )
+                            try:
+                                cur.execute(
+                                    "INSERT INTO usuarios (codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal, departamento, ciudad, direccion_exacta, rubro_carga, modalidad_entrega, password_hash, rol, activo, fecha_creacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cliente', ?, ?)",
+                                    (
+                                        n_cod,
+                                        d["nom"],
+                                        d["dni"],
+                                        correo_registrado,
+                                        d["tel"],
+                                        d["dep"],
+                                        d["ciu"],
+                                        d["dir"],
+                                        rub,
+                                        mod,
+                                        hash_pwd(n_pwd),
+                                        bool(REGISTRO_PUBLICO_AUTOACTIVO),
+                                        f_crea,
+                                    ),
+                                )
+                            except sqlite3.IntegrityError:
+                                st.error(
+                                    "La identidad, el correo o el casillero ya fueron registrados "
+                                    "por otra solicitud. Inicie sesión o contacte a soporte."
+                                )
+                                st.stop()
                             permisos_cliente = permisos_default("cliente")
                             cur.execute(
                                 """
@@ -14021,6 +14274,7 @@ if not st.session_state["autenticado"]:
                                 "casillero": n_cod,
                                 "password": n_pwd,
                                 "destino": f"{d['ciu']}, {d['dep']}",
+                                "activo": bool(REGISTRO_PUBLICO_AUTOACTIVO),
                             }
                             st.session_state["reg_paso"] = 1
                             st.session_state["reg_datos"] = {}
@@ -14120,15 +14374,33 @@ elif st.session_state["rol"] == "cliente":
     fecha_corta = f"{dia_nombre[:3]}, {ahora_hn.day} {mes_nombre}"
     hora_corta = f"{hora_numero} {periodo_hora}"
 
-    lista_todas_cotizaciones, lista_mis_cotizaciones, confirmaciones_cotizaciones = filas_cotizaciones_casillero(casillero, ahora_hn)
-    estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
-    total_cotizaciones = len(lista_mis_cotizaciones)
-    notificaciones_encabezado = cargar_notificaciones_cliente(casillero)
-    total_notificaciones_nuevas = sum(
-        1 for notificacion in notificaciones_encabezado if not bool(notificacion[7])
-    )
-    direcciones_guardadas = direcciones_sesion(casillero)
-    opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
+    vista_cliente_actual = st.session_state.get("sub_tab_inicio") or "Inicio"
+    lista_todas_cotizaciones = []
+    lista_mis_cotizaciones = []
+    confirmaciones_cotizaciones = {}
+    estados_cotizaciones_cliente = {}
+    if vista_cliente_actual in ("Mis Cotizaciones", "Cotizador", "Mis Envíos", "Etiqueta"):
+        (
+            lista_todas_cotizaciones,
+            lista_mis_cotizaciones,
+            confirmaciones_cotizaciones,
+        ) = filas_cotizaciones_casillero(casillero, ahora_hn)
+        estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
+        total_cotizaciones = len(lista_mis_cotizaciones)
+    else:
+        total_cotizaciones = cargar_total_cotizaciones_cliente(casillero)
+    if vista_cliente_actual == "Inicio":
+        notificaciones_para_inicio = cargar_notificaciones_cliente(casillero)
+        total_notificaciones_nuevas = sum(
+            1 for notificacion in notificaciones_para_inicio if not bool(notificacion[7])
+        )
+    else:
+        total_notificaciones_nuevas = contar_notificaciones_no_leidas(casillero)
+    direcciones_guardadas = []
+    opciones_modalidad = [OPCION_PREDETERMINADA, "➕ Crear Nueva Dirección de Envío"]
+    if vista_cliente_actual == "Cotizador":
+        direcciones_guardadas = direcciones_sesion(casillero)
+        opciones_modalidad = opciones_entrega_desde_sesion(casillero, direcciones_guardadas)
     if st.session_state.pop("_ccm_error_permisos", False):
         st.error(
             "No fue posible validar los permisos de la cuenta. "
@@ -14137,16 +14409,17 @@ elif st.session_state["rol"] == "cliente":
     if st.session_state.pop("_ccm_error_datos", False):
         st.warning("No fue posible actualizar todos los datos. Intente nuevamente en unos segundos.")
     crear_nueva_dir = "➕ Crear Nueva Dirección de Envío"
-    mod_actual = st.session_state.get("modalidad_envio_seleccionada")
-    previa_destino = st.session_state.get("destino_entrega_activo")
-    if mod_actual != crear_nueva_dir:
-        if mod_actual in opciones_modalidad:
-            st.session_state["destino_entrega_activo"] = mod_actual
-        elif previa_destino in opciones_modalidad:
-            st.session_state["modalidad_envio_seleccionada"] = previa_destino
-        else:
-            st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
-            st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
+    if vista_cliente_actual == "Cotizador":
+        mod_actual = st.session_state.get("modalidad_envio_seleccionada")
+        previa_destino = st.session_state.get("destino_entrega_activo")
+        if mod_actual != crear_nueva_dir:
+            if mod_actual in opciones_modalidad:
+                st.session_state["destino_entrega_activo"] = mod_actual
+            elif previa_destino in opciones_modalidad:
+                st.session_state["modalidad_envio_seleccionada"] = previa_destino
+            else:
+                st.session_state["modalidad_envio_seleccionada"] = OPCION_PREDETERMINADA
+                st.session_state["destino_entrega_activo"] = OPCION_PREDETERMINADA
 
     with st.container(key="sticky_top_header"):
         nombre_header = html.escape(nombre_display)
@@ -14570,8 +14843,8 @@ elif st.session_state["rol"] == "cliente":
                             st.markdown(
                                 f"""
                             <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:0.85rem;">
-                                <b>🏷️ {etiq}</b> &bull; Recibe: {rec}<br>
-                                <small style="color:#64748b;">📍 {ciu_d} &bull; {dir_e}</small>
+                                <b>🏷️ {html.escape(str(etiq))}</b> &bull; Recibe: {html.escape(str(rec))}<br>
+                                <small style="color:#64748b;">📍 {html.escape(str(ciu_d))} &bull; {html.escape(str(dir_e))}</small>
                             </div>
                             """,
                                 unsafe_allow_html=True,
@@ -15114,12 +15387,13 @@ elif st.session_state["rol"] == "cliente":
 
     elif st.session_state["sub_tab_inicio"] == "Mis Envíos":
         with st.container(key="vista_envios"):
-            paquetes = cargar_paquetes_db(casillero)
-            eventos_tracking = cargar_eventos_tracking_db(casillero)
+            version_seguimiento = int(st.session_state.get("_seguimiento_cache_version") or 0)
+            paquetes = cargar_paquetes_db(casillero, version_seguimiento)
+            eventos_tracking = cargar_eventos_tracking_db(casillero, version_seguimiento)
             eventos_por_tracking = {}
             for evento in eventos_tracking:
                 eventos_por_tracking.setdefault(str(evento[0] or ""), []).append(evento)
-            trazabilidad_cliente = cargar_trazabilidad_cliente_db(casillero)
+            trazabilidad_cliente = cargar_trazabilidad_cliente_db(casillero, version_seguimiento)
             trazabilidad_por_tracking = {}
             for movimiento in trazabilidad_cliente:
                 trazabilidad_por_tracking.setdefault(str(movimiento[0] or ""), []).append(movimiento)
@@ -15134,7 +15408,7 @@ elif st.session_state["rol"] == "cliente":
             sync1, sync2 = st.columns([1.5, 1], gap="small")
             with sync1:
                 auto_actualizar = st.toggle(
-                    "Actualización automática cada 15 segundos",
+                    "Actualización automática cada 30 segundos",
                     value=bool(st.session_state.get("envios_auto_actualizar", True)),
                     key="envios_auto_actualizar",
                 )
@@ -15152,7 +15426,7 @@ elif st.session_state["rol"] == "cliente":
                     window.setTimeout(() => {
                       const button = window.parent.document.querySelector('.st-key-envios_refresh button');
                       if (button && !button.disabled) button.click();
-                    }, 15000);
+                    }, 30000);
                     </script>
                     """,
                     height=0,
@@ -16361,51 +16635,12 @@ elif es_rol_admin():
             )
             st.caption("Contraseña provisional. Entréguela de forma privada; se muestra una sola vez.")
             st.code(str(cuenta_creada_flash.get("clave") or ""), language="text")
-        with get_db() as conn:
-            c = conn.cursor()
-            if root:
-                c.execute(
-                    """
-                    SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
-                           departamento, ciudad, direccion_exacta, rol, activo
-                    FROM usuarios ORDER BY rol DESC, nombre_completo
-                    LIMIT 500
-                    """
-                )
-            else:
-                c.execute(
-                    """
-                    SELECT id, codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
-                           departamento, ciudad, direccion_exacta, rol, activo
-                    FROM usuarios WHERE rol = 'cliente' ORDER BY nombre_completo
-                    LIMIT 500
-                    """
-                )
-            filas = c.fetchall()
-            filtro_metricas = "" if root else "WHERE rol = 'cliente'"
-            c.execute(
-                f"""
-                SELECT COUNT(*),
-                       SUM(CASE WHEN activo = TRUE THEN 1 ELSE 0 END),
-                       SUM(CASE WHEN rol IN ('admin', 'superadmin') THEN 1 ELSE 0 END)
-                FROM usuarios {filtro_metricas}
-                """
-            )
-            metricas_cuentas = c.fetchone() or (0, 0, 0)
-            c.execute(
-                "SELECT codigo_casillero, COUNT(*) FROM cotizaciones GROUP BY codigo_casillero"
-            )
-            cotizaciones_por_usuario = {str(cas): int(total or 0) for cas, total in c.fetchall()}
-            c.execute(
-                """
-                SELECT codigo_casillero, COUNT(*), MAX(fecha_actualizacion)
-                FROM paquetes GROUP BY codigo_casillero
-                """
-            )
-            paquetes_por_usuario = {
-                str(cas): (int(total or 0), ultima or "—")
-                for cas, total, ultima in c.fetchall()
-            }
+        (
+            filas,
+            metricas_cuentas,
+            cotizaciones_por_usuario,
+            paquetes_por_usuario,
+        ) = cargar_resumen_usuarios_admin(root)
 
         if filas:
             total_cuentas = int(metricas_cuentas[0] or 0)
@@ -16540,442 +16775,7 @@ elif es_rol_admin():
         if st.session_state.get("_admin_dialog_crear"):
             dialogo_crear_usuario_admin(root=root)
 
-        with st.container(key="admin_management_mode"):
-            modo_gestion_usuario = st.segmented_control(
-                "Acción de usuarios",
-                ["Editar cuenta", "Crear cuenta"],
-                default="Editar cuenta" if filas else "Crear cuenta",
-                key="admin_user_mode",
-                label_visibility="collapsed",
-            )
-        if modo_gestion_usuario == "Crear cuenta":
-            st.markdown(
-                """
-                <style>
-                    .st-key-admin_selector_row,
-                    .st-key-admin_user_workspace,
-                    .st-key-admin_directory { display: none !important; }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                """
-                <style>.st-key-admin_create_area { display: none !important; }</style>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        etiquetas = [f"{formatear_casillero(r[1])} — {r[2]}" for r in filas]
-        if etiquetas:
-            with st.container(key="admin_selector_row"):
-                selector_col, resumen_col = st.columns([0.34, 0.66], gap="medium")
-                with selector_col:
-                    with st.container(key="admin_selector"):
-                        st.markdown(
-                            '<div class="admin-editor-title">Seleccionar usuario</div>'
-                            '<div class="admin-editor-copy">Busque por nombre, casillero, DNI o correo.</div>',
-                            unsafe_allow_html=True,
-                        )
-                        busqueda_usuario = st.text_input(
-                            "Buscar usuario",
-                            key="admin_user_search",
-                            placeholder="Nombre, casillero, DNI o correo",
-                            label_visibility="collapsed",
-                        ).strip().lower()
-                        registros_filtrados = [
-                            (fila, etiqueta)
-                            for fila, etiqueta in zip(filas, etiquetas)
-                            if not busqueda_usuario
-                            or busqueda_usuario in " ".join(str(valor or "") for valor in fila[:6]).lower()
-                            or busqueda_usuario in etiqueta.lower()
-                        ]
-                        opciones_usuario = [etiqueta for _, etiqueta in registros_filtrados]
-                        if not opciones_usuario:
-                            st.caption("Sin coincidencias. Se mantiene el directorio completo.")
-                            opciones_usuario = etiquetas
-                        if st.session_state.get("admin_sel_user") not in opciones_usuario:
-                            st.session_state["admin_sel_user"] = opciones_usuario[0]
-                        elegido = st.selectbox(
-                            "Cuenta a gestionar",
-                            opciones_usuario,
-                            key="admin_sel_user",
-                            label_visibility="collapsed",
-                        )
-            idx = etiquetas.index(elegido)
-            u = filas[idx]
-            uid, cas_u, nom_u, dni_u, cor_u, tel_u, dep_u, ciu_u, dir_u, rol_u, act_u = u
-            perm = permisos_de(cas_u)
-            estado_cuenta = "Activa" if bool(act_u) else "Inactiva"
-            rol_visible = html.escape(str(rol_u or "cliente"))
-            partes_usuario = [p for p in str(nom_u or "").split() if p]
-            iniciales_usuario = "".join(p[0].upper() for p in partes_usuario[:2]) or "US"
-            clase_estado_cuenta = "" if bool(act_u) else " is-inactive"
-            permisos_activos = sum(
-                bool(perm.get(clave))
-                for clave in (
-                    "hub_china", "hub_eeuu", "hub_honduras", "mod_cotizador",
-                    "mod_catalogo", "mod_cotizaciones", "mod_envios", "mod_fichas",
-                )
-            )
-            with resumen_col:
-                with st.container(key="admin_selected_summary"):
-                    st.markdown(
-                        '<div class="admin-selected-kicker">Cuenta seleccionada</div>'
-                        f'<div class="admin-selected-name">{html.escape(str(nom_u or "Sin nombre"))}</div>'
-                        f'<div class="admin-selected-meta">{html.escape(formatear_casillero(cas_u))} · '
-                        f'{html.escape(str(cor_u or "Sin correo"))}</div>'
-                        '<div class="admin-selected-access">'
-                        f'<span>{html.escape(str(rol_u or "cliente").title())}</span>'
-                        f'<span>{estado_cuenta}</span><span>{permisos_activos}/8 accesos activos</span>'
-                        '</div>',
-                        unsafe_allow_html=True,
-                    )
-            with resumen_col, st.container(key="admin_user_workspace"):
-                st.markdown(
-                    '<div class="admin-account-head">'
-                    '<div class="admin-account-identity">'
-                    f'<div class="admin-account-avatar">{html.escape(iniciales_usuario)}</div><div>'
-                    f'<div class="admin-account-name">{html.escape(str(nom_u or "Sin nombre"))}</div>'
-                    f'<div class="admin-account-meta">{html.escape(formatear_casillero(cas_u))} · {html.escape(str(cor_u or "Sin correo"))}</div>'
-                    '</div></div>'
-                    f'<span class="admin-account-badge{clase_estado_cuenta}">{rol_visible} · {estado_cuenta}</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-
-                tab_perfil, tab_permisos, tab_seguridad = st.tabs(
-                    ["👤 Perfil", "🔐 Permisos", "🛡️ Seguridad"]
-                )
-
-                with tab_perfil:
-                    st.markdown(
-                        '<div class="admin-form-section"><span class="admin-form-step">1</span>'
-                        'Identidad del cliente<small>Datos legales</small></div>',
-                        unsafe_allow_html=True,
-                    )
-                    f1, f2 = st.columns(2, gap="medium")
-                    with f1:
-                        n_nom = st.text_input("Nombre completo", value=nom_u, key=f"adm_nom_{cas_u}")
-                    with f2:
-                        n_dni = st.text_input("DNI", value=dni_u, key=f"adm_dni_{cas_u}")
-                    st.markdown(
-                        '<div class="admin-form-section"><span class="admin-form-step">2</span>'
-                        'Información de contacto<small>Acceso y notificaciones</small></div>',
-                        unsafe_allow_html=True,
-                    )
-                    f3, f4 = st.columns(2, gap="medium")
-                    with f3:
-                        n_cor = st.text_input("Correo", value=cor_u, key=f"adm_cor_{cas_u}")
-                    with f4:
-                        n_tel = st.text_input("Teléfono", value=tel_u, key=f"adm_tel_{cas_u}")
-                    st.markdown(
-                        '<div class="admin-form-section"><span class="admin-form-step">3</span>'
-                        'Ubicación y entrega<small>Dirección principal</small></div>',
-                        unsafe_allow_html=True,
-                    )
-                    f5, f6 = st.columns(2, gap="medium")
-                    with f5:
-                        n_dep = st.selectbox(
-                            "Departamento",
-                            list(MUNICIPIOS_HONDURAS.keys()),
-                            index=list(MUNICIPIOS_HONDURAS.keys()).index(dep_u) if dep_u in MUNICIPIOS_HONDURAS else 0,
-                            key=f"adm_dep_{cas_u}",
-                        )
-                    munis = MUNICIPIOS_HONDURAS[n_dep]
-                    with f6:
-                        n_ciu = st.selectbox(
-                            "Ciudad",
-                            munis,
-                            index=munis.index(ciu_u) if ciu_u in munis else 0,
-                            key=f"adm_ciu_{cas_u}",
-                        )
-                    n_dir = st.text_area(
-                        "Dirección exacta",
-                        value=dir_u or "",
-                        key=f"adm_dir_{cas_u}",
-                        height=82,
-                    )
-                    st.markdown(
-                        '<div class="admin-form-section"><span class="admin-form-step">4</span>'
-                        'Acceso a la plataforma<small>Casillero, rol y estado</small></div>',
-                        unsafe_allow_html=True,
-                    )
-                    f7, f8 = st.columns(2, gap="medium")
-                    with f7:
-                        n_cas = st.text_input(
-                            "Código de casillero",
-                            value=formatear_casillero(cas_u),
-                            key=f"adm_cas_{cas_u}",
-                        )
-                    roles_disp = ["cliente", "admin"]
-                    if root:
-                        roles_disp = ["cliente", "admin", "superadmin"]
-                    with f8:
-                        n_rol = st.selectbox(
-                            "Rol",
-                            roles_disp,
-                            index=roles_disp.index(rol_u) if rol_u in roles_disp else 0,
-                            key=f"adm_rol_{cas_u}",
-                            disabled=(rol_u == "superadmin" and not root),
-                        )
-                    n_act = st.toggle(
-                        "Cuenta habilitada para iniciar sesión",
-                        value=bool(act_u),
-                        key=f"adm_act_{cas_u}",
-                    )
-
-                with tab_permisos:
-                    st.caption("Los cambios modifican de inmediato lo que el cliente puede ver y utilizar.")
-                    col_hubs, col_modulos = st.columns(2, gap="medium")
-                    with col_hubs:
-                        with st.container(border=True, key="admin_perm_hubs"):
-                            st.markdown("##### Acceso por país")
-                            st.caption("Habilita las áreas principales del portal.")
-                            p_china = st.toggle("🇨🇳 China", value=bool(perm.get("hub_china")), key=f"adm_h_cn_{cas_u}")
-                            p_eeuu = st.toggle("🇺🇸 Estados Unidos", value=bool(perm.get("hub_eeuu")), key=f"adm_h_us_{cas_u}")
-                            p_hn = st.toggle("🇭🇳 Honduras", value=bool(perm.get("hub_honduras")), key=f"adm_h_hn_{cas_u}")
-                    with col_modulos:
-                        with st.container(border=True, key="admin_perm_modules"):
-                            st.markdown("##### Herramientas habilitadas")
-                            st.caption("Control individual de cada módulo operativo.")
-                            p_cot = st.toggle("📐 Cotizador", value=bool(perm.get("mod_cotizador")), key=f"adm_m_cot_{cas_u}")
-                            p_cat = st.toggle("🛍️ Catálogo", value=bool(perm.get("mod_catalogo")), key=f"adm_m_cat_{cas_u}")
-                            p_hist = st.toggle("📄 Mis cotizaciones", value=bool(perm.get("mod_cotizaciones")), key=f"adm_m_hist_{cas_u}")
-                            p_env = st.toggle("📦 Envíos", value=bool(perm.get("mod_envios")), key=f"adm_m_env_{cas_u}")
-                            p_fic = st.toggle("🏷️ Fichas", value=bool(perm.get("mod_fichas")), key=f"adm_m_fic_{cas_u}")
-
-                with tab_seguridad:
-                    st.caption("Cambie las credenciales o retire una cuenta del sistema.")
-                    with st.container(border=True, key="admin_security_box"):
-                        st.markdown("##### Restablecer contraseña")
-                        st.caption("Puede escribir una clave o dejar el campo vacío para generar una temporal.")
-                        nueva_clave = st.text_input(
-                            "Nueva contraseña",
-                            type="password",
-                            key=f"adm_new_pwd_{cas_u}",
-                            placeholder="Dejar vacío para generar automáticamente",
-                        )
-                        if st.button("🔑 Restablecer credenciales", key=f"adm_reset_pwd_{uid}"):
-                            clave = nueva_clave.strip() if nueva_clave else generar_clave_provisional()
-                            with get_db() as conn:
-                                conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_pwd(clave), uid))
-                            st.success("Contraseña actualizada con almacenamiento seguro.")
-                            st.caption("Copie esta clave ahora; se muestra únicamente en esta ejecución.")
-                            st.code(clave, language="text")
-
-                    if rol_u != "superadmin":
-                        with st.container(key="admin_delete_zone"):
-                            st.markdown("##### Eliminar cuenta")
-                            st.caption("Esta acción también elimina permisos y registros asociados al casillero.")
-                            confirmar_borrado = st.checkbox(
-                                "Confirmo que deseo eliminar esta cuenta",
-                                key=f"adm_del_confirm_{uid}",
-                            )
-                            if st.button(
-                                "Eliminar cuenta definitivamente",
-                                key=f"adm_del_user_{uid}",
-                                disabled=not confirmar_borrado,
-                            ):
-                                with get_db() as conn:
-                                    cur = conn.cursor()
-                                    cur.execute(
-                                        "SELECT (SELECT COUNT(*) FROM trazabilidad_paquetes WHERE codigo_casillero=?) + "
-                                        "(SELECT COUNT(*) FROM acuerdos_pago WHERE codigo_casillero=?)",
-                                        (cas_u, cas_u),
-                                    )
-                                    if int((cur.fetchone() or (0,))[0] or 0) > 0:
-                                        st.error(
-                                            "La cuenta tiene movimientos logísticos y no puede eliminarse. "
-                                            "Desactívela para preservar la trazabilidad."
-                                        )
-                                        st.stop()
-                                    for tabla in (
-                                        "permisos_usuario", "direcciones_entrega", "carrito_catalogo",
-                                        "notificaciones_cliente", "casos_mensajes", "casos_cliente",
-                                        "eventos_tracking", "paquetes", "cotizaciones",
-                                    ):
-                                        cur.execute(f"DELETE FROM {tabla} WHERE codigo_casillero = ?", (cas_u,))
-                                    cur.execute(
-                                        "DELETE FROM config_sistema WHERE clave = ?",
-                                        (clave_omision_anuncio(cas_u),),
-                                    )
-                                    cur.execute("DELETE FROM usuarios WHERE id = ?", (uid,))
-                                cargar_paquetes_db.clear()
-                                cargar_eventos_tracking_db.clear()
-                                cargar_paquetes_admin.clear()
-                                cargar_metricas_paquetes_admin.clear()
-                                cargar_eventos_tracking_admin.clear()
-                                cargar_cotizaciones_db.clear()
-                                cargar_estados_cotizaciones_db.clear()
-                                cargar_cotizaciones_confirmadas_admin.clear()
-                                cargar_resumen_operativo_admin.clear()
-                                st.success("Cuenta eliminada.")
-                                st.rerun()
-
-                with st.container(key="admin_save_bar"):
-                    barra_info, barra_accion = st.columns([1.6, 1], gap="medium")
-                    with barra_info:
-                        st.caption("Guarda juntos el perfil, rol, estado y permisos configurados.")
-                    with barra_accion:
-                        guardar_cambios_usuario = st.button(
-                            "Guardar cambios",
-                            type="primary",
-                            key="adm_save_user",
-                            use_container_width=True,
-                        )
-                if guardar_cambios_usuario:
-                    nuevo_cas = formatear_casillero(n_cas) or generar_codigo_casillero_dni(n_dni, n_nom)
-                    correo_editado = normalizar_correo(n_cor)
-                    if not (n_nom.strip() and n_dni.strip() and correo_editado and n_tel.strip()):
-                        st.error("Nombre, DNI, correo y teléfono son obligatorios.")
-                    elif "@" not in correo_editado or "." not in correo_editado.rsplit("@", 1)[-1]:
-                        st.error("Ingrese un correo electrónico válido.")
-                    elif not nuevo_cas:
-                        st.error("No fue posible generar un código de casillero válido.")
-                    elif rol_u == "superadmin" and (n_rol != "superadmin" or not n_act) and not root:
-                        st.error("Solo el superadministrador puede alterar la cuenta raíz.")
-                    else:
-                        with get_db() as conn:
-                            cur = conn.cursor()
-                            if nuevo_cas != formatear_casillero(cas_u):
-                                _migrar_casillero_tablas(conn, cas_u, nuevo_cas)
-                            cur.execute(
-                                """
-                                UPDATE usuarios SET nombre_completo=?, dni=?, correo_principal=?, telefono_principal=?,
-                                    departamento=?, ciudad=?, direccion_exacta=?, codigo_casillero=?, rol=?, activo=?
-                                WHERE id=?
-                                """,
-                                (
-                                    n_nom.strip(), n_dni.strip(), correo_editado, n_tel.strip(),
-                                    n_dep, n_ciu, n_dir.strip(), nuevo_cas, n_rol, bool(n_act), uid,
-                                ),
-                            )
-                        guardar_permisos(
-                            nuevo_cas,
-                            {
-                                "hub_china": p_china,
-                                "hub_eeuu": p_eeuu,
-                                "hub_honduras": p_hn,
-                                "mod_cotizador": p_cot,
-                                "mod_catalogo": p_cat,
-                                "mod_cotizaciones": p_hist,
-                                "mod_envios": p_env,
-                                "mod_fichas": p_fic,
-                            },
-                        )
-                        st.success("Cambios guardados. El cliente los verá en su próximo refresco.")
-                        st.rerun()
-
-        with st.container(key="admin_create_area"):
-            with st.expander(
-                "Crear una cuenta nueva",
-                expanded=(modo_gestion_usuario == "Crear cuenta"),
-            ):
-                st.markdown(
-                    '<div class="admin-create-intro"><b>Alta de cliente</b><br>'
-                    'Complete la identidad, contacto y acceso. El casillero combinará las dos iniciales del nombre con los primeros 8 dígitos del DNI.</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    '<div class="admin-form-section"><span class="admin-form-step">1</span>'
-                    'Identidad y contacto<small>Campos obligatorios</small></div>',
-                    unsafe_allow_html=True,
-                )
-                c1, c2 = st.columns(2, gap="medium")
-                with c1:
-                    c_nom = st.text_input("Nombre completo *", key="new_nom")
-                with c2:
-                    c_dni = st.text_input("DNI *", key="new_dni")
-                codigo_casillero_previo = generar_codigo_casillero_dni(c_dni, c_nom)
-                if codigo_casillero_previo:
-                    st.markdown(
-                        f'<div class="admin-generated-code">Casillero generado: '
-                        f'{html.escape(codigo_casillero_previo)}</div>',
-                        unsafe_allow_html=True,
-                    )
-                c3, c4 = st.columns(2, gap="medium")
-                with c3:
-                    c_cor = st.text_input("Correo electrónico *", key="new_cor")
-                with c4:
-                    c_tel = st.text_input("Teléfono *", key="new_tel")
-
-                st.markdown(
-                    '<div class="admin-form-section"><span class="admin-form-step">2</span>'
-                    'Ubicación principal<small>Datos de entrega</small></div>',
-                    unsafe_allow_html=True,
-                )
-                c5, c6 = st.columns(2, gap="medium")
-                with c5:
-                    c_dep = st.selectbox("Departamento", list(MUNICIPIOS_HONDURAS.keys()), key="new_dep")
-                with c6:
-                    c_ciu = st.selectbox("Ciudad", MUNICIPIOS_HONDURAS[c_dep], key="new_ciu")
-                c_dir = st.text_area("Dirección exacta", key="new_dir", height=82)
-
-                st.markdown(
-                    '<div class="admin-form-section"><span class="admin-form-step">3</span>'
-                    'Credenciales y rol<small>Configuración inicial</small></div>',
-                    unsafe_allow_html=True,
-                )
-                c7, c8 = st.columns(2, gap="medium")
-                with c7:
-                    c_pwd = st.text_input(
-                        "Contraseña inicial",
-                        type="password",
-                        key="new_pwd",
-                        placeholder="Vacío para generar una clave segura",
-                    )
-                with c8:
-                    c_rol = st.selectbox(
-                        "Rol inicial",
-                        ["cliente", "admin"] if root else ["cliente"],
-                        key="new_rol",
-                    )
-                crear_usuario = st.button(
-                    "Crear cuenta y generar casillero",
-                    type="primary",
-                    key="adm_create_user",
-                    use_container_width=True,
-                )
-                if crear_usuario:
-                    correo_nuevo = normalizar_correo(c_cor)
-                    if not (c_nom.strip() and c_dni.strip() and correo_nuevo and c_tel.strip()):
-                        st.warning("Complete todos los campos obligatorios.")
-                    elif "@" not in correo_nuevo or "." not in correo_nuevo.rsplit("@", 1)[-1]:
-                        st.warning("Ingrese un correo electrónico válido.")
-                    elif not codigo_casillero_previo:
-                        st.warning("El DNI debe contener suficientes dígitos para generar el casillero.")
-                    else:
-                        n_cod = codigo_casillero_previo
-                        n_pwd = c_pwd.strip() if c_pwd else generar_clave_provisional()
-                        try:
-                            with get_db() as conn:
-                                cur = conn.cursor()
-                                cur.execute(
-                                    """
-                                    INSERT INTO usuarios (
-                                        codigo_casillero, nombre_completo, dni, correo_principal, telefono_principal,
-                                        departamento, ciudad, direccion_exacta, password_hash, rol, activo, fecha_creacion
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
-                                    """,
-                                    (
-                                        n_cod, c_nom.strip(), c_dni.strip(), correo_nuevo, c_tel.strip(),
-                                        c_dep, c_ciu, c_dir.strip() or f"{c_ciu}, {c_dep}",
-                                        hash_pwd(n_pwd), c_rol,
-                                        obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S"),
-                                    ),
-                                )
-                            asegurar_permisos_casillero(n_cod, c_rol)
-                            st.session_state["_admin_cuenta_creada"] = {
-                                "casillero": n_cod,
-                                "nombre": c_nom.strip(),
-                                "clave": n_pwd,
-                            }
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("Ya existe un casillero, DNI o correo con esos datos.")
-
+        # El directorio y sus diálogos sustituyen el editor heredado oculto.
     if admin_seccion == "Aprobaciones" and root:
         st.markdown(
             '<div class="admin-section-heading">Aprobación comercial y generación de tracking</div>'
