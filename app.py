@@ -4131,8 +4131,7 @@ def ir_a_catalogo():
 def ir_a_mis_cotizaciones():
     casillero = st.session_state.get("casillero", "")
     if not (
-        usuario_puede_hub("china")
-        and usuario_puede_modulo("Mis Cotizaciones")
+        modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
         and casillero_tiene_cotizacion_emitida(casillero)
     ):
         ir_a_inicio()
@@ -4141,7 +4140,7 @@ def ir_a_mis_cotizaciones():
 
 
 def ir_a_cotizador():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Cotizador")):
+    if not modulo_china_disponible_en_hub_actual("Cotizador"):
         ir_a_inicio()
         return
     avanzar_guia_si(1, 2)
@@ -4154,9 +4153,6 @@ def ir_a_mas():
 
 def ir_a_actividad():
     """Centro único para cotizaciones, envíos y fichas del cliente."""
-    if not usuario_puede_hub("china"):
-        ir_a_inicio()
-        return
     ir_a("Actividad", hub="china")
 
 
@@ -4174,14 +4170,14 @@ def iniciar_guia_desde_mas():
 
 
 def ir_a_envios():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Mis Envíos")):
+    if not modulo_china_disponible_en_hub_actual("Mis Envíos"):
         ir_a_inicio()
         return
     ir_a("Mis Envíos", hub="china")
 
 
 def ir_a_fichas():
-    if not (usuario_puede_hub("china") and usuario_puede_modulo("Etiqueta")):
+    if not modulo_china_disponible_en_hub_actual("Etiqueta"):
         ir_a_inicio()
         return
     ir_a("Fichas", hub="china")
@@ -5315,7 +5311,7 @@ def espaciador_barra_inferior(clave):
 
 
 def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
-    """Píldora estable: sus accesos no cambian de posición entre pantallas."""
+    """Píldora contextual: activa las herramientas del país seleccionado."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
     actividad_activa = vista in ("Actividad", "Mis Cotizaciones", "Mis Envíos", "Etiqueta")
@@ -5329,10 +5325,10 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
     )
 
     items = [("inicio", "🏠", "Inicio", inicio_activo)]
-    if usuario_puede_hub("china") and usuario_puede_modulo("Cotizador"):
+    if modulo_china_disponible_en_hub_actual("Cotizador"):
         items.append(("cotizador", "🧮", "Cotizar", cotizador_activo))
-    if usuario_puede_hub("china"):
-        items.append(("actividad", "📦", "Seguimiento", actividad_activa))
+    if st.session_state.get("hub") == "china":
+        items.append(("actividad", "📌", "Actividad", actividad_activa))
     items.append(("mas", "☰", "Más", mas_activo))
     with st.container(key="bottom_nav"):
         cols = st.columns(len(items), gap="small")
@@ -14581,13 +14577,10 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_inicio"):
             if not hub_sel:
                 pintar_anuncio_portal_cliente()
-                pintar_proxima_accion_cliente(
-                    casillero, total_cotizaciones, total_notificaciones_nuevas
-                )
                 pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
-                    '<div class="client-home-copy">Seleccione el origen de su carga o abra directamente una herramienta disponible.</div>',
+                    '<div class="client-home-copy">Seleccione el país de origen para activar únicamente las herramientas correspondientes a esa ruta.</div>',
                     unsafe_allow_html=True,
                 )
                 visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
