@@ -1497,6 +1497,27 @@ def texto_estado_cotizacion(fecha_raw, confirmada, ahora=None, fecha_confirmacio
     return texto_vigencia_cotizacion(fecha_raw, ahora)
 
 
+ETIQUETAS_ESTADO_COTIZACION_CLIENTE = {
+    "emitida": "Pendiente de confirmar",
+    "confirmada": "Enviada a revisión",
+    "pendiente_revision": "Esperando revisión de CCM",
+    "en_revision": "CCM está revisando su solicitud",
+    "requiere_correccion": "Necesitamos información adicional",
+    "aprobada_tracking_generado": "Aprobada · Tracking generado",
+    "rechazada": "No aprobada",
+    "cancelada": "Cancelada",
+    "vencida": "Vencida",
+}
+
+
+def etiqueta_estado_cotizacion_cliente(estado):
+    """Traduce estados internos a instrucciones breves para el cliente."""
+    clave = str(estado or "emitida").strip().lower()
+    return ETIQUETAS_ESTADO_COTIZACION_CLIENTE.get(
+        clave, clave.replace("_", " ").strip().capitalize() or "En revisión"
+    )
+
+
 def _limpiar_cotizacion_vencida_en_sesion(ahora):
     d_pdf = st.session_state.get("datos_pdf_confirmado")
     if not isinstance(d_pdf, dict):
@@ -4041,8 +4062,6 @@ def ir_a(vista, hub="_omit"):
         st.session_state["hub"] = None
         if vista != "Inicio":
             vista = "Inicio"
-    if vista == "Cotizador":
-        preparar_nueva_cotizacion()
     st.session_state["sub_tab_inicio"] = vista
     st.session_state["vista_activa"] = vista
     if "casillero" in st.query_params:
@@ -4112,7 +4131,8 @@ def ir_a_catalogo():
 def ir_a_mis_cotizaciones():
     casillero = st.session_state.get("casillero", "")
     if not (
-        modulo_china_disponible_en_hub_actual("Mis Cotizaciones")
+        usuario_puede_hub("china")
+        and usuario_puede_modulo("Mis Cotizaciones")
         and casillero_tiene_cotizacion_emitida(casillero)
     ):
         ir_a_inicio()
@@ -4121,7 +4141,7 @@ def ir_a_mis_cotizaciones():
 
 
 def ir_a_cotizador():
-    if not modulo_china_disponible_en_hub_actual("Cotizador"):
+    if not (usuario_puede_hub("china") and usuario_puede_modulo("Cotizador")):
         ir_a_inicio()
         return
     avanzar_guia_si(1, 2)
@@ -4134,6 +4154,9 @@ def ir_a_mas():
 
 def ir_a_actividad():
     """Centro único para cotizaciones, envíos y fichas del cliente."""
+    if not usuario_puede_hub("china"):
+        ir_a_inicio()
+        return
     ir_a("Actividad", hub="china")
 
 
@@ -4151,14 +4174,14 @@ def iniciar_guia_desde_mas():
 
 
 def ir_a_envios():
-    if not modulo_china_disponible_en_hub_actual("Mis Envíos"):
+    if not (usuario_puede_hub("china") and usuario_puede_modulo("Mis Envíos")):
         ir_a_inicio()
         return
     ir_a("Mis Envíos", hub="china")
 
 
 def ir_a_fichas():
-    if not modulo_china_disponible_en_hub_actual("Etiqueta"):
+    if not (usuario_puede_hub("china") and usuario_puede_modulo("Etiqueta")):
         ir_a_inicio()
         return
     ir_a("Fichas", hub="china")
@@ -4621,6 +4644,85 @@ def abrir_dialogo_editar_perfil():
     dialogo_editar_perfil()
 
 
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_proxima_accion_cliente(casillero):
+    """Obtiene solo el envío activo más reciente para orientar el Inicio."""
+    cas = formatear_casillero(casillero or "")
+    if not cas:
+        return None
+    try:
+        with get_db() as conn:
+            return conn.execute(
+                """
+                SELECT tracking, estado, ubicacion_actual, proximo_paso, fecha_actualizacion
+                FROM paquetes
+                WHERE codigo_casillero = ?
+                  AND COALESCE(visible_cliente, TRUE) = TRUE
+                  AND COALESCE(estado, '') <> 'Entregado'
+                ORDER BY fecha_actualizacion DESC
+                LIMIT 1
+                """,
+                (cas,),
+            ).fetchone()
+    except Exception as exc:
+        registrar_error_datos(exc, "Resumen de próxima acción")
+        return None
+
+
+def pintar_proxima_accion_cliente(casillero, total_cotizaciones, notificaciones_nuevas):
+    """Da una instrucción principal sin reemplazar los accesos existentes."""
+    paquete = cargar_proxima_accion_cliente(casillero)
+    titulo = "Cree su primera cotización"
+    detalle = "Ingrese las medidas y el peso de su carga para conocer la tarifa antes de confirmar."
+    etiqueta_boton = "Crear cotización"
+    accion = ir_a_cotizador
+    tono = "#0f766e"
+
+    if int(notificaciones_nuevas or 0) > 0:
+        titulo = f"Tiene {int(notificaciones_nuevas)} novedad(es) por revisar"
+        detalle = "Revise las actualizaciones de CCM antes de continuar con su operación."
+        etiqueta_boton = "Revisar novedades"
+        accion = abrir_notificaciones_desde_encabezado
+        tono = "#b45309"
+    elif paquete:
+        tracking, estado, ubicacion, proximo_paso, _ = paquete
+        titulo = str(estado or "Envío en seguimiento")
+        detalle = (
+            f"{tracking} · {ubicacion or 'Ubicación por confirmar'} · "
+            f"Siguiente: {proximo_paso or proximo_estado_logistico(estado)}"
+        )
+        etiqueta_boton = "Ver seguimiento"
+        accion = ir_a_envios
+        tono = "#1d4ed8" if estado not in ESTADOS_LOGISTICOS_ESPECIALES else "#b91c1c"
+    elif int(total_cotizaciones or 0) > 0:
+        titulo = "Revise sus cotizaciones"
+        detalle = "Consulte su vigencia, confirme las pendientes y vea cuáles están en revisión."
+        etiqueta_boton = "Ver cotizaciones"
+        accion = ir_a_mis_cotizaciones
+        tono = "#1d4ed8"
+
+    with st.container(key="cliente_proxima_accion"):
+        st.markdown(
+            f'<section style="margin:4px 0 16px;padding:15px 16px;background:#ffffff;'
+            f'border:1px solid #d8e2e8;border-left:5px solid {tono};border-radius:8px;'
+            f'box-shadow:0 4px 14px rgba(17,45,65,.07);">'
+            f'<small style="display:block;margin-bottom:4px;color:#64748b;font-size:.65rem;'
+            f'font-weight:900;text-transform:uppercase;">Su siguiente acción</small>'
+            f'<b style="display:block;color:#17324d;font-size:1rem;line-height:1.3;">'
+            f'{html.escape(titulo)}</b>'
+            f'<span style="display:block;margin-top:5px;color:#5b6f7d;font-size:.76rem;'
+            f'line-height:1.45;">{html.escape(detalle)}</span></section>',
+            unsafe_allow_html=True,
+        )
+        st.button(
+            etiqueta_boton,
+            type="primary",
+            key="cliente_proxima_accion_btn",
+            use_container_width=True,
+            on_click=accion,
+        )
+
+
 def pintar_vista_actividad(total_cotizaciones=0):
     """Panel de actividad: concentra documentos y seguimiento sin recargar la navegación."""
     cas_formato = formatear_casillero(st.session_state.get("casillero", "")) or "mi casillero"
@@ -4630,16 +4732,24 @@ def pintar_vista_actividad(total_cotizaciones=0):
     )
     url_whatsapp_formato = f"https://wa.me/50495771099?text={mensaje_formato}"
     with st.container(key="vista_actividad"):
-        st.markdown("#### 📌 Actividad")
-        st.caption("Consulte sus tarifas, seguimiento y documentos desde un solo lugar.")
+        st.markdown("#### 📦 Mis operaciones")
+        st.caption("Elija qué desea revisar: cotizaciones, seguimiento, documentos o soporte.")
         cot, env, fichas = st.columns(3, gap="small")
         with cot:
             st.button(
-                f"📄 Cotizaciones\n{int(total_cotizaciones or 0)} registradas",
+                (
+                    f"📄 Cotizaciones\n{int(total_cotizaciones or 0)} registradas"
+                    if int(total_cotizaciones or 0) > 0
+                    else "📄 Cotizaciones\nCrear la primera"
+                ),
                 type="primary",
                 key="actividad_cotizaciones",
                 use_container_width=True,
-                on_click=ir_a_mis_cotizaciones,
+                on_click=(
+                    ir_a_mis_cotizaciones
+                    if int(total_cotizaciones or 0) > 0
+                    else ir_a_cotizador
+                ),
             )
         with env:
             st.button(
@@ -5205,7 +5315,7 @@ def espaciador_barra_inferior(clave):
 
 
 def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
-    """Píldora flotante simple: Inicio, Cotizar, Actividad y Más."""
+    """Píldora estable: sus accesos no cambian de posición entre pantallas."""
     vista = st.session_state.get("vista_activa") or st.session_state.get("sub_tab_inicio") or "Inicio"
     inicio_activo = vista == "Inicio"
     actividad_activa = vista in ("Actividad", "Mis Cotizaciones", "Mis Envíos", "Etiqueta")
@@ -5219,10 +5329,10 @@ def pintar_barra_inferior(total_cotizaciones=0, casillero=None):
     )
 
     items = [("inicio", "🏠", "Inicio", inicio_activo)]
-    if modulo_china_disponible_en_hub_actual("Cotizador"):
+    if usuario_puede_hub("china") and usuario_puede_modulo("Cotizador"):
         items.append(("cotizador", "🧮", "Cotizar", cotizador_activo))
-    if st.session_state.get("hub") == "china":
-        items.append(("actividad", "📌", "Actividad", actividad_activa))
+    if usuario_puede_hub("china"):
+        items.append(("actividad", "📦", "Seguimiento", actividad_activa))
     items.append(("mas", "☰", "Más", mas_activo))
     with st.container(key="bottom_nav"):
         cols = st.columns(len(items), gap="small")
@@ -14032,13 +14142,21 @@ if not st.session_state["autenticado"]:
                     use_container_width=True,
                 )
             with accion_ingresar:
-                if st.button("Ir al inicio de sesión", type="primary", use_container_width=True):
+                texto_acceso_registro = (
+                    "Ir al inicio de sesión" if cuenta_registro_activa else "Volver al acceso"
+                )
+                if st.button(texto_acceso_registro, type="primary", use_container_width=True):
                     st.session_state["log_cas"] = creado.get("casillero") or ""
                     st.session_state["reg_exito"] = None
                     st.session_state["reg_paso"] = 1
                     st.session_state["reg_datos"] = {}
                     st.session_state["vista_actual"] = "login"
                     st.rerun()
+            if not cuenta_registro_activa:
+                st.info(
+                    "Su solicitud quedó registrada. Cuando CCM active la cuenta podrá ingresar "
+                    "con el casillero y la contraseña provisional mostrados arriba."
+                )
             st.stop()
 
         paso = st.session_state["reg_paso"]
@@ -14463,6 +14581,9 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_inicio"):
             if not hub_sel:
                 pintar_anuncio_portal_cliente()
+                pintar_proxima_accion_cliente(
+                    casillero, total_cotizaciones, total_notificaciones_nuevas
+                )
                 pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
@@ -14543,6 +14664,9 @@ elif st.session_state["rol"] == "cliente":
                 hub_china = HUBS["china"]
                 st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
                 st.caption("Consolidación marítima China ➔ Honduras")
+                pintar_proxima_accion_cliente(
+                    casillero, total_cotizaciones, total_notificaciones_nuevas
+                )
                 pintar_banner_promocional_china(casillero)
             elif hub_sel == "eeuu":
                 # El área de EE. UU. queda intencionalmente limpia hasta que
@@ -14675,11 +14799,11 @@ elif st.session_state["rol"] == "cliente":
                     insignia = (
                         '<span class="cotizacion-badge-pendiente">⚠️ Pendiente de Confirmar</span>'
                         if not consolidada and cotizacion_operable
-                        else f'<span style="display:inline-flex;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(estado_admin_cot.replace("_", " ").title())}</span>'
+                        else f'<span style="display:inline-flex;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(etiqueta_estado_cotizacion_cliente(estado_admin_cot))}</span>'
                         if not consolidada
                         else '<span style="display:inline-flex;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">Aprobada · Tracking generado</span>'
                         if aprobada_operativa
-                        else f'<span style="display:inline-flex;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(estado_admin_cot.replace("_", " ").title())}</span>'
+                        else f'<span style="display:inline-flex;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:3px 8px;font-size:.78rem;font-weight:800;">{html.escape(etiqueta_estado_cotizacion_cliente(estado_admin_cot))}</span>'
                     )
                     with st.container(key=f"tarjeta_cot_{id_cot_item}"):
                         with st.container(key=f"tarjeta_cot_info_{id_cot_item}"):
@@ -14771,7 +14895,7 @@ elif st.session_state["rol"] == "cliente":
                                     )
                             else:
                                 st.button(
-                                    f"Cotización {estado_admin_cot.replace('_', ' ')}",
+                                    f"Cotización: {etiqueta_estado_cotizacion_cliente(estado_admin_cot)}",
                                     key=f"btn_cot_bloqueada_{id_cot_item}",
                                     disabled=True, use_container_width=True,
                                 )
@@ -14952,6 +15076,14 @@ elif st.session_state["rol"] == "cliente":
                 '<p>Configure la ruta, el destino y las medidas para obtener una tarifa clara antes de confirmar.</p>'
                 '</section>',
                 unsafe_allow_html=True,
+            )
+            st.button(
+                "Iniciar una cotización nueva",
+                type="secondary",
+                key="btn_nueva_cotizacion_limpia",
+                use_container_width=True,
+                help="Limpia las medidas y el cálculo actual únicamente cuando usted lo decida.",
+                on_click=preparar_nueva_cotizacion,
             )
             st.markdown(
                 '<section class="quote-origin-intro"><span class="quote-stage-number">1</span><div>'
@@ -15300,7 +15432,7 @@ elif st.session_state["rol"] == "cliente":
                             )
                             contenido_emitida = (
                                 f'<div style="color:#166534;font-size:.9rem;font-weight:700;margin-top:8px;">'
-                                f'{html.escape(estado_operativo_emit.replace("_", " ").title())}</div>'
+                                f'{html.escape(etiqueta_estado_cotizacion_cliente(estado_operativo_emit))}</div>'
                             )
                         else:
                             titulo_emitida = (
@@ -15424,6 +15556,7 @@ elif st.session_state["rol"] == "cliente":
                     """
                     <script>
                     window.setTimeout(() => {
+                      if (window.parent.document.visibilityState !== 'visible') return;
                       const button = window.parent.document.querySelector('.st-key-envios_refresh button');
                       if (button && !button.disabled) button.click();
                     }, 30000);
@@ -15509,30 +15642,32 @@ elif st.session_state["rol"] == "cliente":
                         f'<div class="shipment-card-head"><span class="shipment-tracking">📦 {tracking_p}</span>'
                         f'<span class="shipment-status">{estado_p}</span></div>'
                         f'<div class="shipment-description">{descripcion_p}</div>'
-                        f'<div class="shipment-meta"><span>Folio interno: <b>{codigo_interno_p}</b></span>'
+                        f'<div class="shipment-meta"><span>📍 <b>{ubicacion_p}</b></span>'
+                        f'<span>Actualizado: {actualizado_p}</span><span>ETA: {eta_p}</span></div>'
+                        f'<div style="margin-top:12px;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
+                        f'<div style="width:{progreso_p}%;height:100%;background:#157347;"></div></div>'
+                        f'<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-size:.76rem;color:#475569;">'
+                        f'<span>Progreso {progreso_p}%</span><span>Próximo paso: <b>{proximo_paso_p}</b></span></div>'
+                        + (f'<div style="margin-top:10px;padding:9px 11px;background:#fff7ed;border-left:3px solid #ea580c;color:#9a3412;font-size:.8rem;"><b>Atención:</b> {incidencia_p}</div>' if incidencia_p else '')
+                        + f'<details style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0;">'
+                        f'<summary style="cursor:pointer;color:#0f766e;font-size:.76rem;font-weight:850;">Ver detalles operativos</summary>'
+                        f'<div class="shipment-meta" style="margin-top:10px;"><span>Folio interno: <b>{codigo_interno_p}</b></span>'
                         f'<span>Tracking externo: <b>{tracking_externo_p}</b></span>'
                         f'<span>Bultos: <b>{bultos_verificados_p}/{total_bultos_p}</b></span>'
-                        f'<span>Custodia: <b>{responsable_p}</b></span><span>Zona: <b>{zona_p}</b></span></div>'
-                        f'<div class="shipment-meta"><span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
-                        f'<span>📍 {ubicacion_p}</span><span>ETA: {eta_p}</span>'
-                        f'<span>Actualizado: {actualizado_p}</span>'
+                        f'<span>Custodia: <b>{responsable_p}</b></span><span>Zona: <b>{zona_p}</b></span>'
+                        f'<span>🚢 {contenedor_p}</span><span>{tipo_p}</span>'
                         + (f'<span>Cotización: CCM-COT-{cotizacion_p:05d}</span>' if cotizacion_p else '')
                         + (f'<span>Recepción: {fecha_recepcion_p}</span>' if fecha_recepcion_p else '')
                         + f'</div><div class="shipment-flags">'
                         f'<span class="shipment-flag {flag_recepcion}">{"✓ Recibido en China" if recibido_p else "Pendiente de recepción"}</span>'
                         f'<span class="shipment-flag {flag_pago}">{"✓ Pago confirmado" if pagado_p else "Pago pendiente"}</span>'
                         f'<span class="shipment-flag {"ok" if estado_docs_p == "Habilitados" else ""}">Documentos: {estado_docs_p}</span>'
-                        f'</div>'
-                        f'<div style="margin-top:12px;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
-                        f'<div style="width:{progreso_p}%;height:100%;background:#157347;"></div></div>'
-                        f'<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-size:.76rem;color:#475569;">'
-                        f'<span>Progreso {progreso_p}%</span><span>Próximo paso: <b>{proximo_paso_p}</b></span></div>'
-                        + (f'<div style="margin-top:10px;padding:9px 11px;background:#fff7ed;border-left:3px solid #ea580c;color:#9a3412;font-size:.8rem;"><b>Atención:</b> {incidencia_p}</div>' if incidencia_p else '')
-                        + f'<div style="margin-top:9px;color:#475569;font-size:.76rem;">Pago: <b>{estado_pago_p}</b> · Incidencia: <b>{incidencia_estado_p}</b>'
+                        f'</div><div style="margin-top:9px;color:#475569;font-size:.76rem;">Pago: <b>{estado_pago_p}</b> · Incidencia: <b>{incidencia_estado_p}</b>'
                         + (f' · Compromiso: <b>{compromiso_p}</b>' if compromiso_p else '')
                         + (f' · Entregado a: <b>{receptor_p}</b> ({entrega_p})' if receptor_p or entrega_p else '')
                         + '</div>'
                         + f'<div style="margin-top:6px;color:#475569;font-size:.74rem;">Control físico: <b>{integridad_p}</b> · Última verificación: {ultima_verificacion_p}</div>'
+                        + '</details>'
                         + (
                             f'<div style="margin-top:9px;padding:8px 10px;background:#fffbeb;border-left:3px solid #d97706;color:#92400e;font-size:.76rem;">'
                             f'Este envío lleva {int(horas_sin_actualizar)} horas sin actualización operativa. CCM debe verificar su ubicación.</div>'
