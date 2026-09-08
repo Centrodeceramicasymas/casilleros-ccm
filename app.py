@@ -1819,6 +1819,12 @@ def cargar_resumen_inicio_pais_v2(casillero, hub):
     variantes = coincidencias_casillero(cas)
     if not cas or not hub_limpio or not variantes:
         return {"cotizaciones": 0, "notificaciones": 0, "paquete": None}
+    if not asegurar_hub_notificaciones_runtime_v1():
+        return {
+            "cotizaciones": cargar_total_cotizaciones_cliente(cas),
+            "notificaciones": contar_notificaciones_no_leidas(cas, hub_limpio),
+            "paquete": cargar_proxima_accion_cliente(cas),
+        }
     marcadores = ",".join("?" for _ in variantes)
     with get_db() as conn:
         fila = conn.execute(
@@ -2841,20 +2847,57 @@ def nombre_hub_notificacion(hub):
     }.get(normalizar_hub_notificacion(hub), "Ruta sin asignar")
 
 
+@st.cache_resource(show_spinner=False)
+def asegurar_hub_notificaciones_runtime_v1():
+    """Comprueba/migra `hub`; devuelve False si la cuenta SQL no puede alterar tablas."""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            if USA_SUPABASE:
+                cursor.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema='public' "
+                    "AND table_name='notificaciones_cliente' "
+                    "AND column_name='hub' LIMIT 1"
+                )
+                existe = cursor.fetchone() is not None
+                if not existe:
+                    cursor.execute(
+                        "ALTER TABLE public.notificaciones_cliente "
+                        "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
+                    )
+            else:
+                cursor.execute("PRAGMA table_info(notificaciones_cliente)")
+                existe = any(str(fila[1]) == "hub" for fila in cursor.fetchall())
+                if not existe:
+                    cursor.execute(
+                        "ALTER TABLE notificaciones_cliente "
+                        "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
+                    )
+        return True
+    except Exception:
+        # Compatibilidad: el portal continúa aunque el rol SQL no tenga ALTER TABLE.
+        return False
+
+
 @st.cache_data(ttl=10, show_spinner=False, max_entries=2048)
 def cargar_notificaciones_cliente(casillero, hub=None, incluir_ocultas=False):
     cas = formatear_casillero(casillero)
     if not cas:
         return []
     hub_limpio = normalizar_hub_notificacion(hub)
+    esquema_con_hub = asegurar_hub_notificaciones_runtime_v1()
+    if hub_limpio and not esquema_con_hub and hub_limpio != "china":
+        return []
     condicion_visible = "" if incluir_ocultas else "AND visible = TRUE"
-    condicion_hub = "AND hub = ?" if hub_limpio else ""
-    parametros = (cas, hub_limpio) if hub_limpio else (cas,)
+    condicion_hub = "AND hub = ?" if hub_limpio and esquema_con_hub else ""
+    parametros = (cas, hub_limpio) if condicion_hub else (cas,)
+    columna_hub = ", hub" if esquema_con_hub else ""
     with get_db() as conn:
-        return conn.execute(
+        filas = conn.execute(
             f"""
             SELECT id, tracking, tipo, prioridad, titulo, mensaje, canal,
-                   leida, visible, fecha_creacion, creado_por, hub
+                   leida, visible, fecha_creacion, creado_por{columna_hub}
             FROM notificaciones_cliente
             WHERE codigo_casillero = ? {condicion_hub} {condicion_visible}
             ORDER BY fecha_creacion DESC, id DESC
@@ -2862,6 +2905,9 @@ def cargar_notificaciones_cliente(casillero, hub=None, incluir_ocultas=False):
             """,
             parametros,
         ).fetchall()
+    if esquema_con_hub:
+        return filas
+    return [tuple(fila) + ("china",) for fila in filas]
 
 
 @st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
@@ -2871,12 +2917,17 @@ def contar_notificaciones_no_leidas(casillero, hub):
     hub_limpio = normalizar_hub_notificacion(hub)
     if not cas or not hub_limpio:
         return 0
+    esquema_con_hub = asegurar_hub_notificaciones_runtime_v1()
+    if not esquema_con_hub and hub_limpio != "china":
+        return 0
+    condicion_hub = "AND hub = ?" if esquema_con_hub else ""
+    parametros = (cas, hub_limpio) if esquema_con_hub else (cas,)
     with get_db() as conn:
         fila = conn.execute(
             "SELECT COUNT(*) FROM notificaciones_cliente "
-            "WHERE codigo_casillero = ? AND hub = ? "
+            f"WHERE codigo_casillero = ? {condicion_hub} "
             "AND visible = TRUE AND leida = FALSE",
-            (cas, hub_limpio),
+            parametros,
         ).fetchone()
     return int((fila or (0,))[0] or 0)
 
@@ -3119,21 +3170,39 @@ def crear_notificacion_cliente(
     hub_limpio = normalizar_hub_notificacion(
         hub or st.session_state.get("hub") or "china"
     ) or "china"
+    esquema_con_hub = asegurar_hub_notificaciones_runtime_v1()
+    if not esquema_con_hub and hub_limpio != "china":
+        return False
     fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
-        conn.execute(
-            """
-            INSERT INTO notificaciones_cliente (
-                codigo_casillero, hub, tracking, tipo, prioridad, titulo, mensaje,
-                canal, leida, visible, fecha_creacion, creado_por
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
-            """,
-            (
-                cas, hub_limpio, str(tracking or "").strip() or None, tipo, prioridad,
-                titulo_limpio, mensaje_limpio, canal, fecha,
-                creado_por or st.session_state.get("usuario") or "sistema",
-            ),
-        )
+        if esquema_con_hub:
+            conn.execute(
+                """
+                INSERT INTO notificaciones_cliente (
+                    codigo_casillero, hub, tracking, tipo, prioridad, titulo, mensaje,
+                    canal, leida, visible, fecha_creacion, creado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
+                """,
+                (
+                    cas, hub_limpio, str(tracking or "").strip() or None, tipo, prioridad,
+                    titulo_limpio, mensaje_limpio, canal, fecha,
+                    creado_por or st.session_state.get("usuario") or "sistema",
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO notificaciones_cliente (
+                    codigo_casillero, tracking, tipo, prioridad, titulo, mensaje,
+                    canal, leida, visible, fecha_creacion, creado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
+                """,
+                (
+                    cas, str(tracking or "").strip() or None, tipo, prioridad,
+                    titulo_limpio, mensaje_limpio, canal, fecha,
+                    creado_por or st.session_state.get("usuario") or "sistema",
+                ),
+            )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
     cargar_resumen_inicio_pais_v2.clear()
@@ -3160,12 +3229,22 @@ def marcar_todas_notificaciones_cliente(casillero, hub):
     hub_limpio = normalizar_hub_notificacion(hub)
     if not cas or not hub_limpio:
         return
+    esquema_con_hub = asegurar_hub_notificaciones_runtime_v1()
+    if not esquema_con_hub and hub_limpio != "china":
+        return
     with get_db() as conn:
-        conn.execute(
-            "UPDATE notificaciones_cliente SET leida = TRUE "
-            "WHERE codigo_casillero = ? AND hub = ? AND visible = TRUE",
-            (cas, hub_limpio),
-        )
+        if esquema_con_hub:
+            conn.execute(
+                "UPDATE notificaciones_cliente SET leida = TRUE "
+                "WHERE codigo_casillero = ? AND hub = ? AND visible = TRUE",
+                (cas, hub_limpio),
+            )
+        else:
+            conn.execute(
+                "UPDATE notificaciones_cliente SET leida = TRUE "
+                "WHERE codigo_casillero = ? AND visible = TRUE",
+                (cas,),
+            )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
     cargar_resumen_inicio_pais_v2.clear()
@@ -7020,31 +7099,23 @@ def asegurar_esquema_control_cliente():
                 "WHERE table_schema='public' AND table_name='notificaciones_cliente'"
             )
             columnas_notificaciones = {str(fila[0]) for fila in cursor.fetchall()}
-            if "hub" not in columnas_notificaciones:
-                cursor.execute(
-                    "ALTER TABLE public.notificaciones_cliente "
-                    "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
-                )
         else:
             cursor.execute("PRAGMA table_info(notificaciones_cliente)")
             columnas_notificaciones = {str(fila[1]) for fila in cursor.fetchall()}
-            if "hub" not in columnas_notificaciones:
-                cursor.execute(
-                    "ALTER TABLE notificaciones_cliente "
-                    "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
-                )
-        cursor.execute(
-            "UPDATE notificaciones_cliente SET hub='china' "
-            "WHERE hub IS NULL OR TRIM(hub)=''"
-        )
+        if "hub" in columnas_notificaciones:
+            cursor.execute(
+                "UPDATE notificaciones_cliente SET hub='china' "
+                "WHERE hub IS NULL OR TRIM(hub)=''"
+            )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_fecha "
             "ON notificaciones_cliente(codigo_casillero, visible, fecha_creacion DESC)"
         )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_hub_fecha "
-            "ON notificaciones_cliente(codigo_casillero, hub, visible, fecha_creacion DESC, id DESC)"
-        )
+        if "hub" in columnas_notificaciones:
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_hub_fecha "
+                "ON notificaciones_cliente(codigo_casillero, hub, visible, fecha_creacion DESC, id DESC)"
+            )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_casos_cliente_estado "
             "ON casos_cliente(codigo_casillero, estado, fecha_actualizacion DESC)"
