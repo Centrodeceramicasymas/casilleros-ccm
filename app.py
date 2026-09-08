@@ -1812,13 +1812,13 @@ def cargar_total_cotizaciones_cliente(casillero):
 
 
 @st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
-def cargar_resumen_inicio_pais(casillero, hub):
-    """Una sola consulta para encabezado, campana y próxima acción del país."""
+def cargar_resumen_inicio_pais_v2(casillero, hub):
+    """Resumen con forma estable y recuperación ante respuestas parciales del driver."""
     cas = formatear_casillero(casillero or "")
     hub_limpio = normalizar_hub_notificacion(hub)
     variantes = coincidencias_casillero(cas)
     if not cas or not hub_limpio or not variantes:
-        return (0, 0, None, None, None, None, None)
+        return {"cotizaciones": 0, "notificaciones": 0, "paquete": None}
     marcadores = ",".join("?" for _ in variantes)
     with get_db() as conn:
         fila = conn.execute(
@@ -1847,7 +1847,40 @@ def cargar_resumen_inicio_pais(casillero, hub):
             """,
             (*variantes, cas, hub_limpio, cas),
         ).fetchone()
-    return tuple(fila or (0, 0, None, None, None, None, None))
+        valores = list(fila or ())
+        total_cotizaciones = int(valores[0] or 0) if valores else 0
+        if len(valores) > 1:
+            total_notificaciones = int(valores[1] or 0)
+        else:
+            fila_notificaciones = conn.execute(
+                "SELECT COUNT(*) FROM notificaciones_cliente "
+                "WHERE codigo_casillero=? AND hub=? "
+                "AND visible=TRUE AND leida=FALSE",
+                (cas, hub_limpio),
+            ).fetchone()
+            total_notificaciones = int((fila_notificaciones or (0,))[0] or 0)
+        if len(valores) >= 7 and valores[2]:
+            paquete = tuple(valores[2:7])
+        else:
+            fila_paquete = conn.execute(
+                """
+                SELECT tracking, estado, ubicacion_actual, proximo_paso,
+                       fecha_actualizacion
+                FROM paquetes
+                WHERE codigo_casillero=?
+                  AND COALESCE(visible_cliente, TRUE)=TRUE
+                  AND COALESCE(estado, '')<>'Entregado'
+                ORDER BY fecha_actualizacion DESC
+                LIMIT 1
+                """,
+                (cas,),
+            ).fetchone()
+            paquete = tuple(fila_paquete) if fila_paquete and len(fila_paquete) >= 5 else None
+    return {
+        "cotizaciones": total_cotizaciones,
+        "notificaciones": total_notificaciones,
+        "paquete": paquete,
+    }
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -2550,7 +2583,7 @@ def invalidar_cache_flujo_tracking():
     cargar_paquetes_casillero_admin.clear()
     cargar_clientes_con_paquetes_admin.clear()
     cargar_metricas_paquetes_admin.clear()
-    cargar_resumen_inicio_pais.clear()
+    cargar_resumen_inicio_pais_v2.clear()
 
 
 def registrar_recepcion_bodega(
@@ -3103,7 +3136,7 @@ def crear_notificacion_cliente(
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
-    cargar_resumen_inicio_pais.clear()
+    cargar_resumen_inicio_pais_v2.clear()
     return True
 
 
@@ -3118,7 +3151,7 @@ def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
-    cargar_resumen_inicio_pais.clear()
+    cargar_resumen_inicio_pais_v2.clear()
 
 
 def marcar_todas_notificaciones_cliente(casillero, hub):
@@ -3135,7 +3168,7 @@ def marcar_todas_notificaciones_cliente(casillero, hub):
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
-    cargar_resumen_inicio_pais.clear()
+    cargar_resumen_inicio_pais_v2.clear()
 
 
 def pintar_centro_notificaciones_cliente(casillero, hub):
@@ -9162,7 +9195,7 @@ def invalidar_cache_datos_admin():
     cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
-    cargar_resumen_inicio_pais.clear()
+    cargar_resumen_inicio_pais_v2.clear()
     invalidar_cache_clientes_control360()
     invalidar_cache_expediente_control360()
     invalidar_cache_soporte()
@@ -14991,11 +15024,21 @@ elif st.session_state["rol"] == "cliente":
     estados_cotizaciones_cliente = {}
     paquete_resumen_inicio = None
     if vista_cliente_actual == "Inicio" and hub_notificaciones:
-        resumen_inicio = cargar_resumen_inicio_pais(casillero, hub_notificaciones)
-        total_cotizaciones = int(resumen_inicio[0] or 0)
-        total_notificaciones_nuevas = int(resumen_inicio[1] or 0)
-        if resumen_inicio[2]:
-            paquete_resumen_inicio = tuple(resumen_inicio[2:7])
+        try:
+            resumen_inicio = cargar_resumen_inicio_pais_v2(
+                casillero, hub_notificaciones
+            )
+        except Exception as exc:
+            registrar_error_datos(exc, "Resumen inicial del país")
+            st.session_state["_ccm_error_datos"] = True
+            resumen_inicio = {
+                "cotizaciones": 0,
+                "notificaciones": 0,
+                "paquete": None,
+            }
+        total_cotizaciones = int(resumen_inicio.get("cotizaciones") or 0)
+        total_notificaciones_nuevas = int(resumen_inicio.get("notificaciones") or 0)
+        paquete_resumen_inicio = resumen_inicio.get("paquete")
     elif vista_cliente_actual in ("Mis Cotizaciones", "Cotizador", "Mis Envíos", "Etiqueta"):
         (
             lista_todas_cotizaciones,
