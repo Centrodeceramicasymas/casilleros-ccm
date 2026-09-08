@@ -3130,6 +3130,66 @@ def pintar_centro_notificaciones_cliente(casillero):
             color: #0757c8 !important;
             background: #f0f7ff !important;
         }
+        [class*="st-key-notificacion_cliente_"] {
+            margin: 0 0 9px !important;
+            padding: 0 !important;
+        }
+        .notification-card {
+            padding: 13px 14px;
+            background: #ffffff;
+            border: 1px solid #dce5ed;
+            border-left: 4px solid var(--notif-color, #0757c8);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(17, 45, 65, .04);
+        }
+        .notification-card-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .notification-card-head b {
+            min-width: 0;
+            color: #17324d;
+            font-size: .84rem;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .notification-card-badges {
+            display: flex;
+            flex: none;
+            align-items: center;
+            gap: 5px;
+        }
+        .notification-card-badges span {
+            padding: 3px 7px;
+            border-radius: 999px;
+            font-size: .62rem;
+            font-weight: 850;
+        }
+        .notification-card-message {
+            margin-top: 6px;
+            color: #475569;
+            font-size: .77rem;
+            line-height: 1.48;
+        }
+        .notification-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 10px;
+            margin-top: 8px;
+            color: #64748b;
+            font-size: .66rem;
+        }
+        [class*="st-key-notificacion_cliente_"] .stButton {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
+        [class*="st-key-notificacion_cliente_"] .stButton > button {
+            width: auto !important;
+            min-width: 150px;
+        }
         @media (max-width: 700px) {
             .st-key-centro_notificaciones_cliente details > summary {
                 min-height: 46px !important;
@@ -3147,6 +3207,10 @@ def pintar_centro_notificaciones_cliente(casillero):
                 flex: 1 1 100% !important;
                 width: 100% !important;
                 min-width: 0 !important;
+            }
+            .notification-card-head { flex-direction: column; gap: 7px; }
+            [class*="st-key-notificacion_cliente_"] .stButton > button {
+                width: 100% !important;
             }
         }
         </style>
@@ -3176,7 +3240,10 @@ def pintar_centro_notificaciones_cliente(casillero):
                     )
 
             st.markdown('<div style="height:5px"></div>', unsafe_allow_html=True)
-            for fila in notificaciones[:8]:
+            limite_notificaciones = max(
+                3, min(8, int(st.session_state.get("limite_notificaciones_cliente") or 3))
+            )
+            for fila in notificaciones[:limite_notificaciones]:
                 nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila
                 prioridad_limpia = str(prioridad or "Normal")
                 color_prioridad = {
@@ -3185,42 +3252,39 @@ def pintar_centro_notificaciones_cliente(casillero):
                     "Normal": ("#0757c8", "#eff6ff"),
                 }.get(prioridad_limpia, ("#475569", "#f1f5f9"))
                 color, fondo = color_prioridad
-                detalle, accion = st.columns([4.6, 1.15])
-                with detalle:
+                estado_lectura = "Leída" if bool(leida) else "Nueva"
+                color_lectura = "#15803d" if bool(leida) else "#0757c8"
+                fondo_lectura = "#ecfdf5" if bool(leida) else "#eff6ff"
+                with st.container(key=f"notificacion_cliente_{nid}"):
                     st.markdown(
-                        f'<div style="margin:4px 0;padding:12px 14px;background:#fff;'
-                        f'border:1px solid #e2e8f0;border-left:4px solid {color};border-radius:7px;">'
-                        f'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
-                        f'<b style="color:#0f172a;font-size:.84rem;line-height:1.35;">{html.escape(str(titulo))}</b>'
-                        f'<span style="flex:none;color:{color};background:{fondo};border:1px solid {color}33;'
-                        f'border-radius:999px;padding:2px 7px;font-size:.62rem;font-weight:800;">'
-                        f'{html.escape(prioridad_limpia)}</span></div>'
-                        f'<div style="margin-top:5px;color:#475569;font-size:.77rem;line-height:1.45;">'
-                        f'{html.escape(str(mensaje))}</div>'
-                        f'<div style="display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:7px;'
-                        f'color:#64748b;font-size:.66rem;">'
-                        f'<span>{html.escape(str(tipo))} · {html.escape(str(canal))}</span>'
-                        f'<span>{html.escape(str(fecha))}</span>'
-                        f'{f"<span>Tracking: {html.escape(str(tracking))}</span>" if tracking else ""}'
-                        f'</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                with accion:
+                            f'<article class="notification-card" style="--notif-color:{color};">'
+                            f'<div class="notification-card-head"><b>{html.escape(str(titulo))}</b>'
+                            f'<div class="notification-card-badges">'
+                            f'<span style="color:{color};background:{fondo};">{html.escape(prioridad_limpia)}</span>'
+                            f'<span style="color:{color_lectura};background:{fondo_lectura};">{estado_lectura}</span>'
+                            f'</div></div>'
+                            f'<div class="notification-card-message">{html.escape(str(mensaje))}</div>'
+                            f'<div class="notification-card-meta">'
+                            f'<span>{html.escape(str(tipo))} · {html.escape(str(canal))}</span>'
+                            f'<span>{html.escape(fecha_soporte_amigable(fecha))}</span>'
+                            f'{f"<span>Tracking: {html.escape(str(tracking))}</span>" if tracking else ""}'
+                            f'</div></article>',
+                            unsafe_allow_html=True,
+                        )
                     if not bool(leida):
                         st.button(
-                            "Marcar leída", key=f"notif_read_{nid}",
-                            use_container_width=True,
+                            "Marcar como leída", key=f"notif_read_{nid}",
                             on_click=marcar_notificacion_cliente,
                             args=(nid, casillero, True),
                         )
-                    else:
-                        st.markdown(
-                            '<div style="text-align:center;color:#15803d;font-size:.72rem;'
-                            'font-weight:800;padding:11px 4px;">Leída</div>',
-                            unsafe_allow_html=True,
-                        )
-            if len(notificaciones) > 8:
-                st.caption(f"Mostrando las 8 notificaciones más recientes de {len(notificaciones)}.")
+            if len(notificaciones) > limite_notificaciones:
+                st.button(
+                    f"Mostrar más notificaciones ({limite_notificaciones} de {len(notificaciones)})",
+                    key="cliente_mas_notificaciones",
+                    use_container_width=True,
+                    on_click=aumentar_limite_registros,
+                    args=("limite_notificaciones_cliente", 5),
+                )
 
 
 def hidratar_cotizaciones_sesion(casillero, filas_db=None, confirmaciones=None):
@@ -4502,14 +4566,15 @@ def pintar_banner_promocional_china(casillero):
         f'<div><small>SU CASILLERO</small><b>{html.escape(cas_txt)}</b></div>'
         f'<div><small>WHATSAPP DE RECEPCIÓN</small><b>+504 9577-1099</b></div>'
         f'</div>'
-        f'<div class="promo-ad-addresses" aria-label="Dirección oficial del almacén en China">'
+        f'<details class="promo-ad-addresses" aria-label="Dirección oficial del almacén en China">'
+        f'<summary>Ver dirección completa del almacén</summary>'
         f'<div class="promo-ad-address-head"><span aria-hidden="true">⌖</span><div><small>ALMACÉN EN SHANGHÁI</small><b>Dirección oficial de recepción</b></div></div>'
         f'<div class="promo-ad-address promo-ad-address-primary"><small>中文地址 · CHINO</small><b lang="zh">上海市浦东新区合庆镇人民塘路1333号</b></div>'
         f'<div class="promo-ad-translations">'
         f'<div class="promo-ad-address"><small>ESPAÑOL</small><b>N.º 1333, calle Renmintang, pueblo de Heqing, distrito nuevo de Pudong, Shanghái, China.</b></div>'
         f'<div class="promo-ad-address"><small>ENGLISH</small><b lang="en">No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China.</b></div>'
         f'</div>'
-        f'</div>'
+        f'</details>'
         f'<a class="promo-ad-cta" href="{url_wa}" target="_blank" rel="noopener noreferrer">'
         f'<span class="promo-ad-cta-icon" aria-hidden="true">WA</span><span class="promo-ad-cta-copy"><b>Notificar carga por WhatsApp</b><small>+504 9577-1099 · mensaje preparado para completar</small></span><span class="promo-ad-cta-arrow" aria-hidden="true">→</span></a>'
         f"</div>",
@@ -4742,25 +4807,22 @@ def pintar_proxima_accion_cliente(casillero, total_cotizaciones, notificaciones_
         tono = "#1d4ed8"
 
     with st.container(key="cliente_proxima_accion"):
-        st.markdown(
-            f'<section style="margin:4px 0 16px;padding:15px 16px;background:#ffffff;'
-            f'border:1px solid #d8e2e8;border-left:5px solid {tono};border-radius:8px;'
-            f'box-shadow:0 4px 14px rgba(17,45,65,.07);">'
-            f'<small style="display:block;margin-bottom:4px;color:#64748b;font-size:.65rem;'
-            f'font-weight:900;text-transform:uppercase;">Su siguiente acción</small>'
-            f'<b style="display:block;color:#17324d;font-size:1rem;line-height:1.3;">'
-            f'{html.escape(titulo)}</b>'
-            f'<span style="display:block;margin-top:5px;color:#5b6f7d;font-size:.76rem;'
-            f'line-height:1.45;">{html.escape(detalle)}</span></section>',
-            unsafe_allow_html=True,
-        )
-        st.button(
-            etiqueta_boton,
-            type="primary",
-            key="cliente_proxima_accion_btn",
-            use_container_width=True,
-            on_click=accion,
-        )
+        resumen_accion, boton_accion = st.columns([4.2, 1.55], gap="medium")
+        with resumen_accion:
+            st.markdown(
+                f'<section class="client-next-action" style="--next-action-color:{tono};">'
+                f'<small>Su siguiente acción</small><b>{html.escape(titulo)}</b>'
+                f'<span>{html.escape(detalle)}</span></section>',
+                unsafe_allow_html=True,
+            )
+        with boton_accion:
+            st.button(
+                etiqueta_boton,
+                type="primary",
+                key="cliente_proxima_accion_btn",
+                use_container_width=True,
+                on_click=accion,
+            )
 
 
 def pintar_vista_actividad(total_cotizaciones=0):
@@ -5267,6 +5329,11 @@ def pintar_vista_actividad(total_cotizaciones=0):
                             st.session_state["cliente_modo_soporte"] = "Mis solicitudes"
                             st.success("Solicitud registrada. Ya puede abrirla desde Mis solicitudes.")
                             st.rerun()
+        st.markdown(
+            '<div class="activity-resources-title">Recursos importantes</div>'
+            '<div class="activity-resources-copy">Documentos y reglas que conviene revisar antes de comprar o despachar.</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f'<section class="actividad-politicas" aria-label="Políticas de envío y productos restringidos">'
             f'<div class="actividad-politicas-copy"><span class="actividad-politicas-icon" aria-hidden="true">!</span>'
@@ -11210,6 +11277,18 @@ st.markdown(
         font-size: 1.05rem !important;
     }
 
+    .activity-resources-title {
+        margin: 22px 0 3px;
+        color: #17324d;
+        font-size: 1rem;
+        font-weight: 850;
+    }
+    .activity-resources-copy {
+        margin: 0 0 11px;
+        color: #64748b;
+        font-size: .76rem;
+        line-height: 1.45;
+    }
     .actividad-politicas {
         display: flex;
         align-items: center;
@@ -11603,6 +11682,36 @@ st.markdown(
         color: #14283d;
         border-radius: 6px;
     }
+    .promo-ad-addresses > summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        cursor: pointer;
+        list-style: none;
+        color: #17324d;
+        font-size: .80rem;
+        font-weight: 850;
+    }
+    .promo-ad-addresses > summary::-webkit-details-marker { display: none; }
+    .promo-ad-addresses > summary::after {
+        content: "+";
+        display: grid;
+        width: 24px;
+        height: 24px;
+        flex: 0 0 24px;
+        place-items: center;
+        color: #ffffff;
+        background: #173b57;
+        border-radius: 50%;
+        font-size: .9rem;
+    }
+    .promo-ad-addresses[open] > summary {
+        margin-bottom: 12px;
+        padding-bottom: 11px;
+        border-bottom: 1px solid #d8e0e9;
+    }
+    .promo-ad-addresses[open] > summary::after { content: "−"; }
     .promo-ad-address-head {
         display: flex;
         align-items: center;
@@ -13246,6 +13355,122 @@ st.markdown(
         .usq-hero::after { font-size: 3.4rem; }
         .usq-section-title { margin-top: 18px; }
     }
+
+    /* Refinamiento visual del panel del cliente. No modifica la barra inferior. */
+    .client-header-title { font-size: clamp(1.08rem, 2.2vw, 1.28rem); }
+    .client-header-casillero { font-size: clamp(.78rem, 1.5vw, .88rem); }
+    .client-header-meta { font-size: clamp(.70rem, 1.3vw, .78rem); }
+    .client-home-title { margin-top: 8px; font-size: clamp(1.22rem, 2vw, 1.48rem); }
+    .client-home-copy { max-width: 680px; font-size: .88rem; }
+    .client-home-section { margin-top: 22px; font-size: .76rem; color: #506474; }
+    .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) {
+        align-items: stretch !important;
+        gap: 14px !important;
+    }
+    @media (min-width: 701px) {
+        .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) > div:first-child {
+            flex: 1.18 1 0 !important;
+        }
+        .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) > div:not(:first-child) {
+            flex: .91 1 0 !important;
+        }
+    }
+    [class*="st-key-home_origin_"] {
+        min-height: 178px;
+        padding: 17px 16px 14px;
+        border-color: #d7e1e9 !important;
+        box-shadow: 0 5px 16px rgba(17, 45, 65, .055);
+    }
+    .home-origin-name { font-size: 1.02rem; color: #17324d; }
+    .home-origin-detail { font-size: .77rem; line-height: 1.45; }
+    .home-origin-status { font-size: .66rem; }
+
+    .st-key-cliente_proxima_accion {
+        margin: 10px 0 16px !important;
+        padding: 14px 15px !important;
+        background: #ffffff !important;
+        border: 1px solid #d8e2e8 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 14px rgba(17, 45, 65, .07) !important;
+    }
+    .st-key-cliente_proxima_accion [data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+    }
+    .client-next-action {
+        padding: 2px 4px 2px 12px;
+        border-left: 4px solid var(--next-action-color, #0757c8);
+    }
+    .client-next-action small {
+        display: block;
+        margin-bottom: 4px;
+        color: #64748b;
+        font-size: .66rem;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+    .client-next-action b {
+        display: block;
+        color: #17324d;
+        font-size: 1.02rem;
+        line-height: 1.3;
+    }
+    .client-next-action span {
+        display: block;
+        margin-top: 5px;
+        color: #5b6f7d;
+        font-size: .78rem;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+    .st-key-cliente_proxima_accion_btn button { min-height: 44px !important; }
+
+    .st-key-vista_actividad > [data-testid="stVerticalBlockBorderWrapper"] > div,
+    .st-key-vista_actividad > [data-testid="stVerticalBlock"] { gap: 12px !important; }
+    .st-key-actividad_cotizaciones button,
+    .st-key-actividad_envios button,
+    .st-key-actividad_fichas button {
+        min-height: 56px !important;
+        padding: 9px 11px !important;
+        font-size: .78rem !important;
+        line-height: 1.35 !important;
+        white-space: pre-line !important;
+        border-radius: 8px !important;
+    }
+    .actividad-politicas-copy b,
+    .actividad-formato-head b { font-size: .92rem; }
+    .actividad-politicas-copy p,
+    .actividad-formato-head p { font-size: .74rem; line-height: 1.5; }
+
+    .st-key-btn_abrir_gestion_direcciones {
+        width: min(100%, 300px) !important;
+        margin-left: auto !important;
+    }
+    .destino-seleccionado-card { padding: 10px 13px; margin-top: 8px; }
+
+    @media (min-width: 1024px) {
+        :root { --app-max-width: 920px; }
+    }
+    @media (max-width: 700px) {
+        .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) {
+            flex-direction: column !important;
+        }
+        .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) > div,
+        .st-key-vista_inicio [data-testid="stHorizontalBlock"]:has([class*="st-key-home_origin_"]) [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        [class*="st-key-home_origin_"] { min-height: 0; }
+        .st-key-cliente_proxima_accion [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 10px !important;
+        }
+        .st-key-cliente_proxima_accion [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        .st-key-btn_abrir_gestion_direcciones { width: 100% !important; }
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -14675,8 +14900,8 @@ elif st.session_state["rol"] == "cliente":
         with st.container(key="vista_inicio"):
             if not hub_sel:
                 st.markdown(
-                    '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
-                    '<div class="client-home-copy">Seleccione el país de origen para activar únicamente las herramientas correspondientes a esa ruta.</div>',
+                    '<div class="client-home-title">¿Desde dónde realizará su envío?</div>'
+                    '<div class="client-home-copy">Seleccione el país de origen y mostraremos únicamente las herramientas disponibles para esa ruta.</div>',
                     unsafe_allow_html=True,
                 )
                 visibles_hub = [hid for hid in HUBS if usuario_puede_hub(hid)]
