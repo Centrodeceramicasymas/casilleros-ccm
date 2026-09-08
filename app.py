@@ -3138,6 +3138,16 @@ def pintar_centro_notificaciones_cliente(casillero):
             .st-key-centro_notificaciones_cliente [data-testid="stExpanderDetails"] {
                 padding: 10px !important;
             }
+            .st-key-centro_notificaciones_cliente [data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+            }
+            .st-key-centro_notificaciones_cliente [data-testid="stHorizontalBlock"] > div,
+            .st-key-centro_notificaciones_cliente [data-testid="stColumn"] {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+                min-width: 0 !important;
+            }
         }
         </style>
         """,
@@ -4045,6 +4055,34 @@ def preparar_nueva_cotizacion():
     st.session_state["mostrar_gestion_direcciones"] = False
 
 
+def cotizador_tiene_borrador():
+    """Detecta datos útiles antes de ofrecer una limpieza del formulario."""
+    if st.session_state.get("datos_pdf_confirmado") or st.session_state.get("ultima_cot_id"):
+        return True
+    for clave, valor in st.session_state.items():
+        if str(clave).startswith(("in_al_", "in_an_", "in_la_", "in_pe_")):
+            try:
+                if float(valor or 0) > 0:
+                    return True
+            except (TypeError, ValueError):
+                if str(valor or "").strip():
+                    return True
+    return False
+
+
+def solicitar_limpiar_borrador_cotizacion():
+    st.session_state["confirmar_limpiar_borrador"] = True
+
+
+def cancelar_limpiar_borrador_cotizacion():
+    st.session_state.pop("confirmar_limpiar_borrador", None)
+
+
+def confirmar_limpiar_borrador_cotizacion():
+    preparar_nueva_cotizacion()
+    st.session_state.pop("confirmar_limpiar_borrador", None)
+
+
 def ir_a(vista, hub="_omit"):
     """Cambia de vista en session_state. Pensado para on_click (un solo rerun)."""
     if vista == "Cerrar":
@@ -4105,9 +4143,9 @@ def ir_a_inicio():
 
 
 def abrir_notificaciones_desde_encabezado():
-    """Lleva al centro de notificaciones desde cualquier vista del cliente."""
+    """Abre notificaciones sin perder el país que el cliente estaba gestionando."""
     st.session_state["abrir_notificaciones_header"] = True
-    ir_a("Inicio", hub=None)
+    ir_a("Inicio")
 
 
 def catalogo_disponible_en_hub_actual():
@@ -4154,6 +4192,12 @@ def ir_a_mas():
 def ir_a_actividad():
     """Centro único para cotizaciones, envíos y fichas del cliente."""
     ir_a("Actividad", hub="china")
+
+
+def ir_a_soporte_desde_mas():
+    """Abre Actividad con el centro de soporte desplegado."""
+    st.session_state["mantener_soporte_abierto"] = True
+    ir_a_actividad()
 
 
 def abrir_direcciones_desde_mas():
@@ -4854,7 +4898,7 @@ def pintar_vista_actividad(total_cotizaciones=0):
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button { min-height:70px !important; height:70px !important; color:#fff !important; -webkit-text-fill-color:#fff !important; background:#0f766e !important; border-color:#0f766e !important; box-shadow:none !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button:hover { background:#0b625b !important; border-color:#0b625b !important; }
                 [class*="st-key-soporte_composer_cliente_"] .stButton > button:focus, [class*="st-key-soporte_composer_cliente_"] .stButton > button:active { outline:0 !important; box-shadow:none !important; }
-                @media(max-width:700px){ .support-thread-head{gap:9px; padding:12px}.support-thread-avatar{width:34px;height:34px}.support-message{max-width:94%}.st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} .support-panel-head{align-items:center;} [class*="st-key-cliente_caso_fila_"]{padding:9px 9px 10px}.support-case-meta{gap:4px 5px}.support-help-mark{width:31px;height:31px} }
+                @media(max-width:700px){ .support-thread-head{gap:9px; padding:12px; flex-wrap:wrap}.support-thread-avatar{width:34px;height:34px}.support-message{max-width:94%}.st-key-soporte_cliente_panel [data-testid="stExpanderDetails"]{padding:10px !important;} .support-panel-head{align-items:center;} [class*="st-key-cliente_caso_fila_"]{padding:9px 9px 10px}.support-case-meta{gap:4px 5px}.support-help-mark{width:31px;height:31px} [class*="st-key-cliente_caso_fila_"] [data-testid="stHorizontalBlock"]{flex-direction:column !important;align-items:stretch !important;gap:7px !important;} [class*="st-key-cliente_caso_fila_"] [data-testid="stColumn"]{width:100% !important;flex:1 1 100% !important;} }
                 </style>
                 """,
                 unsafe_allow_html=True,
@@ -5291,6 +5335,14 @@ def pintar_vista_mas():
                     st.button("🛍️  Catálogo", key="mas_catalogo", use_container_width=True, on_click=ir_a_catalogo)
         with st.container(key="mas_sesion"):
             st.markdown('<div class="mas-seccion">Soporte y sesión</div>', unsafe_allow_html=True)
+            if hub_activo == "china":
+                st.button(
+                    "💬  Solicitudes y soporte",
+                    type="secondary",
+                    key="mas_soporte",
+                    use_container_width=True,
+                    on_click=ir_a_soporte_desde_mas,
+                )
             if mostrar_btn_guia:
                 st.button(
                     "Guía",
@@ -10115,9 +10167,9 @@ st.markdown(
     }
     .st-key-safe_historial {
         display: block !important;
-        height: 16px !important;
-        min-height: 16px !important;
-        max-height: 16px !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
+        max-height: none !important;
         width: 100% !important;
         pointer-events: none !important;
         opacity: 0 !important;
@@ -10136,8 +10188,8 @@ st.markdown(
     }
     .st-key-safe_fichas {
         display: block !important;
-        height: 200px !important;
-        min-height: 200px !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
         width: 100% !important;
         pointer-events: none !important;
         opacity: 0 !important;
@@ -10161,7 +10213,7 @@ st.markdown(
     }
     .st-key-vista_inicio {
         display: block !important;
-        padding-bottom: 180px !important;
+        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
         min-height: 0 !important;
         overflow: visible !important;
         margin-top: 0 !important;
@@ -10185,21 +10237,21 @@ st.markdown(
     .block-container:has(.st-key-vista_historial),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_historial),
     .stMainBlockContainer:has(.st-key-vista_historial) {
-        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        padding-bottom: 0 !important;
     }
     .block-container:has(.st-key-vista_envios),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_envios),
     .stMainBlockContainer:has(.st-key-vista_envios) {
-        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        padding-bottom: 0 !important;
     }
     .block-container:has(.st-key-vista_fichas),
     [data-testid="stMainBlockContainer"]:has(.st-key-vista_fichas),
     .stMainBlockContainer:has(.st-key-vista_fichas) {
-        padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: 0 !important;
     }
     .st-key-vista_envios {
         display: block !important;
-        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        padding-bottom: 0 !important;
         min-height: 0 !important;
         overflow: visible !important;
     }
@@ -10242,10 +10294,17 @@ st.markdown(
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
         gap: 10px;
         margin-bottom: 8px;
     }
-    .shipment-tracking { color: #0f172a; font-size: .9rem; font-weight: 850; }
+    .shipment-tracking {
+        min-width: 0;
+        color: #0f172a;
+        font-size: .9rem;
+        font-weight: 850;
+        overflow-wrap: anywhere;
+    }
     .shipment-status {
         padding: 4px 8px;
         color: #0757c8;
@@ -10275,6 +10334,20 @@ st.markdown(
         font-weight: 750;
     }
     .shipment-flag.ok { color: #166534; background: #ecfdf5; border-color: #bbf7d0; }
+    @media (max-width: 640px) {
+        .st-key-envios_metricas [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-wrap: wrap !important;
+        }
+        .st-key-envios_metricas [data-testid="stHorizontalBlock"] > div,
+        .st-key-envios_metricas [data-testid="stColumn"] {
+            flex: 1 1 calc(50% - 6px) !important;
+            width: calc(50% - 6px) !important;
+            min-width: 135px !important;
+        }
+        .shipment-card { padding: 13px 12px; }
+        .shipment-status { white-space: normal; text-align: center; }
+    }
     .shipment-empty {
         padding: 20px 16px;
         color: #64748b;
@@ -10312,7 +10385,7 @@ st.markdown(
     [class*="st-key-docs_locked_"] button { min-height: 42px !important; }
     .st-key-vista_fichas {
         display: block !important;
-        padding-bottom: 200px !important;
+        padding-bottom: 0 !important;
         min-height: 0 !important;
         overflow: visible !important;
     }
@@ -10321,7 +10394,7 @@ st.markdown(
         flex-direction: column !important;
         justify-content: flex-start !important;
         align-items: stretch !important;
-        padding-bottom: calc(var(--ccm-nav-clearance) + 16px) !important;
+        padding-bottom: 0 !important;
         min-height: 0 !important;
         height: auto !important;
         max-height: none !important;
@@ -10343,9 +10416,9 @@ st.markdown(
     }
     .st-key-vista_historial [data-testid="stElementContainer"]:has(> .st-key-safe_historial),
     .st-key-vista_historial [data-testid="stLayoutWrapper"]:has(> .st-key-safe_historial) {
-        height: 16px !important;
-        min-height: 16px !important;
-        max-height: 16px !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
+        max-height: none !important;
         margin: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
@@ -10362,8 +10435,8 @@ st.markdown(
     }
     [data-testid="stElementContainer"]:has(> .st-key-safe_fichas),
     [data-testid="stLayoutWrapper"]:has(> .st-key-safe_fichas) {
-        height: 200px !important;
-        min-height: 200px !important;
+        height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
+        min-height: calc(var(--ccm-nav-clearance, 109px) + 12px) !important;
         max-height: none !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -10385,13 +10458,13 @@ st.markdown(
         row-gap: 0 !important;
     }
     .stApp:has(.st-key-vista_mas) .ccm-header-spacer {
-        height: calc(var(--header-box, 196px) + 12px) !important;
-        min-height: calc(var(--header-box, 196px) + 12px) !important;
+        height: var(--header-offset, 116px) !important;
+        min-height: var(--header-offset, 116px) !important;
     }
     .stApp:has(.st-key-vista_catalogo) .ccm-header-spacer,
     .stApp:has(.st-key-vista_cotizador) .ccm-header-spacer {
-        height: calc(var(--header-box, 196px) + 16px) !important;
-        min-height: calc(var(--header-box, 196px) + 16px) !important;
+        height: var(--header-offset, 116px) !important;
+        min-height: var(--header-offset, 116px) !important;
     }
     .stApp:has(.st-key-vista_catalogo) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_catalogo) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
@@ -10399,8 +10472,8 @@ st.markdown(
     .stApp:has(.st-key-vista_cotizador) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_cotizador) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_cotizador) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
-        height: calc(var(--header-box, 196px) + 16px) !important;
-        min-height: calc(var(--header-box, 196px) + 16px) !important;
+        height: var(--header-offset, 116px) !important;
+        min-height: var(--header-offset, 116px) !important;
         margin: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
@@ -10414,8 +10487,8 @@ st.markdown(
     .stApp:has(.st-key-vista_mas) [data-testid="stElementContainer"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_mas) [data-testid="stMarkdown"]:has(.ccm-header-spacer),
     .stApp:has(.st-key-vista_mas) [data-testid="stMarkdownContainer"]:has(.ccm-header-spacer) {
-        height: calc(var(--header-box, 196px) + 12px) !important;
-        min-height: calc(var(--header-box, 196px) + 12px) !important;
+        height: var(--header-offset, 116px) !important;
+        min-height: var(--header-offset, 116px) !important;
         margin: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
@@ -10500,6 +10573,11 @@ st.markdown(
     }
     .st-key-btn_logout_cliente div.stButton {
         margin-bottom: 0 !important;
+    }
+    .st-key-btn_logout_cliente {
+        margin-top: 18px !important;
+        padding-top: 12px !important;
+        border-top: 1px solid #e2e8f0 !important;
     }
     .st-key-vista_cotizador {
         display: flex !important;
@@ -10655,6 +10733,10 @@ st.markdown(
         font-size: .74rem !important;
         font-weight: 800 !important;
     }
+    .st-key-btn_abrir_gestion_direcciones {
+        margin-top: 8px !important;
+        margin-bottom: 12px !important;
+    }
     .st-key-vista_cotizador div[data-baseweb="select"] > div,
     .st-key-vista_cotizador [data-testid="stNumberInputContainer"] {
         border-color: #b9c7d6 !important;
@@ -10727,7 +10809,7 @@ st.markdown(
     }
     .st-key-vista_catalogo:has([data-testid="stImage"]) {
         justify-content: flex-start !important;
-        padding-bottom: 180px !important;
+        padding-bottom: calc(var(--ccm-nav-clearance, 109px) + 16px) !important;
         min-height: 0 !important;
     }
     .st-key-vista_cotizador:has(.st-key-guia_foco_pdf_fab),
@@ -12947,7 +13029,7 @@ st.markdown(
         border-radius: 20px !important;
         padding: 6px 2px 5px 2px !important;
         margin: 0 !important;
-        font-size: 0.58rem !important;
+        font-size: 0.72rem !important;
         font-weight: 700 !important;
         line-height: 1.15 !important;
         white-space: pre-line !important;
@@ -12972,6 +13054,11 @@ st.markdown(
         outline: none !important;
         box-shadow: none !important;
         border: none !important;
+    }
+    .st-key-bottom_nav button:focus-visible {
+        outline: 3px solid #79a7ff !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 2px #ffffff !important;
     }
     .st-key-bottom_nav div.stButton > button *,
     .st-key-bottom_nav div.stButton > button[kind="secondary"] *,
@@ -13038,7 +13125,7 @@ st.markdown(
         border-radius: 999px;
         background: #004ac1;
         color: #ffffff;
-        font-size: 0.58rem;
+        font-size: 0.62rem;
         font-weight: 800;
         line-height: 16px;
         text-align: center;
@@ -13995,7 +14082,10 @@ def pintar_formulario_acceso():
                         conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (hash_sesion, user[0]))
                     cargar_estado_cuenta_sesion.clear()
                 if user[5] == 0:
-                    st.error("Cuenta inactiva. Contacte al soporte.")
+                    st.error(
+                        "La cuenta está pendiente de activación o temporalmente inactiva. "
+                        "Contacte a soporte para confirmar su estado."
+                    )
                 else:
                     st.session_state["autenticado"] = True
                     st.session_state["rol"] = normalizar_rol(user[4])
@@ -14119,6 +14209,8 @@ if not st.session_state["autenticado"]:
                 """,
                 unsafe_allow_html=True,
             )
+            st.caption("Contraseña provisional · utilice el botón de copiar del siguiente campo")
+            st.code(str(creado.get("password") or ""), language="text")
             comprobante_registro = (
                 "COMPROBANTE DE APERTURA DE CASILLERO\n"
                 "Centro de Cerámicas y Más\n\n"
@@ -14183,7 +14275,12 @@ if not st.session_state["autenticado"]:
                 '<p class="reg-step-copy">La identidad se utilizará para asignar su casillero de forma única.</p></section>',
                 unsafe_allow_html=True,
             )
-            nom = st.text_input("Nombre completo *", value=st.session_state["reg_datos"].get("nom", ""))
+            nom = st.text_input(
+                "Nombres completos *",
+                value=st.session_state["reg_datos"].get("nom", ""),
+                placeholder="Ej. Heriberto Antonio",
+                help="Escriba al menos dos nombres. Sus iniciales formarán parte del casillero.",
+            )
             dni = st.text_input(
                 "Número de identidad (13 dígitos) *",
                 value=st.session_state["reg_datos"].get("dni", ""),
@@ -14330,9 +14427,10 @@ if not st.session_state["autenticado"]:
                                 f'<div class="reg-warn-card">⚠️ {html.escape(detalle_existente)}</div>',
                                 unsafe_allow_html=True,
                             )
-                            st.markdown(
-                                f'<a href="{url_wa}" target="_blank"><button style="background:#22c55e; color:white; border:none; padding:10px; border-radius:8px; width:100%; font-weight:bold; cursor:pointer;">📲 Consultar por WhatsApp (+504 9577-1099)</button></a>',
-                                unsafe_allow_html=True,
+                            st.link_button(
+                                "Consultar por WhatsApp (+504 9577-1099)",
+                                url_wa,
+                                use_container_width=True,
                             )
                         else:
                             try:
@@ -14576,8 +14674,6 @@ elif st.session_state["rol"] == "cliente":
         hub_sel = st.session_state.get("hub")
         with st.container(key="vista_inicio"):
             if not hub_sel:
-                pintar_anuncio_portal_cliente()
-                pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     '<div class="client-home-title">¿Qué desea gestionar hoy?</div>'
                     '<div class="client-home-copy">Seleccione el país de origen para activar únicamente las herramientas correspondientes a esa ruta.</div>',
@@ -14613,6 +14709,9 @@ elif st.session_state["rol"] == "cliente":
                                     on_click=ir_a,
                                     args=("Inicio", hub_id),
                                 )
+
+                    pintar_anuncio_portal_cliente()
+                    pintar_centro_notificaciones_cliente(casillero)
 
                     mensaje_ayuda = urllib.parse.quote(
                         f"Hola Centro de Cerámicas y Más, necesito ayuda con mi casillero {casillero}."
@@ -14660,12 +14759,14 @@ elif st.session_state["rol"] == "cliente":
                 pintar_proxima_accion_cliente(
                     casillero, total_cotizaciones, total_notificaciones_nuevas
                 )
+                pintar_centro_notificaciones_cliente(casillero)
                 pintar_banner_promocional_china(casillero)
             elif hub_sel == "eeuu":
                 # El área de EE. UU. queda intencionalmente limpia hasta que
                 # se defina su próximo flujo operativo.
                 hub_eeuu = HUBS["eeuu"]
                 st.markdown(f"#### {hub_eeuu['icon']} {hub_eeuu['label']}")
+                pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     f'<div class="hub-empty-box">'
                     f'<div style="font-size:2rem;margin-bottom:8px;">{hub_eeuu["icon"]}</div>'
@@ -14678,6 +14779,7 @@ elif st.session_state["rol"] == "cliente":
             elif hub_sel in HUBS:
                 hub_vacio = HUBS[hub_sel]
                 st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
+                pintar_centro_notificaciones_cliente(casillero)
                 st.markdown(
                     f'<div class="hub-empty-box">'
                     f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
@@ -15070,14 +15172,35 @@ elif st.session_state["rol"] == "cliente":
                 '</section>',
                 unsafe_allow_html=True,
             )
-            st.button(
-                "Iniciar una cotización nueva",
-                type="secondary",
-                key="btn_nueva_cotizacion_limpia",
-                use_container_width=True,
-                help="Limpia las medidas y el cálculo actual únicamente cuando usted lo decida.",
-                on_click=preparar_nueva_cotizacion,
-            )
+            if cotizador_tiene_borrador():
+                espacio_nueva, accion_nueva = st.columns([3.4, 1.6], gap="small")
+                with accion_nueva:
+                    st.button(
+                        "Nueva cotización",
+                        type="secondary",
+                        key="btn_nueva_cotizacion_limpia",
+                        use_container_width=True,
+                        help="Permite limpiar las medidas y comenzar otra cotización.",
+                        on_click=solicitar_limpiar_borrador_cotizacion,
+                    )
+            if st.session_state.get("confirmar_limpiar_borrador"):
+                st.warning("¿Desea limpiar las medidas y el cálculo actual para comenzar de nuevo?")
+                confirmar_nueva, cancelar_nueva = st.columns(2, gap="small")
+                with confirmar_nueva:
+                    st.button(
+                        "Sí, comenzar de nuevo",
+                        type="primary",
+                        key="btn_confirmar_nueva_cotizacion",
+                        use_container_width=True,
+                        on_click=confirmar_limpiar_borrador_cotizacion,
+                    )
+                with cancelar_nueva:
+                    st.button(
+                        "Conservar borrador",
+                        key="btn_cancelar_nueva_cotizacion",
+                        use_container_width=True,
+                        on_click=cancelar_limpiar_borrador_cotizacion,
+                    )
             st.markdown(
                 '<section class="quote-origin-intro"><span class="quote-stage-number">1</span><div>'
                 '<small>Origen seleccionado</small>'
@@ -15094,6 +15217,10 @@ elif st.session_state["rol"] == "cliente":
                 '</div></div>',
                 unsafe_allow_html=True,
             )
+            # El usuario puede cambiar de destino antes de emitir. Esta misma
+            # selección alimenta las cotizaciones, fichas y documentos.
+            opciones_destino = [op for op in opciones_modalidad if op != crear_nueva_dir]
+            selector_modalidad_entrega(opciones_destino)
             st.button(
                 "Administrar direcciones de envío",
                 type="secondary",
@@ -15101,10 +15228,6 @@ elif st.session_state["rol"] == "cliente":
                 use_container_width=True,
                 on_click=abrir_gestion_direcciones,
             )
-            # El usuario puede cambiar de destino antes de emitir. Esta misma
-            # selección alimenta las cotizaciones, fichas y documentos.
-            opciones_destino = [op for op in opciones_modalidad if op != crear_nueva_dir]
-            selector_modalidad_entrega(opciones_destino)
             destino_estampado = html.escape(destino_para_documentos())
             st.markdown(
                 f"""
