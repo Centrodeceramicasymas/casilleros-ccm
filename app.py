@@ -2356,6 +2356,7 @@ def actualizar_revision_cotizacion(
         cas, f"Revisión de CCM-COT-{int(cotizacion_id):05d}",
         str(nota_cliente or "").strip() or f"Su cotización cambió al estado {estado_revision.replace('_', ' ')}.",
         tipo="Cotización", prioridad="Alta" if estado_revision == "requiere_correccion" else "Normal",
+        hub="china",
     )
     cargar_cotizaciones_revision_admin.clear()
     cargar_estados_cotizaciones_db.clear()
@@ -2488,7 +2489,7 @@ def aprobar_y_generar_tracking_cotizacion(
     crear_notificacion_cliente(
         cas, f"Envío {codigo_envio} aprobado",
         f"CCM generó {cantidad} etiqueta(s) oficiales. Descárguelas desde Mis Envíos.",
-        tipo="Seguimiento", prioridad="Alta",
+        tipo="Seguimiento", prioridad="Alta", hub="china",
     )
     invalidar_cache_flujo_tracking()
     return True, f"Envío {codigo_envio} creado con {cantidad} tracking(s) CCM.", codigo_envio
@@ -2636,7 +2637,7 @@ def registrar_recepcion_bodega(
     crear_notificacion_cliente(
         paquete[1], f"Recepción confirmada · {codigo}", mensaje,
         tipo="Seguimiento", prioridad="Urgente" if integridad == "Dañado" else "Normal",
-        tracking=paquete[0],
+        tracking=paquete[0], hub="china",
     )
     invalidar_cache_flujo_tracking()
     return True, mensaje, "recibida"
@@ -2707,7 +2708,7 @@ def cambiar_estado_etiqueta(tracking_ccm, accion):
     crear_notificacion_cliente(
         paquete[1], f"Etiqueta {nuevo_estado.lower()} · {codigo}",
         f"La etiqueta oficial del bulto fue {nuevo_estado.lower()}. Use únicamente la versión vigente.",
-        tipo="Documentos", prioridad="Alta", tracking=paquete[0],
+        tipo="Documentos", prioridad="Alta", tracking=paquete[0], hub="china",
     )
     invalidar_cache_flujo_tracking()
     return True, f"Etiqueta {nuevo_estado.lower()} correctamente."
@@ -2753,37 +2754,56 @@ def cargar_resumen_operativo_admin():
     }
 
 
+def normalizar_hub_notificacion(hub):
+    valor = str(hub or "").strip().lower()
+    aliases = {"cn": "china", "china": "china", "us": "eeuu", "usa": "eeuu", "ee. uu.": "eeuu", "eeuu": "eeuu", "hn": "honduras", "honduras": "honduras"}
+    return aliases.get(valor, valor if valor in HUBS else "")
+
+
+def nombre_hub_notificacion(hub):
+    return {
+        "china": "China",
+        "eeuu": "EE. UU.",
+        "honduras": "Honduras",
+    }.get(normalizar_hub_notificacion(hub), "Ruta sin asignar")
+
+
 @st.cache_data(ttl=10, show_spinner=False)
-def cargar_notificaciones_cliente(casillero, incluir_ocultas=False):
+def cargar_notificaciones_cliente(casillero, hub=None, incluir_ocultas=False):
     cas = formatear_casillero(casillero)
     if not cas:
         return []
+    hub_limpio = normalizar_hub_notificacion(hub)
     condicion_visible = "" if incluir_ocultas else "AND visible = TRUE"
+    condicion_hub = "AND hub = ?" if hub_limpio else ""
+    parametros = (cas, hub_limpio) if hub_limpio else (cas,)
     with get_db() as conn:
         return conn.execute(
             f"""
             SELECT id, tracking, tipo, prioridad, titulo, mensaje, canal,
-                   leida, visible, fecha_creacion, creado_por
+                   leida, visible, fecha_creacion, creado_por, hub
             FROM notificaciones_cliente
-            WHERE codigo_casillero = ? {condicion_visible}
+            WHERE codigo_casillero = ? {condicion_hub} {condicion_visible}
             ORDER BY fecha_creacion DESC, id DESC
             LIMIT 100
             """,
-            (cas,),
+            parametros,
         ).fetchall()
 
 
 @st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
-def contar_notificaciones_no_leidas(casillero):
-    """Obtiene solo el número que necesita la campana del encabezado."""
+def contar_notificaciones_no_leidas(casillero, hub):
+    """Obtiene el número de la campana únicamente para el país activo."""
     cas = formatear_casillero(casillero)
-    if not cas:
+    hub_limpio = normalizar_hub_notificacion(hub)
+    if not cas or not hub_limpio:
         return 0
     with get_db() as conn:
         fila = conn.execute(
             "SELECT COUNT(*) FROM notificaciones_cliente "
-            "WHERE codigo_casillero = ? AND visible = TRUE AND leida = FALSE",
-            (cas,),
+            "WHERE codigo_casillero = ? AND hub = ? "
+            "AND visible = TRUE AND leida = FALSE",
+            (cas, hub_limpio),
         ).fetchone()
     return int((fila or (0,))[0] or 0)
 
@@ -3016,24 +3036,27 @@ def cambiar_estado_caso_desde_cliente(caso_id, casillero, nuevo_estado):
 
 def crear_notificacion_cliente(
     casillero, titulo, mensaje, tipo="Información", prioridad="Normal",
-    tracking="", canal="Portal", creado_por=None,
+    tracking="", canal="Portal", creado_por=None, hub=None,
 ):
     cas = formatear_casillero(casillero)
     titulo_limpio = str(titulo or "").strip()
     mensaje_limpio = str(mensaje or "").strip()
     if not cas or not titulo_limpio or not mensaje_limpio:
         return False
+    hub_limpio = normalizar_hub_notificacion(
+        hub or st.session_state.get("hub") or "china"
+    ) or "china"
     fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
         conn.execute(
             """
             INSERT INTO notificaciones_cliente (
-                codigo_casillero, tracking, tipo, prioridad, titulo, mensaje,
+                codigo_casillero, hub, tracking, tipo, prioridad, titulo, mensaje,
                 canal, leida, visible, fecha_creacion, creado_por
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, ?)
             """,
             (
-                cas, str(tracking or "").strip() or None, tipo, prioridad,
+                cas, hub_limpio, str(tracking or "").strip() or None, tipo, prioridad,
                 titulo_limpio, mensaje_limpio, canal, fecha,
                 creado_por or st.session_state.get("usuario") or "sistema",
             ),
@@ -3056,26 +3079,33 @@ def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
     contar_notificaciones_no_leidas.clear()
 
 
-def marcar_todas_notificaciones_cliente(casillero):
-    """Marca únicamente las notificaciones visibles del cliente autenticado."""
+def marcar_todas_notificaciones_cliente(casillero, hub):
+    """Marca solo las notificaciones visibles del país activo."""
     cas = formatear_casillero(casillero)
-    if not cas:
+    hub_limpio = normalizar_hub_notificacion(hub)
+    if not cas or not hub_limpio:
         return
     with get_db() as conn:
         conn.execute(
             "UPDATE notificaciones_cliente SET leida = TRUE "
-            "WHERE codigo_casillero = ? AND visible = TRUE",
-            (cas,),
+            "WHERE codigo_casillero = ? AND hub = ? AND visible = TRUE",
+            (cas, hub_limpio),
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
 
 
-def pintar_centro_notificaciones_cliente(casillero):
-    abrir_desde_encabezado = bool(st.session_state.pop("abrir_notificaciones_header", False))
-    notificaciones = cargar_notificaciones_cliente(casillero)
-    if not notificaciones:
+def pintar_centro_notificaciones_cliente(casillero, hub):
+    hub_limpio = normalizar_hub_notificacion(hub)
+    if not hub_limpio:
         return
+    abrir_desde_encabezado = bool(
+        st.session_state.pop("abrir_notificaciones_header", False)
+        or st.session_state.get("mostrar_notificaciones_hub") == hub_limpio
+    )
+    if not abrir_desde_encabezado:
+        return
+    notificaciones = cargar_notificaciones_cliente(casillero, hub_limpio)
     no_leidas = sum(1 for fila in notificaciones if not bool(fila[7]))
     st.markdown(
         """
@@ -3181,6 +3211,19 @@ def pintar_centro_notificaciones_cliente(casillero):
             color: #64748b;
             font-size: .66rem;
         }
+        .notification-empty {
+            display: grid;
+            place-items: center;
+            gap: 4px;
+            padding: 24px 16px;
+            color: #64748b;
+            background: #ffffff;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .notification-empty b { color: #17324d; font-size: .9rem; }
+        .notification-empty span { font-size: .74rem; }
         [class*="st-key-notificacion_cliente_"] .stButton {
             display: flex;
             justify-content: flex-end;
@@ -3217,16 +3260,20 @@ def pintar_centro_notificaciones_cliente(casillero):
         """,
         unsafe_allow_html=True,
     )
-    etiqueta = f"Notificaciones · {no_leidas} nuevas" if no_leidas else "Notificaciones"
+    pais_notificaciones = nombre_hub_notificacion(hub_limpio)
+    etiqueta = (
+        f"Notificaciones de {pais_notificaciones} · {no_leidas} nuevas"
+        if no_leidas else f"Notificaciones de {pais_notificaciones}"
+    )
     with st.container(key="centro_notificaciones_cliente"):
         with st.expander(etiqueta, expanded=abrir_desde_encabezado):
-            encabezado, accion_global = st.columns([4, 1.35])
+            encabezado, accion_global, cerrar_panel = st.columns([4, 1.45, .65])
             with encabezado:
                 st.markdown(
                     '<div style="color:#0f172a;font-size:.9rem;font-weight:800;">'
-                    'Centro de notificaciones</div>'
+                    f'Centro de notificaciones · {html.escape(pais_notificaciones)}</div>'
                     '<div style="color:#64748b;font-size:.74rem;margin-top:2px;">'
-                    'Actualizaciones importantes de su casillero y sus envíos.</div>',
+                    'Actualizaciones exclusivas de esta ruta y sus envíos.</div>',
                     unsafe_allow_html=True,
                 )
             with accion_global:
@@ -3236,15 +3283,29 @@ def pintar_centro_notificaciones_cliente(casillero):
                         key=f"notif_read_all_{formatear_casillero(casillero)}",
                         use_container_width=True,
                         on_click=marcar_todas_notificaciones_cliente,
-                        args=(casillero,),
+                        args=(casillero, hub_limpio),
                     )
+            with cerrar_panel:
+                st.button(
+                    "✕",
+                    key=f"notif_close_{hub_limpio}",
+                    help="Cerrar notificaciones",
+                    use_container_width=True,
+                    on_click=cerrar_notificaciones_desde_encabezado,
+                )
 
             st.markdown('<div style="height:5px"></div>', unsafe_allow_html=True)
+            if not notificaciones:
+                st.markdown(
+                    f'<div class="notification-empty"><b>Todo está al día</b>'
+                    f'<span>No hay notificaciones para {html.escape(pais_notificaciones)}.</span></div>',
+                    unsafe_allow_html=True,
+                )
             limite_notificaciones = max(
                 3, min(8, int(st.session_state.get("limite_notificaciones_cliente") or 3))
             )
             for fila in notificaciones[:limite_notificaciones]:
-                nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila
+                nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _, _ = fila
                 prioridad_limpia = str(prioridad or "Normal")
                 color_prioridad = {
                     "Urgente": ("#b91c1c", "#fef2f2"),
@@ -4157,6 +4218,11 @@ def ir_a(vista, hub="_omit"):
         vista = "Inicio"
         hub = None
     if hub != "_omit":
+        if normalizar_hub_notificacion(hub) != normalizar_hub_notificacion(
+            st.session_state.get("hub")
+        ):
+            st.session_state.pop("abrir_notificaciones_header", None)
+            st.session_state.pop("mostrar_notificaciones_hub", None)
         st.session_state["hub"] = hub
     elif vista in MODULOS_POR_ID:
         st.session_state["hub"] = MODULOS_POR_ID[vista]
@@ -4208,8 +4274,17 @@ def ir_a_inicio():
 
 def abrir_notificaciones_desde_encabezado():
     """Abre notificaciones sin perder el país que el cliente estaba gestionando."""
+    hub_actual = normalizar_hub_notificacion(st.session_state.get("hub"))
+    if not hub_actual:
+        return
     st.session_state["abrir_notificaciones_header"] = True
+    st.session_state["mostrar_notificaciones_hub"] = hub_actual
     ir_a("Inicio")
+
+
+def cerrar_notificaciones_desde_encabezado():
+    st.session_state.pop("abrir_notificaciones_header", None)
+    st.session_state.pop("mostrar_notificaciones_hub", None)
 
 
 def catalogo_disponible_en_hub_actual():
@@ -6742,6 +6817,7 @@ def asegurar_esquema_control_cliente():
                 CREATE TABLE IF NOT EXISTS public.notificaciones_cliente (
                     id BIGSERIAL PRIMARY KEY,
                     codigo_casillero TEXT NOT NULL,
+                    hub TEXT NOT NULL DEFAULT 'china',
                     tracking TEXT,
                     tipo TEXT NOT NULL DEFAULT 'Información',
                     prioridad TEXT NOT NULL DEFAULT 'Normal',
@@ -6813,6 +6889,7 @@ def asegurar_esquema_control_cliente():
                 CREATE TABLE IF NOT EXISTS notificaciones_cliente (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     codigo_casillero TEXT NOT NULL,
+                    hub TEXT NOT NULL DEFAULT 'china',
                     tracking TEXT,
                     tipo TEXT NOT NULL DEFAULT 'Información',
                     prioridad TEXT NOT NULL DEFAULT 'Normal',
@@ -6858,9 +6935,36 @@ def asegurar_esquema_control_cliente():
                 )
                 """
             )
+        if USA_SUPABASE:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='notificaciones_cliente'"
+            )
+            columnas_notificaciones = {str(fila[0]) for fila in cursor.fetchall()}
+            if "hub" not in columnas_notificaciones:
+                cursor.execute(
+                    "ALTER TABLE public.notificaciones_cliente "
+                    "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
+                )
+        else:
+            cursor.execute("PRAGMA table_info(notificaciones_cliente)")
+            columnas_notificaciones = {str(fila[1]) for fila in cursor.fetchall()}
+            if "hub" not in columnas_notificaciones:
+                cursor.execute(
+                    "ALTER TABLE notificaciones_cliente "
+                    "ADD COLUMN hub TEXT NOT NULL DEFAULT 'china'"
+                )
+        cursor.execute(
+            "UPDATE notificaciones_cliente SET hub='china' "
+            "WHERE hub IS NULL OR TRIM(hub)=''"
+        )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_fecha "
             "ON notificaciones_cliente(codigo_casillero, visible, fecha_creacion DESC)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notificaciones_cliente_hub_fecha "
+            "ON notificaciones_cliente(codigo_casillero, hub, visible, fecha_creacion DESC, id DESC)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_casos_cliente_estado "
@@ -9605,6 +9709,12 @@ st.markdown(
     .st-key-header_notification_action button:hover {
         background: rgba(255, 255, 255, .2) !important;
         border-color: rgba(255, 255, 255, .55) !important;
+    }
+    .st-key-header_notification_action button:disabled {
+        cursor: default !important;
+        opacity: .48 !important;
+        background: rgba(255, 255, 255, .07) !important;
+        border-color: rgba(255, 255, 255, .18) !important;
     }
     .st-key-header_notification_action button * {
         color: #ffffff !important;
@@ -13800,7 +13910,7 @@ def pintar_control_cliente_360():
                     crear_notificacion_cliente(
                         cas, f"Cotización CCM-COT-{int(cot[0]):05d}",
                         nota_cot.strip() or f"Su cotización cambió al estado {nuevo_estado_cot}.",
-                        tipo="Cotización", tracking="", creado_por=st.session_state.get("usuario"),
+                        tipo="Cotización", tracking="", creado_por=st.session_state.get("usuario"), hub="china",
                     )
                 cargar_cotizaciones_db.clear()
                 cargar_estados_cotizaciones_db.clear()
@@ -14004,7 +14114,7 @@ def pintar_control_cliente_360():
                         cas, f"Actualización de {tracking}",
                         mensaje_env.strip() or f"Su envío ahora está en estado {estado_env}.",
                         tipo="Seguimiento", prioridad="Urgente" if estado_inc in ("Abierta", "En investigación") else "Normal",
-                        tracking=tracking, canal=canal_env,
+                        tracking=tracking, canal=canal_env, hub="china",
                     )
                     cargar_paquetes_db.clear()
                     cargar_eventos_tracking_db.clear()
@@ -14131,7 +14241,7 @@ def pintar_control_cliente_360():
                         )
                     crear_notificacion_cliente(
                         cas, f"Nueva respuesta al caso #{caso_id:04d}", respuesta_caso.strip(),
-                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
+                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "", hub="china",
                     )
                     st.session_state[clave_limpiar_admin] = True
                     st.session_state[clave_flash_admin] = (
@@ -14151,12 +14261,19 @@ def pintar_control_cliente_360():
                     crear_notificacion_cliente(
                         cas, f"Estado del caso #{caso_id:04d}",
                         f"Su solicitud ahora está en estado: {estado_caso}.",
-                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "",
+                        tipo="Soporte", prioridad=prioridad_caso, tracking=caso[1] or "", hub="china",
                     )
                 st.success("Estado y prioridad actualizados sin modificar la conversación.")
                 st.rerun()
 
     if seccion_control360 == "Comunicaciones":
+        hub_notif_admin = st.selectbox(
+            "País o ruta de la notificación",
+            list(HUBS.keys()),
+            format_func=nombre_hub_notificacion,
+            key=f"c360_not_hub_{cas}",
+            help="El cliente verá este aviso únicamente al entrar en el país seleccionado.",
+        )
         tipo_notif = st.selectbox("Tipo", ["Información", "Cotización", "Seguimiento", "Pago", "Documentos", "Soporte"], key=f"c360_not_tipo_{cas}")
         prioridad_notif = st.selectbox("Prioridad", ["Baja", "Normal", "Alta", "Urgente"], index=1, key=f"c360_not_prio_{cas}")
         titulo_notif = st.text_input("Título", max_chars=120, key=f"c360_not_titulo_{cas}")
@@ -14165,10 +14282,16 @@ def pintar_control_cliente_360():
         tracking_notif = st.selectbox("Tracking relacionado", ["Sin tracking"] + [str(p[0]) for p in paquetes], key=f"c360_not_track_{cas}")
         if st.button("Enviar al centro de notificaciones", type="primary", key=f"c360_not_send_{cas}"):
             if crear_notificacion_cliente(
-                cas, titulo_notif, mensaje_notif, tipo_notif, prioridad_notif,
-                "" if tracking_notif == "Sin tracking" else tracking_notif, canal_notif,
+                cas, titulo_notif, mensaje_notif,
+                tipo=tipo_notif,
+                prioridad=prioridad_notif,
+                tracking="" if tracking_notif == "Sin tracking" else tracking_notif,
+                canal=canal_notif,
+                hub=hub_notif_admin,
             ):
-                st.success("Notificación publicada para este cliente.")
+                st.success(
+                    f"Notificación publicada en {nombre_hub_notificacion(hub_notif_admin)} para este cliente."
+                )
                 st.rerun()
             else:
                 st.warning("Escriba un título y un mensaje.")
@@ -14176,6 +14299,7 @@ def pintar_control_cliente_360():
             st.markdown('<div class="control360-section">Historial de comunicaciones</div>', unsafe_allow_html=True)
             st.dataframe(
                 {
+                    "País": [nombre_hub_notificacion(n[11]) for n in notificaciones],
                     "Fecha": [n[9] for n in notificaciones], "Título": [n[4] for n in notificaciones],
                     "Tipo": [n[2] for n in notificaciones], "Canal": [n[6] for n in notificaciones],
                     "Leída": ["Sí" if n[7] else "No" for n in notificaciones],
@@ -14183,7 +14307,8 @@ def pintar_control_cliente_360():
                 }, hide_index=True, use_container_width=True,
             )
             opciones_hist_not = {
-                f"#{int(n[0]):04d} · {n[4]} · {n[9]}": n for n in notificaciones
+                f"#{int(n[0]):04d} · {nombre_hub_notificacion(n[11])} · {n[4]} · {n[9]}": n
+                for n in notificaciones
             }
             notif_hist_sel = st.selectbox(
                 "Administrar notificación", list(opciones_hist_not), key=f"c360_not_admin_{cas}"
@@ -14812,6 +14937,7 @@ elif st.session_state["rol"] == "cliente":
     hora_corta = f"{hora_numero} {periodo_hora}"
 
     vista_cliente_actual = st.session_state.get("sub_tab_inicio") or "Inicio"
+    hub_notificaciones = normalizar_hub_notificacion(st.session_state.get("hub"))
     lista_todas_cotizaciones = []
     lista_mis_cotizaciones = []
     confirmaciones_cotizaciones = {}
@@ -14826,13 +14952,19 @@ elif st.session_state["rol"] == "cliente":
         total_cotizaciones = len(lista_mis_cotizaciones)
     else:
         total_cotizaciones = cargar_total_cotizaciones_cliente(casillero)
-    if vista_cliente_actual == "Inicio":
-        notificaciones_para_inicio = cargar_notificaciones_cliente(casillero)
+    if vista_cliente_actual == "Inicio" and hub_notificaciones:
+        notificaciones_para_inicio = cargar_notificaciones_cliente(
+            casillero, hub_notificaciones
+        )
         total_notificaciones_nuevas = sum(
             1 for notificacion in notificaciones_para_inicio if not bool(notificacion[7])
         )
+    elif hub_notificaciones:
+        total_notificaciones_nuevas = contar_notificaciones_no_leidas(
+            casillero, hub_notificaciones
+        )
     else:
-        total_notificaciones_nuevas = contar_notificaciones_no_leidas(casillero)
+        total_notificaciones_nuevas = 0
     direcciones_guardadas = []
     opciones_modalidad = [OPCION_PREDETERMINADA, "➕ Crear Nueva Dirección de Envío"]
     if vista_cliente_actual == "Cotizador":
@@ -14883,10 +15015,13 @@ elif st.session_state["rol"] == "cliente":
             st.button(
                 "🔔",
                 key="btn_header_notificaciones",
+                disabled=not bool(hub_notificaciones),
                 help=(
                     f"{total_notificaciones_nuevas} notificaciones nuevas"
                     if total_notificaciones_nuevas
-                    else "Abrir notificaciones"
+                    else "Abrir notificaciones del país seleccionado"
+                    if hub_notificaciones
+                    else "Seleccione un país para consultar sus notificaciones"
                 ),
                 on_click=abrir_notificaciones_desde_encabezado,
             )
@@ -14936,7 +15071,6 @@ elif st.session_state["rol"] == "cliente":
                                 )
 
                     pintar_anuncio_portal_cliente()
-                    pintar_centro_notificaciones_cliente(casillero)
 
                     mensaje_ayuda = urllib.parse.quote(
                         f"Hola Centro de Cerámicas y Más, necesito ayuda con mi casillero {casillero}."
@@ -14984,14 +15118,14 @@ elif st.session_state["rol"] == "cliente":
                 pintar_proxima_accion_cliente(
                     casillero, total_cotizaciones, total_notificaciones_nuevas
                 )
-                pintar_centro_notificaciones_cliente(casillero)
+                pintar_centro_notificaciones_cliente(casillero, "china")
                 pintar_banner_promocional_china(casillero)
             elif hub_sel == "eeuu":
                 # El área de EE. UU. queda intencionalmente limpia hasta que
                 # se defina su próximo flujo operativo.
                 hub_eeuu = HUBS["eeuu"]
                 st.markdown(f"#### {hub_eeuu['icon']} {hub_eeuu['label']}")
-                pintar_centro_notificaciones_cliente(casillero)
+                pintar_centro_notificaciones_cliente(casillero, "eeuu")
                 st.markdown(
                     f'<div class="hub-empty-box">'
                     f'<div style="font-size:2rem;margin-bottom:8px;">{hub_eeuu["icon"]}</div>'
@@ -15004,7 +15138,7 @@ elif st.session_state["rol"] == "cliente":
             elif hub_sel in HUBS:
                 hub_vacio = HUBS[hub_sel]
                 st.markdown(f"#### {hub_vacio['icon']} {hub_vacio['label']}")
-                pintar_centro_notificaciones_cliente(casillero)
+                pintar_centro_notificaciones_cliente(casillero, hub_sel)
                 st.markdown(
                     f'<div class="hub-empty-box">'
                     f'<div style="font-size:2rem;margin-bottom:8px;">{hub_vacio["icon"]}</div>'
@@ -18317,7 +18451,7 @@ elif es_rol_admin():
                         cas_paquete, f"Actualización de {tracking_limpio}", mensaje_evento,
                         tipo="Seguimiento",
                         prioridad="Urgente" if e_in in ESTADOS_LOGISTICOS_ESPECIALES else "Normal",
-                        tracking=tracking_limpio,
+                        tracking=tracking_limpio, hub="china",
                     )
                     cargar_paquetes_db.clear()
                     cargar_eventos_tracking_db.clear()
