@@ -1811,6 +1811,45 @@ def cargar_total_cotizaciones_cliente(casillero):
     return int((fila or (0,))[0] or 0)
 
 
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_resumen_inicio_pais(casillero, hub):
+    """Una sola consulta para encabezado, campana y próxima acción del país."""
+    cas = formatear_casillero(casillero or "")
+    hub_limpio = normalizar_hub_notificacion(hub)
+    variantes = coincidencias_casillero(cas)
+    if not cas or not hub_limpio or not variantes:
+        return (0, 0, None, None, None, None, None)
+    marcadores = ",".join("?" for _ in variantes)
+    with get_db() as conn:
+        fila = conn.execute(
+            f"""
+            SELECT
+                (SELECT COUNT(*) FROM cotizaciones
+                 WHERE codigo_casillero IN ({marcadores})
+                   AND (COALESCE(confirmada, FALSE) = TRUE
+                        OR COALESCE(estado, 'emitida') <> 'vencida')),
+                (SELECT COUNT(*) FROM notificaciones_cliente
+                 WHERE codigo_casillero = ? AND hub = ?
+                   AND visible = TRUE AND leida = FALSE),
+                p.tracking, p.estado, p.ubicacion_actual, p.proximo_paso,
+                p.fecha_actualizacion
+            FROM (SELECT 1 AS fila_base) base
+            LEFT JOIN (
+                SELECT tracking, estado, ubicacion_actual, proximo_paso,
+                       fecha_actualizacion
+                FROM paquetes
+                WHERE codigo_casillero = ?
+                  AND COALESCE(visible_cliente, TRUE) = TRUE
+                  AND COALESCE(estado, '') <> 'Entregado'
+                ORDER BY fecha_actualizacion DESC
+                LIMIT 1
+            ) p ON 1 = 1
+            """,
+            (*variantes, cas, hub_limpio, cas),
+        ).fetchone()
+    return tuple(fila or (0, 0, None, None, None, None, None))
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def cargar_confirmaciones_db(casillero):
     """Reutiliza el snapshot limitado de cotizaciones; no abre otra conexión."""
@@ -2511,6 +2550,7 @@ def invalidar_cache_flujo_tracking():
     cargar_paquetes_casillero_admin.clear()
     cargar_clientes_con_paquetes_admin.clear()
     cargar_metricas_paquetes_admin.clear()
+    cargar_resumen_inicio_pais.clear()
 
 
 def registrar_recepcion_bodega(
@@ -2768,7 +2808,7 @@ def nombre_hub_notificacion(hub):
     }.get(normalizar_hub_notificacion(hub), "Ruta sin asignar")
 
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False, max_entries=2048)
 def cargar_notificaciones_cliente(casillero, hub=None, incluir_ocultas=False):
     cas = formatear_casillero(casillero)
     if not cas:
@@ -3063,6 +3103,7 @@ def crear_notificacion_cliente(
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
+    cargar_resumen_inicio_pais.clear()
     return True
 
 
@@ -3077,6 +3118,7 @@ def marcar_notificacion_cliente(notificacion_id, casillero, visible=True):
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
+    cargar_resumen_inicio_pais.clear()
 
 
 def marcar_todas_notificaciones_cliente(casillero, hub):
@@ -3093,6 +3135,7 @@ def marcar_todas_notificaciones_cliente(casillero, hub):
         )
     cargar_notificaciones_cliente.clear()
     contar_notificaciones_no_leidas.clear()
+    cargar_resumen_inicio_pais.clear()
 
 
 def pintar_centro_notificaciones_cliente(casillero, hub):
@@ -3305,7 +3348,9 @@ def pintar_centro_notificaciones_cliente(casillero, hub):
                 3, min(8, int(st.session_state.get("limite_notificaciones_cliente") or 3))
             )
             for fila in notificaciones[:limite_notificaciones]:
-                nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _, _ = fila
+                if len(fila) < 11:
+                    continue
+                nid, tracking, tipo, prioridad, titulo, mensaje, canal, leida, _, fecha, _ = fila[:11]
                 prioridad_limpia = str(prioridad or "Normal")
                 color_prioridad = {
                     "Urgente": ("#b91c1c", "#fef2f2"),
@@ -4849,9 +4894,10 @@ def cargar_proxima_accion_cliente(casillero):
         return None
 
 
-def pintar_proxima_accion_cliente(casillero, total_cotizaciones, notificaciones_nuevas):
+def pintar_proxima_accion_cliente(
+    casillero, total_cotizaciones, notificaciones_nuevas, paquete=None
+):
     """Da una instrucción principal sin reemplazar los accesos existentes."""
-    paquete = cargar_proxima_accion_cliente(casillero)
     titulo = "Cree su primera cotización"
     detalle = "Ingrese las medidas y el peso de su carga para conocer la tarifa antes de confirmar."
     etiqueta_boton = "Crear cotización"
@@ -9116,6 +9162,7 @@ def invalidar_cache_datos_admin():
     cargar_estados_cotizaciones_db.clear()
     cargar_cotizaciones_confirmadas_admin.clear()
     cargar_resumen_operativo_admin.clear()
+    cargar_resumen_inicio_pais.clear()
     invalidar_cache_clientes_control360()
     invalidar_cache_expediente_control360()
     invalidar_cache_soporte()
@@ -14299,7 +14346,7 @@ def pintar_control_cliente_360():
             st.markdown('<div class="control360-section">Historial de comunicaciones</div>', unsafe_allow_html=True)
             st.dataframe(
                 {
-                    "País": [nombre_hub_notificacion(n[11]) for n in notificaciones],
+                    "País": [nombre_hub_notificacion(n[11] if len(n) > 11 else "china") for n in notificaciones],
                     "Fecha": [n[9] for n in notificaciones], "Título": [n[4] for n in notificaciones],
                     "Tipo": [n[2] for n in notificaciones], "Canal": [n[6] for n in notificaciones],
                     "Leída": ["Sí" if n[7] else "No" for n in notificaciones],
@@ -14307,7 +14354,7 @@ def pintar_control_cliente_360():
                 }, hide_index=True, use_container_width=True,
             )
             opciones_hist_not = {
-                f"#{int(n[0]):04d} · {nombre_hub_notificacion(n[11])} · {n[4]} · {n[9]}": n
+                f"#{int(n[0]):04d} · {nombre_hub_notificacion(n[11] if len(n) > 11 else 'china')} · {n[4]} · {n[9]}": n
                 for n in notificaciones
             }
             notif_hist_sel = st.selectbox(
@@ -14942,7 +14989,14 @@ elif st.session_state["rol"] == "cliente":
     lista_mis_cotizaciones = []
     confirmaciones_cotizaciones = {}
     estados_cotizaciones_cliente = {}
-    if vista_cliente_actual in ("Mis Cotizaciones", "Cotizador", "Mis Envíos", "Etiqueta"):
+    paquete_resumen_inicio = None
+    if vista_cliente_actual == "Inicio" and hub_notificaciones:
+        resumen_inicio = cargar_resumen_inicio_pais(casillero, hub_notificaciones)
+        total_cotizaciones = int(resumen_inicio[0] or 0)
+        total_notificaciones_nuevas = int(resumen_inicio[1] or 0)
+        if resumen_inicio[2]:
+            paquete_resumen_inicio = tuple(resumen_inicio[2:7])
+    elif vista_cliente_actual in ("Mis Cotizaciones", "Cotizador", "Mis Envíos", "Etiqueta"):
         (
             lista_todas_cotizaciones,
             lista_mis_cotizaciones,
@@ -14950,21 +15004,16 @@ elif st.session_state["rol"] == "cliente":
         ) = filas_cotizaciones_casillero(casillero, ahora_hn)
         estados_cotizaciones_cliente = cargar_estados_cotizaciones_db(casillero)
         total_cotizaciones = len(lista_mis_cotizaciones)
+        total_notificaciones_nuevas = (
+            contar_notificaciones_no_leidas(casillero, hub_notificaciones)
+            if hub_notificaciones else 0
+        )
     else:
         total_cotizaciones = cargar_total_cotizaciones_cliente(casillero)
-    if vista_cliente_actual == "Inicio" and hub_notificaciones:
-        notificaciones_para_inicio = cargar_notificaciones_cliente(
-            casillero, hub_notificaciones
+        total_notificaciones_nuevas = (
+            contar_notificaciones_no_leidas(casillero, hub_notificaciones)
+            if hub_notificaciones else 0
         )
-        total_notificaciones_nuevas = sum(
-            1 for notificacion in notificaciones_para_inicio if not bool(notificacion[7])
-        )
-    elif hub_notificaciones:
-        total_notificaciones_nuevas = contar_notificaciones_no_leidas(
-            casillero, hub_notificaciones
-        )
-    else:
-        total_notificaciones_nuevas = 0
     direcciones_guardadas = []
     opciones_modalidad = [OPCION_PREDETERMINADA, "➕ Crear Nueva Dirección de Envío"]
     if vista_cliente_actual == "Cotizador":
@@ -15116,7 +15165,8 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown(f"#### {hub_china['icon']} {hub_china['label']}")
                 st.caption("Consolidación marítima China ➔ Honduras")
                 pintar_proxima_accion_cliente(
-                    casillero, total_cotizaciones, total_notificaciones_nuevas
+                    casillero, total_cotizaciones, total_notificaciones_nuevas,
+                    paquete=paquete_resumen_inicio,
                 )
                 pintar_centro_notificaciones_cliente(casillero, "china")
                 pintar_banner_promocional_china(casillero)
