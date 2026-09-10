@@ -6051,41 +6051,6 @@ ET"""
     return compilar_pdf_simple(stream)
 
 
-def _codigo_barras_code39_pdf(valor, y=500, alto=62, ancho_fino=1.15):
-    patrones = {
-        "0":"nnnwwnwnn","1":"wnnwnnnnw","2":"nnwwnnnnw","3":"wnwwnnnnn",
-        "4":"nnnwwnnnw","5":"wnnwwnnnn","6":"nnwwwnnnn","7":"nnnwnnwnw",
-        "8":"wnnwnnwnn","9":"nnwwnnwnn","A":"wnnnnwnnw","B":"nnwnnwnnw",
-        "C":"wnwnnwnnn","D":"nnnnwwnnw","E":"wnnnwwnnn","F":"nnwnwwnnn",
-        "G":"nnnnnwwnw","H":"wnnnnwwnn","I":"nnwnnwwnn","J":"nnnnwwwnn",
-        "K":"wnnnnnnww","L":"nnwnnnnww","M":"wnwnnnnwn","N":"nnnnwnnww",
-        "O":"wnnnwnnwn","P":"nnwnwnnwn","Q":"nnnnnnwww","R":"wnnnnnwwn",
-        "S":"nnwnnnwwn","T":"nnnnwnwwn","U":"wwnnnnnnw","V":"nwwnnnnnw",
-        "W":"wwwnnnnnn","X":"nwnnwnnnw","Y":"wwnnwnnnn","Z":"nwwnwnnnn",
-        "-":"nwnnnnwnw",".":"wwnnnnwnn"," ":"nwwnnnwnn","*":"nwnnwnwnn",
-    }
-    codigo = "*" + "".join(c for c in str(valor or "").upper() if c in patrones and c != "*") + "*"
-    anchos = []
-    for caracter in codigo:
-        for modulo in patrones[caracter]:
-            anchos.append(ancho_fino * (3 if modulo == "w" else 1))
-        anchos.append(ancho_fino)
-    x = max(36.0, (595.0 - sum(anchos)) / 2.0)
-    comandos = ["q", "0 0 0 rg"]
-    indice = 0
-    for caracter in codigo:
-        patron = patrones[caracter]
-        for posicion, modulo in enumerate(patron):
-            ancho = ancho_fino * (3 if modulo == "w" else 1)
-            if posicion % 2 == 0:
-                comandos.append(f"{x:.2f} {y:.2f} {ancho:.2f} {alto:.2f} re f")
-            x += ancho
-            indice += 1
-        x += ancho_fino
-    comandos.append("Q")
-    return "\n".join(comandos)
-
-
 def _texto_pdf_seguro(valor, max_chars=100):
     texto = re.sub(r"[\r\n\t]+", " ", str(valor or "")).strip()[:max_chars]
     return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
@@ -6270,52 +6235,10 @@ def generar_pdf_etiqueta_oficial_bulto(
         pdf.showPage()
         pdf.save()
         return salida.getvalue()
-    except (ImportError, ValueError, TypeError):
-        # Compatibilidad: conserva la etiqueta Code 39 si ReportLab no está disponible.
-        pass
-    barras = _codigo_barras_code39_pdf(tracking)
-    stream = f"""{barras}
-BT
-/F1 16 Tf
-40 728 Td
-(CENTRO DE CERAMICAS Y MAS - ETIQUETA OFICIAL) Tj
-/F1 9 Tf
-0 -17 Td
-(VERSION: {int(version)}   EMISION: {fecha_txt}) Tj
-/F1 15 Tf
-0 -25 Td
-(TRACKING CCM: {tracking}) Tj
-/F1 11 Tf
-0 -18 Td
-(ENVIO: {envio_pdf}   BULTO: {int(numero_bulto)} DE {int(total_bultos)}) Tj
-/F1 10 Tf
-0 -18 Td
-(CASILLERO: {casillero_pdf}) Tj
-0 -14 Td
-(CLIENTE: {nombre_pdf}) Tj
-0 -14 Td
-(TELEFONO: {telefono_pdf}) Tj
-0 -14 Td
-(PROVEEDOR: {proveedor_pdf}) Tj
-0 -14 Td
-(DESTINO FINAL: {destino}) Tj
-0 -20 Td
-(DESCRIPCION: {descripcion_pdf}) Tj
-0 -95 Td
-/F1 9 Tf
-(CODIGO CODE 39 - ESCANEAR TRACKING CCM IMPRESO) Tj
-0 -22 Td
-(PEGAR ESTA ETIQUETA EN AL MENOS DOS LADOS DEL BULTO.) Tj
-0 -14 Td
-(NO CUBRIR EL CODIGO DE BARRAS. NO REUTILIZAR ESTA ETIQUETA.) Tj
-0 -22 Td
-(SHIP TO: No. 1333 Renmintang Road, Heqing Town,) Tj
-0 -14 Td
-(Pudong New Area, Shanghai, China.) Tj
-0 -14 Td
-(NOTIFICAR ANTES DEL DESPACHO: WHATSAPP +504 9577-1099) Tj
-ET"""
-    return compilar_pdf_simple(stream)
+    except ImportError as exc:
+        raise RuntimeError(
+            "No se puede generar la guía QR porque falta reportlab en requirements.txt."
+        ) from exc
 
 
 @st.cache_data(ttl=900, show_spinner=False, max_entries=64)
@@ -16490,19 +16413,23 @@ elif st.session_state["rol"] == "cliente":
                             use_container_width=True,
                         )
                     if codigo_envio_p and etiqueta_estado_p == "Vigente":
-                        pdf_etiqueta_cliente = generar_pdf_etiqueta_oficial_bulto(
-                            p[23] or p[0], codigo_envio_p, casillero, nombre_completo,
-                            tel_cli, proveedor_p, numero_bulto_p, total_envio_p,
-                            p[1] or "Carga aprobada", destino_para_documentos(), p[4], version_etiqueta_p,
-                        )
-                        st.download_button(
-                            f"Descargar guía de envío con QR · Bulto {numero_bulto_p} de {total_envio_p}",
-                            pdf_etiqueta_cliente,
-                            f"Guia_Envio_QR_{p[23] or p[0]}.pdf",
-                            "application/pdf",
-                            key=f"cliente_dl_etiqueta_{p[23] or p[0]}",
-                            use_container_width=True,
-                        )
+                        try:
+                            pdf_etiqueta_cliente = generar_pdf_etiqueta_oficial_bulto(
+                                p[23] or p[0], codigo_envio_p, casillero, nombre_completo,
+                                tel_cli, proveedor_p, numero_bulto_p, total_envio_p,
+                                p[1] or "Carga aprobada", destino_para_documentos(), p[4], version_etiqueta_p,
+                            )
+                        except RuntimeError:
+                            st.error("La guía QR está temporalmente indisponible. CCM debe completar la configuración del generador QR.")
+                        else:
+                            st.download_button(
+                                f"Descargar guía de envío con QR · Bulto {numero_bulto_p} de {total_envio_p}",
+                                pdf_etiqueta_cliente,
+                                f"Guia_Envio_QR_{p[23] or p[0]}.pdf",
+                                "application/pdf",
+                                key=f"cliente_dl_etiqueta_{p[23] or p[0]}",
+                                use_container_width=True,
+                            )
                     movimientos_paquete = trazabilidad_por_tracking.get(str(p[0] or ""), [])
                     eventos_paquete = eventos_por_tracking.get(str(p[0] or ""), [])
                     with st.expander(
@@ -17314,6 +17241,21 @@ elif es_rol_admin():
                 border-radius: 10px;
                 box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
             }
+            .st-key-recepcion_scanner_panel {
+                margin: 10px 0 16px;
+                padding: 16px 18px 18px;
+                background: #ffffff;
+                border: 1px solid #cfdbe8;
+                border-left: 4px solid #1d9bb8;
+                border-radius: 8px;
+                box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
+            }
+            .st-key-recepcion_scanner_panel [data-testid="stCameraInput"] {
+                overflow: hidden;
+                border: 1px solid #d7e2ec;
+                border-radius: 8px;
+                background: #f7fafc;
+            }
             .st-key-admin_package_editor [data-baseweb="input"],
             .st-key-admin_package_editor [data-baseweb="select"] > div {
                 border-radius: 8px !important;
@@ -17878,11 +17820,14 @@ elif es_rol_admin():
                         (int(envio_aprobado[2]),),
                     ).fetchone() or (envio_aprobado[8], "", "Retiro en Almacén")
                 for bulto in bultos_aprobados:
-                    pdf_oficial = generar_pdf_etiqueta_oficial_bulto(
-                        bulto[1], envio_aprobado[1], envio_aprobado[3], datos_doc[0],
-                        datos_doc[1], envio_aprobado[6], bulto[3], envio_aprobado[4],
-                        bulto[9], datos_doc[2], envio_aprobado[7], int(bulto[11] or 1),
-                    )
+                    try:
+                        pdf_oficial = generar_pdf_etiqueta_oficial_bulto(
+                            bulto[1], envio_aprobado[1], envio_aprobado[3], datos_doc[0],
+                            datos_doc[1], envio_aprobado[6], bulto[3], envio_aprobado[4],
+                            bulto[9], datos_doc[2], envio_aprobado[7], int(bulto[11] or 1),
+                        )
+                    except RuntimeError:
+                        pdf_oficial = None
                     col_etiqueta, col_descarga, col_estado_etiqueta = st.columns([2.2, 1, 1], gap="small")
                     with col_etiqueta:
                         st.markdown(
@@ -17890,12 +17835,19 @@ elif es_rol_admin():
                             f"{bulto[4]} · Etiqueta {bulto[5]}"
                         )
                     with col_descarga:
-                        st.download_button(
-                            "Descargar guía QR", pdf_oficial,
-                            f"Guia_Envio_QR_{bulto[1]}.pdf", "application/pdf",
-                            key=f"admin_dl_etiqueta_{bulto[1]}", use_container_width=True,
-                            disabled=str(bulto[5]) != "Vigente",
-                        )
+                        if pdf_oficial is None:
+                            st.button(
+                                "QR no disponible", disabled=True,
+                                key=f"admin_dl_etiqueta_error_{bulto[1]}", use_container_width=True,
+                                help="Agregue reportlab a requirements.txt para generar la guía QR.",
+                            )
+                        else:
+                            st.download_button(
+                                "Descargar guía QR", pdf_oficial,
+                                f"Guia_Envio_QR_{bulto[1]}.pdf", "application/pdf",
+                                key=f"admin_dl_etiqueta_{bulto[1]}", use_container_width=True,
+                                disabled=str(bulto[5]) != "Vigente",
+                            )
                     with col_estado_etiqueta:
                         accion_etiqueta = "anular" if str(bulto[5]) == "Vigente" else "reemitir"
                         texto_accion_etiqueta = "Anular" if accion_etiqueta == "anular" else "Reemitir"
@@ -17915,31 +17867,38 @@ elif es_rol_admin():
             '<div class="admin-section-copy">Escanee el QR de la guía oficial, verifique el bulto y confirme su ubicación física. Cada código admite una sola recepción.</div>',
             unsafe_allow_html=True,
         )
-        usar_camara_recepcion = st.toggle(
-            "Usar cámara para escanear el QR",
-            key="recepcion_usar_camara",
-            help="La lectura completa el tracking; la recepción no se registra hasta que confirme los datos físicos.",
-        )
-        if usar_camara_recepcion:
-            captura_recepcion = st.camera_input(
-                "Centre el código QR dentro de la cámara",
-                key="recepcion_captura_qr",
+        with st.container(key="recepcion_scanner_panel"):
+            st.markdown("**Escáner QR de recepción**")
+            st.caption("Autorice el uso de la cámara, enfoque el QR completo y tome la fotografía.")
+            if not st.session_state.get("_recepcion_camara_inicializada_v2"):
+                st.session_state["recepcion_usar_camara"] = bool(root)
+                st.session_state["_recepcion_camara_inicializada_v2"] = True
+            usar_camara_recepcion = st.toggle(
+                "Cámara habilitada",
+                key="recepcion_usar_camara",
+                help="La lectura completa el tracking; la recepción no se registra hasta que confirme los datos físicos.",
             )
-            if captura_recepcion is not None:
-                huella_captura = hashlib.sha256(captura_recepcion.getvalue()).hexdigest()
-                if huella_captura != st.session_state.get("_recepcion_ultima_captura"):
-                    tracking_escaneado, error_escaneo = decodificar_qr_captura(captura_recepcion)
-                    st.session_state["_recepcion_ultima_captura"] = huella_captura
-                    if tracking_escaneado:
-                        st.session_state["recepcion_tracking_ccm"] = tracking_escaneado
-                        st.session_state["_recepcion_codigo_activo"] = tracking_escaneado
-                        st.session_state["recepcion_tracking_ccm_escaneado"] = tracking_escaneado
-                        st.session_state["_recepcion_metodo_identificacion"] = "QR cámara"
-                        st.session_state["_recepcion_aviso_escaneo"] = (
-                            "success", f"QR válido: {tracking_escaneado}. Verifique el bulto antes de confirmar."
-                        )
-                    elif error_escaneo:
-                        st.session_state["_recepcion_aviso_escaneo"] = ("warning", error_escaneo)
+            if usar_camara_recepcion:
+                captura_recepcion = st.camera_input(
+                    "Enfoque el código QR de la guía",
+                    key="recepcion_captura_qr",
+                    help="Mantenga el código completo, bien iluminado y sin reflejos.",
+                )
+                if captura_recepcion is not None:
+                    huella_captura = hashlib.sha256(captura_recepcion.getvalue()).hexdigest()
+                    if huella_captura != st.session_state.get("_recepcion_ultima_captura"):
+                        tracking_escaneado, error_escaneo = decodificar_qr_captura(captura_recepcion)
+                        st.session_state["_recepcion_ultima_captura"] = huella_captura
+                        if tracking_escaneado:
+                            st.session_state["recepcion_tracking_ccm"] = tracking_escaneado
+                            st.session_state["_recepcion_codigo_activo"] = tracking_escaneado
+                            st.session_state["recepcion_tracking_ccm_escaneado"] = tracking_escaneado
+                            st.session_state["_recepcion_metodo_identificacion"] = "QR cámara"
+                            st.session_state["_recepcion_aviso_escaneo"] = (
+                                "success", f"QR válido: {tracking_escaneado}. Verifique el bulto antes de confirmar."
+                            )
+                        elif error_escaneo:
+                            st.session_state["_recepcion_aviso_escaneo"] = ("warning", error_escaneo)
         aviso_escaneo = st.session_state.pop("_recepcion_aviso_escaneo", None)
         if aviso_escaneo:
             getattr(st, aviso_escaneo[0])(aviso_escaneo[1])
