@@ -2671,7 +2671,8 @@ def registrar_recepcion_bodega(
             UPDATE paquetes SET recibido_bodega=TRUE, fecha_recepcion=?, estado=?,
                 ubicacion_actual='Bodega CCM Shanghái', proximo_paso=?,
                 incidencia=?, bultos_verificados=1, responsable_actual=?, zona_almacen=?,
-                ultima_verificacion=?, estado_integridad=?, fecha_actualizacion=?, version=version+1
+                ultima_verificacion=?, estado_integridad=?, visible_cliente=TRUE,
+                fecha_actualizacion=?, version=version+1
             WHERE tracking=?
             """,
             (
@@ -2682,9 +2683,9 @@ def registrar_recepcion_bodega(
             ),
         )
         mensaje = (
-            "Su bulto fue recibido y verificado en la bodega de Shanghái."
+            "Su bulto fue recibido y verificado en la bodega de Shanghái. Ya está actualizado en Mis Envíos."
             if integridad == "Verificado"
-            else f"Su bulto fue recibido con una incidencia: {'diferencia de peso o medidas' if diferencia_medidas else condicion}."
+            else f"Su bulto fue agregado a Mis Envíos con una incidencia: {'diferencia de peso o medidas' if diferencia_medidas else condicion}."
         )
         registrar_trazabilidad_paquete(
             cur, paquete[0], paquete[1], "RECEPCION_BODEGA_CHINA",
@@ -7926,6 +7927,9 @@ def set_config_sistema(clave, valor, descripcion=""):
         )
         conn.commit()
     get_config_sistema.clear()
+    # Es una función coordinadora, no una función decorada con st.cache_data.
+    # Llamarla con `.clear()` provoca NameError/AttributeError en producción.
+    invalidar_cache_flujo_tracking()
 
 
 ANUNCIO_PORTAL_CLAVE = "ANUNCIO_PORTAL_CLIENTES"
@@ -17441,6 +17445,33 @@ elif es_rol_admin():
                 border-radius: 8px;
                 background: #f7fafc;
             }
+            .recepcion-cliente-confirmado {
+                margin: 12px 0 16px;
+                padding: 15px 17px;
+                color: #123a63;
+                background: #f0f9ff;
+                border: 1px solid #b9e4ee;
+                border-left: 4px solid #1597aa;
+                border-radius: 8px;
+            }
+            .recepcion-cliente-titulo {
+                margin-bottom: 9px;
+                color: #0f766e;
+                font-size: .72rem;
+                font-weight: 900;
+                text-transform: uppercase;
+            }
+            .recepcion-cliente-datos {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 10px 18px;
+                font-size: .8rem;
+            }
+            .recepcion-cliente-datos span { color: #587085; font-size: .68rem; }
+            .recepcion-cliente-datos b { display: block; margin-top: 2px; color: #102a43; }
+            @media (max-width: 720px) {
+                .recepcion-cliente-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
             .st-key-admin_package_editor [data-baseweb="input"],
             .st-key-admin_package_editor [data-baseweb="select"] > div {
                 border-radius: 8px !important;
@@ -18052,6 +18083,9 @@ elif es_rol_admin():
             '<div class="admin-section-copy">Escanee el QR de la guía oficial, verifique el bulto y confirme su ubicación física. Cada código admite una sola recepción.</div>',
             unsafe_allow_html=True,
         )
+        confirmacion_inventario = st.session_state.pop("_recepcion_confirmacion_inventario", None)
+        if confirmacion_inventario:
+            st.success(confirmacion_inventario)
         with st.container(key="recepcion_scanner_panel"):
             st.markdown("**Escáner QR de recepción**")
             st.caption("Autorice el uso de la cámara, enfoque el QR completo y tome la fotografía.")
@@ -18110,11 +18144,25 @@ elif es_rol_admin():
         codigo_activo_recepcion = st.session_state.get("_recepcion_codigo_activo", "")
         bulto_recepcion = buscar_bulto_ccm_admin(codigo_activo_recepcion) if codigo_activo_recepcion else None
         if codigo_activo_recepcion and bulto_recepcion:
+            cliente_qr = html.escape(str(bulto_recepcion[16] or "Cliente sin nombre"))
+            casillero_qr = html.escape(formatear_casillero(bulto_recepcion[2]))
+            envio_qr = html.escape(str(bulto_recepcion[14] or "Sin código de envío"))
+            tracking_qr = html.escape(str(bulto_recepcion[1] or codigo_activo_recepcion))
+            estado_inventario_qr = "Ya registrado" if bool(bulto_recepcion[5]) else "Pendiente de confirmar"
+            st.markdown(
+                f'<div class="recepcion-cliente-confirmado">'
+                f'<div class="recepcion-cliente-titulo">Cliente identificado por el código QR</div>'
+                f'<div class="recepcion-cliente-datos">'
+                f'<div><span>Cliente</span><b>{cliente_qr}</b></div>'
+                f'<div><span>Casillero</span><b>{casillero_qr}</b></div>'
+                f'<div><span>Envío y bulto</span><b>{envio_qr} · {int(bulto_recepcion[6] or 1)}/{int(bulto_recepcion[15] or 1)}</b></div>'
+                f'<div><span>Inventario del cliente</span><b>{estado_inventario_qr}</b></div>'
+                f'</div><div style="margin-top:10px;color:#49677d;font-size:.72rem;">Tracking: <b>{tracking_qr}</b></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
             if str(bulto_recepcion[8]) == "Vigente":
-                st.success(
-                    f"Etiqueta válida: {bulto_recepcion[1]} · {bulto_recepcion[16]} · "
-                    f"{bulto_recepcion[14] or 'Envío sin código'} · Bulto {bulto_recepcion[6]} de {bulto_recepcion[15] or 1}"
-                )
+                st.success("Guía vigente. Complete la inspección para agregar la recepción al inventario del cliente.")
             else:
                 st.error(f"La etiqueta está {bulto_recepcion[8]} y no puede utilizarse para recepción.")
                 if st.button(
@@ -18187,6 +18235,10 @@ elif es_rol_admin():
                     )
                     (st.success if ok else st.error)(mensaje)
                     if ok:
+                        st.session_state["_recepcion_confirmacion_inventario"] = (
+                            f"Bulto {bulto_recepcion[1]} registrado en el inventario de "
+                            f"{bulto_recepcion[16]} ({formatear_casillero(bulto_recepcion[2])})."
+                        )
                         st.session_state.pop("_recepcion_codigo_activo", None)
                         st.session_state.pop("_recepcion_metodo_identificacion", None)
                         st.rerun()
