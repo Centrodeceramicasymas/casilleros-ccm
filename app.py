@@ -1960,18 +1960,23 @@ def cargar_prealerta_items_paquete(tracking, casillero):
     cas = formatear_casillero(casillero or "")
     if not codigo or not cas:
         return None, []
-    with get_db() as conn:
-        prealerta = conn.execute(
-            "SELECT tracking_local, fecha_despacho, factura_url, lista_empaque_url, "
-            "notas, estado, fecha_actualizacion FROM prealertas_paquete "
-            "WHERE tracking_ccm=? AND codigo_casillero=?",
-            (codigo, cas),
-        ).fetchone()
-        items = conn.execute(
-            "SELECT sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
-            "FROM paquete_items WHERE tracking_ccm=? AND codigo_casillero=? ORDER BY id",
-            (codigo, cas),
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            prealerta = conn.execute(
+                "SELECT tracking_local, fecha_despacho, factura_url, lista_empaque_url, "
+                "notas, estado, fecha_actualizacion FROM prealertas_paquete "
+                "WHERE tracking_ccm=? AND codigo_casillero=?",
+                (codigo, cas),
+            ).fetchone()
+            items = conn.execute(
+                "SELECT sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
+                "FROM paquete_items WHERE tracking_ccm=? AND codigo_casillero=? ORDER BY id",
+                (codigo, cas),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        # Una migración parcial no debe impedir consultar el resto del envío.
+        registrar_error_datos(exc, "Lectura de prealerta del paquete")
+        return None, []
     return prealerta, items
 
 
@@ -1982,19 +1987,25 @@ def cargar_prealertas_items_cliente(casillero, trackings):
     if not cas or not codigos:
         return {}
     marcadores = ",".join("?" for _ in codigos)
-    with get_db() as conn:
-        prealertas = conn.execute(
-            "SELECT tracking_ccm, tracking_local, fecha_despacho, factura_url, "
-            "lista_empaque_url, notas, estado, fecha_actualizacion "
-            f"FROM prealertas_paquete WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores})",
-            (cas, *codigos),
-        ).fetchall()
-        items = conn.execute(
-            "SELECT tracking_ccm, sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
-            f"FROM paquete_items WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores}) "
-            "ORDER BY tracking_ccm, id",
-            (cas, *codigos),
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            prealertas = conn.execute(
+                "SELECT tracking_ccm, tracking_local, fecha_despacho, factura_url, "
+                "lista_empaque_url, notas, estado, fecha_actualizacion "
+                f"FROM prealertas_paquete WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores})",
+                (cas, *codigos),
+            ).fetchall()
+            items = conn.execute(
+                "SELECT tracking_ccm, sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
+                f"FROM paquete_items WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores}) "
+                "ORDER BY tracking_ccm, id",
+                (cas, *codigos),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        # Estas tablas complementan el seguimiento; si el despliegue está
+        # migrándolas, se conserva la lista principal de paquetes.
+        registrar_error_datos(exc, "Lectura agrupada de prealertas")
+        return {}
     resultado = {
         str(fila[0]): (tuple(fila[1:]), [])
         for fila in prealertas
@@ -7974,7 +7985,7 @@ def asegurar_esquema_flujo_tracking():
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS public.prealertas_paquete (
-                    tracking_ccm TEXT PRIMARY KEY REFERENCES public.paquetes(tracking) ON DELETE RESTRICT,
+                    tracking_ccm TEXT PRIMARY KEY,
                     codigo_casillero TEXT NOT NULL,
                     tracking_local TEXT NOT NULL,
                     fecha_despacho TEXT,
@@ -7990,7 +8001,7 @@ def asegurar_esquema_flujo_tracking():
                 """
                 CREATE TABLE IF NOT EXISTS public.paquete_items (
                     id BIGSERIAL PRIMARY KEY,
-                    tracking_ccm TEXT NOT NULL REFERENCES public.paquetes(tracking) ON DELETE RESTRICT,
+                    tracking_ccm TEXT NOT NULL,
                     codigo_casillero TEXT NOT NULL,
                     sku TEXT,
                     descripcion TEXT NOT NULL,
