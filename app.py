@@ -2473,7 +2473,9 @@ def aprobar_y_generar_tracking_cotizacion(
         if existente:
             return False, f"Esta cotización ya generó el envío {existente[1]}.", existente[1]
         codigo_envio = _codigo_operativo_unico("CCM-ENV", 8)
-        token_bultos = secrets.token_hex(4).upper()
+        # Un identificador de envío de 96 bits mantiene separados los QR incluso
+        # con muchos usuarios y grandes volúmenes de bultos.
+        token_bultos = secrets.token_hex(12).upper()
         cur.execute(
             """
             INSERT INTO acuerdos_pago (
@@ -6065,6 +6067,146 @@ def crear_payload_qr_recepcion(tracking_ccm):
     return f"CCMQR1|{tracking}|{checksum}"
 
 
+def _qr_multiplicar_galois(x, y):
+    resultado = 0
+    for _ in range(8):
+        if y & 1:
+            resultado ^= x
+        y >>= 1
+        x = (x << 1) ^ (0x11D if x & 0x80 else 0)
+    return resultado
+
+
+def _qr_divisor_reed_solomon(grado):
+    divisor = [0] * (grado - 1) + [1]
+    raiz = 1
+    for _ in range(grado):
+        for indice in range(grado):
+            divisor[indice] = _qr_multiplicar_galois(divisor[indice], raiz)
+            if indice + 1 < grado:
+                divisor[indice] ^= divisor[indice + 1]
+        raiz = _qr_multiplicar_galois(raiz, 0x02)
+    return divisor
+
+
+def _qr_resto_reed_solomon(datos, divisor):
+    resultado = [0] * len(divisor)
+    for dato in datos:
+        factor = dato ^ resultado.pop(0)
+        resultado.append(0)
+        for indice, coeficiente in enumerate(divisor):
+            resultado[indice] ^= _qr_multiplicar_galois(coeficiente, factor)
+    return resultado
+
+
+def _qr_agregar_bits(destino, valor, cantidad):
+    destino.extend((valor >> desplazamiento) & 1 for desplazamiento in range(cantidad - 1, -1, -1))
+
+
+def _matriz_qr_v5_m(contenido):
+    """QR estándar versión 5-M en modo byte; evita depender de servicios externos."""
+    datos_utf8 = str(contenido or "").encode("utf-8")
+    capacidad_datos = 86
+    if len(datos_utf8) > 84:
+        raise ValueError("El contenido supera la capacidad segura del QR operativo.")
+
+    bits = []
+    _qr_agregar_bits(bits, 0b0100, 4)
+    _qr_agregar_bits(bits, len(datos_utf8), 8)
+    for byte in datos_utf8:
+        _qr_agregar_bits(bits, byte, 8)
+    bits.extend([0] * min(4, capacidad_datos * 8 - len(bits)))
+    while len(bits) % 8:
+        bits.append(0)
+    datos = [sum(bits[i + j] << (7 - j) for j in range(8)) for i in range(0, len(bits), 8)]
+    rellenos = (0xEC, 0x11)
+    while len(datos) < capacidad_datos:
+        datos.append(rellenos[(len(datos) - len(datos_utf8)) % 2])
+
+    divisor = _qr_divisor_reed_solomon(24)
+    bloques = [datos[:43], datos[43:86]]
+    correcciones = [_qr_resto_reed_solomon(bloque, divisor) for bloque in bloques]
+    codigo = []
+    for indice in range(43):
+        codigo.extend((bloques[0][indice], bloques[1][indice]))
+    for indice in range(24):
+        codigo.extend((correcciones[0][indice], correcciones[1][indice]))
+
+    tamano = 37
+    matriz = [[False] * tamano for _ in range(tamano)]
+    funcion = [[False] * tamano for _ in range(tamano)]
+
+    def fijar(x, y, oscuro):
+        if 0 <= x < tamano and 0 <= y < tamano:
+            matriz[y][x] = bool(oscuro)
+            funcion[y][x] = True
+
+    for indice in range(tamano):
+        fijar(6, indice, indice % 2 == 0)
+        fijar(indice, 6, indice % 2 == 0)
+
+    for centro_x, centro_y in ((3, 3), (tamano - 4, 3), (3, tamano - 4)):
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                distancia = max(abs(dx), abs(dy))
+                fijar(centro_x + dx, centro_y + dy, distancia not in (2, 4))
+
+    for centro_x, centro_y in ((30, 30),):
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                fijar(centro_x + dx, centro_y + dy, max(abs(dx), abs(dy)) != 1)
+
+    # Formato M, máscara 0. Los módulos se reservan antes de colocar los datos.
+    formato = 0x5412
+    for indice in range(6):
+        fijar(8, indice, (formato >> indice) & 1)
+    fijar(8, 7, (formato >> 6) & 1)
+    fijar(8, 8, (formato >> 7) & 1)
+    fijar(7, 8, (formato >> 8) & 1)
+    for indice in range(9, 15):
+        fijar(14 - indice, 8, (formato >> indice) & 1)
+    for indice in range(8):
+        fijar(tamano - 1 - indice, 8, (formato >> indice) & 1)
+    for indice in range(8, 15):
+        fijar(8, tamano - 15 + indice, (formato >> indice) & 1)
+    fijar(8, tamano - 8, True)
+
+    bits_codigo = [(byte >> desplazamiento) & 1 for byte in codigo for desplazamiento in range(7, -1, -1)]
+    posicion = 0
+    derecha = tamano - 1
+    while derecha >= 1:
+        if derecha == 6:
+            derecha = 5
+        ascendente = ((derecha + 1) & 2) == 0
+        for vertical in range(tamano):
+            y = tamano - 1 - vertical if ascendente else vertical
+            for desplazamiento_x in range(2):
+                x = derecha - desplazamiento_x
+                if funcion[y][x]:
+                    continue
+                bit = bits_codigo[posicion] if posicion < len(bits_codigo) else 0
+                matriz[y][x] = bool(bit ^ ((x + y) % 2 == 0))
+                posicion += 1
+        derecha -= 2
+    return matriz
+
+
+def _operaciones_qr_pdf(contenido, x=405, y=505, tamano=145):
+    matriz = _matriz_qr_v5_m(contenido)
+    margen = 4
+    cantidad = len(matriz)
+    modulo = tamano / float(cantidad + margen * 2)
+    comandos = ["q", "1 1 1 rg", f"{x:.2f} {y:.2f} {tamano:.2f} {tamano:.2f} re f", "0 0 0 rg"]
+    for fila, modulos in enumerate(matriz):
+        for columna, oscuro in enumerate(modulos):
+            if oscuro:
+                px = x + (columna + margen) * modulo
+                py = y + (cantidad - 1 - fila + margen) * modulo
+                comandos.append(f"{px:.3f} {py:.3f} {modulo:.3f} {modulo:.3f} re f")
+    comandos.append("Q")
+    return "\n".join(comandos)
+
+
 def extraer_tracking_codigo_recepcion(valor):
     """Acepta un tracking escrito o un QR CCM válido y devuelve el tracking normalizado."""
     codigo = str(valor or "").strip().upper()
@@ -6235,10 +6377,53 @@ def generar_pdf_etiqueta_oficial_bulto(
         pdf.showPage()
         pdf.save()
         return salida.getvalue()
-    except ImportError as exc:
-        raise RuntimeError(
-            "No se puede generar la guía QR porque falta reportlab en requirements.txt."
-        ) from exc
+    except ImportError:
+        qr_pdf = _operaciones_qr_pdf(payload_qr, x=390, y=500, tamano=165)
+        stream = f"""{qr_pdf}
+BT
+/F1 16 Tf
+40 728 Td
+(GUIA OFICIAL DE ENVIO CCM) Tj
+/F1 9 Tf
+0 -17 Td
+(VERSION: {int(version)}   EMISION: {fecha_txt}) Tj
+/F1 15 Tf
+0 -28 Td
+(TRACKING UNICO: {tracking}) Tj
+/F1 10 Tf
+0 -20 Td
+(ENVIO: {envio_pdf}   BULTO: {int(numero_bulto)} DE {int(total_bultos)}) Tj
+0 -22 Td
+(CASILLERO: {casillero_pdf}) Tj
+0 -15 Td
+(CLIENTE: {nombre_pdf}) Tj
+0 -15 Td
+(TELEFONO: {telefono_pdf}) Tj
+0 -15 Td
+(PROVEEDOR: {proveedor_pdf}) Tj
+0 -15 Td
+(DESTINO FINAL: {destino}) Tj
+0 -15 Td
+(DESCRIPCION: {descripcion_pdf}) Tj
+0 -32 Td
+(QR UNICO DEL BULTO - ESCANEAR AL RECIBIR EN SHANGHAI) Tj
+0 -25 Td
+(INSTRUCCIONES PARA EL FABRICANTE:) Tj
+/F1 9 Tf
+0 -18 Td
+(1. Imprima esta guia y peguela firmemente al paquete.) Tj
+0 -15 Td
+(2. No cubra, recorte ni escriba encima del codigo QR.) Tj
+0 -15 Td
+(3. Use una guia diferente para cada bulto. No reutilizar.) Tj
+0 -28 Td
+(ENTREGAR EN BODEGA CCM SHANGHAI:) Tj
+0 -15 Td
+(No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China.) Tj
+0 -15 Td
+(Notificar 3 dias antes del despacho: WhatsApp +504 9577-1099) Tj
+ET"""
+        return compilar_pdf_simple(stream)
 
 
 @st.cache_data(ttl=900, show_spinner=False, max_entries=64)
@@ -16420,7 +16605,7 @@ elif st.session_state["rol"] == "cliente":
                                 p[1] or "Carga aprobada", destino_para_documentos(), p[4], version_etiqueta_p,
                             )
                         except RuntimeError:
-                            st.error("La guía QR está temporalmente indisponible. CCM debe completar la configuración del generador QR.")
+                            st.error("La guía QR está temporalmente indisponible. CCM debe revisar el registro técnico del documento.")
                         else:
                             st.download_button(
                                 f"Descargar guía de envío con QR · Bulto {numero_bulto_p} de {total_envio_p}",
@@ -17839,7 +18024,7 @@ elif es_rol_admin():
                             st.button(
                                 "QR no disponible", disabled=True,
                                 key=f"admin_dl_etiqueta_error_{bulto[1]}", use_container_width=True,
-                                help="Agregue reportlab a requirements.txt para generar la guía QR.",
+                                help="Revise el registro técnico del generador de documentos.",
                             )
                         else:
                             st.download_button(
