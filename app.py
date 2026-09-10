@@ -1431,7 +1431,7 @@ MODULOS_POR_ID = {mod["id"]: hub_id for hub_id, hub in HUBS.items() for mod in h
 VISTAS_MODULO = set(MODULOS_POR_ID.keys())
 MODULOS_CHINA_INICIAL = ("Cotizador", "Catálogo", "Mis Cotizaciones")
 MODULOS_CHINA_BLOQUEADOS = ("Mis Envíos", "Etiqueta")
-ROLES_ADMIN = ("admin", "superadmin")
+ROLES_ADMIN = ("admin", "operador_bodega", "superadmin")
 DNI_SUPERADMIN = str(os.environ.get("SUPERADMIN_DNI") or "").strip()
 NOMBRE_SUPERADMIN = str(os.environ.get("SUPERADMIN_NAME") or "Superusuario CCM").strip()
 CORREO_SUPERADMIN = str(os.environ.get("SUPERADMIN_EMAIL") or "").strip().lower()
@@ -1949,9 +1949,168 @@ def cargar_paquetes_db(casillero, version_cache=0):
             LEFT JOIN envios e ON e.id = p.envio_id
             WHERE p.codigo_casillero = ? AND COALESCE(p.visible_cliente, TRUE) = TRUE
             ORDER BY p.fecha_actualizacion DESC
+            LIMIT 500
             """,
             (cas,),
         ).fetchall()
+
+
+@st.cache_data(ttl=15, show_spinner=False, max_entries=4096)
+def cargar_prealerta_items_paquete(tracking, casillero):
+    codigo = str(tracking or "").strip().upper()
+    cas = formatear_casillero(casillero or "")
+    if not codigo or not cas:
+        return None, []
+    with get_db() as conn:
+        prealerta = conn.execute(
+            "SELECT tracking_local, fecha_despacho, factura_url, lista_empaque_url, "
+            "notas, estado, fecha_actualizacion FROM prealertas_paquete "
+            "WHERE tracking_ccm=? AND codigo_casillero=?",
+            (codigo, cas),
+        ).fetchone()
+        items = conn.execute(
+            "SELECT sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
+            "FROM paquete_items WHERE tracking_ccm=? AND codigo_casillero=? ORDER BY id",
+            (codigo, cas),
+        ).fetchall()
+    return prealerta, items
+
+
+@st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
+def cargar_prealertas_items_cliente(casillero, trackings):
+    cas = formatear_casillero(casillero or "")
+    codigos = tuple(str(codigo or "").strip().upper() for codigo in trackings if str(codigo or "").strip())
+    if not cas or not codigos:
+        return {}
+    marcadores = ",".join("?" for _ in codigos)
+    with get_db() as conn:
+        prealertas = conn.execute(
+            "SELECT tracking_ccm, tracking_local, fecha_despacho, factura_url, "
+            "lista_empaque_url, notas, estado, fecha_actualizacion "
+            f"FROM prealertas_paquete WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores})",
+            (cas, *codigos),
+        ).fetchall()
+        items = conn.execute(
+            "SELECT tracking_ccm, sku, descripcion, cantidad, valor_declarado_usd, peso_esperado_kg "
+            f"FROM paquete_items WHERE codigo_casillero=? AND tracking_ccm IN ({marcadores}) "
+            "ORDER BY tracking_ccm, id",
+            (cas, *codigos),
+        ).fetchall()
+    resultado = {
+        str(fila[0]): (tuple(fila[1:]), [])
+        for fila in prealertas
+    }
+    for fila in items:
+        tracking_item = str(fila[0])
+        if tracking_item not in resultado:
+            resultado[tracking_item] = (None, [])
+        resultado[tracking_item][1].append(tuple(fila[1:]))
+    return resultado
+
+
+def parsear_items_prealerta(texto):
+    items = []
+    for numero_linea, linea in enumerate(str(texto or "").splitlines(), 1):
+        if not linea.strip():
+            continue
+        partes = [parte.strip() for parte in linea.split("|")]
+        if len(partes) < 2:
+            return [], f"Línea {numero_linea}: use Cantidad | Descripción | Valor USD | Peso kg | SKU."
+        try:
+            cantidad = int(partes[0])
+            valor = float(partes[2].replace(",", ".")) if len(partes) > 2 and partes[2] else 0.0
+            peso = float(partes[3].replace(",", ".")) if len(partes) > 3 and partes[3] else 0.0
+        except (TypeError, ValueError):
+            return [], f"Línea {numero_linea}: cantidad, valor o peso tienen un formato inválido."
+        descripcion = partes[1][:180]
+        sku = partes[4][:60] if len(partes) > 4 else ""
+        if cantidad < 1 or not descripcion or valor < 0 or peso < 0:
+            return [], f"Línea {numero_linea}: revise cantidad, descripción, valor y peso."
+        items.append((sku, descripcion, cantidad, valor, peso))
+        if len(items) > 100:
+            return [], "Cada bulto admite un máximo de 100 líneas de artículos."
+    if not items:
+        return [], "Agregue al menos un artículo al contenido del bulto."
+    return items, ""
+
+
+def guardar_prealerta_paquete_cliente(
+    tracking, casillero, tracking_local, fecha_despacho,
+    factura_url, lista_empaque_url, notas, texto_items,
+):
+    codigo = str(tracking or "").strip().upper()
+    cas = formatear_casillero(casillero or "")
+    cas_sesion = formatear_casillero(st.session_state.get("casillero") or "")
+    if normalizar_rol(st.session_state.get("rol")) != "cliente" or cas != cas_sesion:
+        return False, "No tiene permiso para modificar este bulto."
+    tracking_local = str(tracking_local or "").strip().upper()[:100]
+    if not tracking_local:
+        return False, "Ingrese el tracking local proporcionado por el fabricante."
+    if fecha_despacho and not _fecha_es_valida(fecha_despacho):
+        return False, "La fecha de despacho debe usar el formato AAAA-MM-DD."
+    for url in (factura_url, lista_empaque_url):
+        if str(url or "").strip() and not url_anuncio_segura(url):
+            return False, "Los documentos deben utilizar una URL pública HTTP o HTTPS válida."
+    items, error_items = parsear_items_prealerta(texto_items)
+    if error_items:
+        return False, error_items
+    fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
+    actor = st.session_state.get("usuario") or cas
+    with get_db() as conn:
+        cur = conn.cursor()
+        bloqueo = " FOR UPDATE" if USA_SUPABASE else ""
+        paquete = cur.execute(
+            "SELECT tracking, estado, recibido_bodega FROM paquetes "
+            "WHERE UPPER(TRIM(tracking))=UPPER(TRIM(?)) AND codigo_casillero=?" + bloqueo,
+            (codigo, cas),
+        ).fetchone()
+        if not paquete:
+            return False, "El bulto no pertenece a este casillero."
+        if bool(paquete[2]):
+            return False, "El bulto ya fue recibido y su manifiesto no puede reemplazarse."
+        cur.execute(
+            "INSERT INTO prealertas_paquete (tracking_ccm, codigo_casillero, tracking_local, "
+            "fecha_despacho, factura_url, lista_empaque_url, notas, estado, fecha_actualizacion) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'Prealertado', ?) "
+            "ON CONFLICT(tracking_ccm) DO UPDATE SET tracking_local=excluded.tracking_local, "
+            "fecha_despacho=excluded.fecha_despacho, factura_url=excluded.factura_url, "
+            "lista_empaque_url=excluded.lista_empaque_url, notas=excluded.notas, "
+            "estado='Prealertado', fecha_actualizacion=excluded.fecha_actualizacion",
+            (codigo, cas, tracking_local, str(fecha_despacho or "").strip() or None,
+             str(factura_url or "").strip(), str(lista_empaque_url or "").strip(),
+             str(notas or "").strip()[:500], fecha),
+        )
+        cur.execute("DELETE FROM paquete_items WHERE tracking_ccm=? AND codigo_casillero=?", (codigo, cas))
+        for sku, descripcion, cantidad, valor, peso in items:
+            cur.execute(
+                "INSERT INTO paquete_items (tracking_ccm, codigo_casillero, sku, descripcion, "
+                "cantidad, valor_declarado_usd, peso_esperado_kg, fecha_creacion) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (codigo, cas, sku, descripcion, cantidad, valor, peso, fecha),
+            )
+        estado_anterior = str(paquete[1] or "Etiqueta Oficial Emitida")
+        nuevo_estado = (
+            "Despachado por Proveedor" if fecha_despacho
+            else "Esperando Despacho del Proveedor"
+        )
+        if estado_anterior not in ("Etiqueta Oficial Emitida", "Esperando Despacho del Proveedor", "Despachado por Proveedor"):
+            nuevo_estado = estado_anterior
+        cur.execute(
+            "UPDATE paquetes SET tracking_externo=?, estado=?, proximo_paso=?, "
+            "fecha_actualizacion=?, version=version+1 WHERE tracking=? AND codigo_casillero=?",
+            (tracking_local, nuevo_estado, "Recepción en bodega de Shanghái", fecha, codigo, cas),
+        )
+        registrar_trazabilidad_paquete(
+            cur, codigo, cas, "PREALERTA_PROVEEDOR", estado_anterior, nuevo_estado,
+            {}, {"tracking_local": tracking_local, "fecha_despacho": fecha_despacho,
+                 "cantidad_lineas": len(items)},
+            "El cliente registró la prealerta y el contenido declarado del bulto.",
+            str(notas or "").strip()[:500], True, actor, fecha,
+        )
+    cargar_prealerta_items_paquete.clear()
+    cargar_prealertas_items_cliente.clear()
+    invalidar_cache_flujo_tracking()
+    return True, "Prealerta y contenido guardados correctamente."
 
 
 @st.cache_data(ttl=15, show_spinner=False, max_entries=2048)
@@ -2446,6 +2605,8 @@ def aprobar_y_generar_tracking_cotizacion(
     cotizacion_id, condicion_pago, estado_pago, monto, vencimiento,
     cantidad_bultos, proveedor, nota_cliente, nota_interna,
 ):
+    if not es_superadmin():
+        return False, "Solo el superusuario puede autorizar pedidos y generar guías QR.", None
     fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     actor = st.session_state.get("usuario") or "superadmin"
     cantidad = int(cantidad_bultos or 0)
@@ -2459,7 +2620,7 @@ def aprobar_y_generar_tracking_cotizacion(
         cur.execute(
             """
             SELECT codigo_casillero, COALESCE(confirmada, FALSE), total_usd,
-                   tipo_carga, destino_entrega
+                   tipo_carga, destino_entrega, COALESCE(estado, 'emitida')
             FROM cotizaciones WHERE id = ?
             """ + bloqueo_cotizacion,
             (int(cotizacion_id),),
@@ -2467,6 +2628,12 @@ def aprobar_y_generar_tracking_cotizacion(
         cot = cur.fetchone()
         if not cot or not bool(cot[1]):
             return False, "La cotización no fue confirmada por el cliente.", None
+        if str(cot[5]) not in ("pendiente_revision", "en_revision", "requiere_correccion"):
+            return False, f"La cotización está {cot[5]} y no puede autorizarse desde este estado.", None
+        if str(estado_pago) not in ("Confirmado", "Diferido autorizado", "Parcial"):
+            return False, "Registre un acuerdo de pago válido antes de autorizar el pedido.", None
+        if float(monto or 0) <= 0:
+            return False, "El monto acordado debe ser mayor que cero.", None
         cas = formatear_casillero(cot[0])
         cur.execute("SELECT id, codigo_envio FROM envios WHERE cotizacion_id = ?", (int(cotizacion_id),))
         existente = cur.fetchone()
@@ -2582,6 +2749,8 @@ def invalidar_cache_flujo_tracking():
     buscar_bulto_ccm_admin.clear()
     cargar_excepciones_recepcion_admin.clear()
     cargar_paquetes_db.clear()
+    cargar_prealerta_items_paquete.clear()
+    cargar_prealertas_items_cliente.clear()
     cargar_eventos_tracking_db.clear()
     cargar_trazabilidad_cliente_db.clear()
     cargar_trazabilidad_paquete_db.clear()
@@ -2597,7 +2766,10 @@ def invalidar_cache_flujo_tracking():
 def registrar_recepcion_bodega(
     tracking_ccm, condicion, peso_kg, largo_cm, ancho_cm, alto_cm,
     fotografia_url, zona_almacen, observaciones, metodo_identificacion="Tracking manual",
+    version_qr=None,
 ):
+    if not puede_operar_bodega():
+        return False, "Su cuenta no tiene permiso para registrar recepciones.", "sin_permiso"
     codigo, error_codigo = extraer_tracking_codigo_recepcion(tracking_ccm)
     if error_codigo:
         return False, error_codigo, "codigo_invalido"
@@ -2622,6 +2794,17 @@ def registrar_recepcion_bodega(
             return False, "Tracking CCM no reconocido.", "desconocido"
         if str(paquete[4]) != "Vigente":
             return False, f"La etiqueta está {paquete[4]} y no puede recibirse.", "etiqueta_invalida"
+        version_vigente = cur.execute(
+            "SELECT COALESCE(MAX(version), 1) FROM documentos_paquete "
+            "WHERE tracking_ccm=? AND tipo_documento='Etiqueta oficial CCM' AND estado='Vigente'",
+            (codigo,),
+        ).fetchone()
+        version_vigente = int((version_vigente or (1,))[0] or 1)
+        if version_qr is not None and int(version_qr) != version_vigente:
+            return False, (
+                f"La guía escaneada es versión {int(version_qr)} y fue reemplazada. "
+                f"Utilice la versión vigente {version_vigente}."
+            ), "version_reemplazada"
         cur.execute("SELECT fecha_recepcion, recibido_por, zona_almacen FROM recepciones_bodega WHERE tracking_ccm=?", (codigo,))
         recepcion_previa = cur.fetchone()
         if recepcion_previa or bool(paquete[3]):
@@ -2646,6 +2829,16 @@ def registrar_recepcion_bodega(
                     valor_esperado > 0 and abs(valor_real - valor_esperado) / valor_esperado > 0.15
                     for valor_real, valor_esperado in zip(reales, esperados)
                 )
+        peso_items = cur.execute(
+            "SELECT COALESCE(SUM(cantidad * peso_esperado_kg), 0) "
+            "FROM paquete_items WHERE tracking_ccm=?",
+            (codigo,),
+        ).fetchone()
+        peso_items_esperado = float((peso_items or (0,))[0] or 0)
+        if peso_items_esperado > 0:
+            diferencia_medidas = diferencia_medidas or (
+                abs(float(peso_kg or 0) - peso_items_esperado) / peso_items_esperado > 0.15
+            )
         integridad = (
             "Diferencia detectada" if diferencia_medidas
             else "Verificado" if condicion == "Sin daños visibles"
@@ -6059,13 +6252,69 @@ def _texto_pdf_seguro(valor, max_chars=100):
     return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def crear_payload_qr_recepcion(tracking_ccm):
-    """Crea el contenido verificable del QR sin exponer datos personales."""
+@st.cache_resource(show_spinner=False)
+def obtener_clave_firma_qr():
+    """Mantiene una clave privada estable para autenticar las guías QR."""
+    try:
+        configurada = str(
+            st.secrets.get("CCM_QR_SIGNING_SECRET")
+            or os.environ.get("CCM_QR_SIGNING_SECRET")
+            or ""
+        ).strip()
+    except Exception:
+        configurada = str(os.environ.get("CCM_QR_SIGNING_SECRET") or "").strip()
+    if len(configurada) >= 32:
+        return configurada.encode("utf-8")
+    clave_nueva = secrets.token_hex(32)
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO config_sistema (clave, valor, descripcion) VALUES (?, ?, ?) "
+            "ON CONFLICT(clave) DO NOTHING",
+            ("QR_SIGNING_SECRET_INTERNO", clave_nueva, "Clave privada de firma QR; no mostrar en interfaz"),
+        )
+        fila = conn.execute(
+            "SELECT valor FROM config_sistema WHERE clave=?",
+            ("QR_SIGNING_SECRET_INTERNO",),
+        ).fetchone()
+    valor = str((fila or (clave_nueva,))[0] or clave_nueva)
+    return valor.encode("utf-8")
+
+
+def crear_payload_qr_recepcion(tracking_ccm, version=1):
+    """Crea un QR firmado, sin datos personales y distinto por bulto/versión."""
     tracking = str(tracking_ccm or "").strip().upper()
     if not re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking):
         raise ValueError("Tracking CCM inválido para generar el código QR.")
-    checksum = hashlib.sha256(f"CCM-RECEPCION|1|{tracking}".encode("utf-8")).hexdigest()[:16].upper()
-    return f"CCMQR1|{tracking}|{checksum}"
+    version_limpia = max(1, int(version or 1))
+    cuerpo = f"CCMQR2|{tracking}|{version_limpia}"
+    firma = hmac.new(obtener_clave_firma_qr(), cuerpo.encode("utf-8"), hashlib.sha256).hexdigest()[:20].upper()
+    return f"{cuerpo}|{firma}"
+
+
+def analizar_codigo_qr_recepcion(valor):
+    codigo = str(valor or "").strip().upper()
+    if re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", codigo):
+        return codigo, None, "", False
+    partes = codigo.split("|")
+    if len(partes) == 4 and partes[0] == "CCMQR2":
+        tracking, version_txt, firma = partes[1], partes[2], partes[3]
+        if not re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking):
+            return "", None, "El QR contiene un tracking CCM inválido.", False
+        try:
+            version = max(1, int(version_txt))
+        except (TypeError, ValueError):
+            return "", None, "El QR contiene una versión inválida.", False
+        cuerpo = f"CCMQR2|{tracking}|{version}"
+        esperada = hmac.new(obtener_clave_firma_qr(), cuerpo.encode("utf-8"), hashlib.sha256).hexdigest()[:20].upper()
+        if not hmac.compare_digest(firma, esperada):
+            return "", None, "La firma del QR no es válida.", False
+        return tracking, version, "", False
+    if len(partes) == 3 and partes[0] == "CCMQR1":
+        tracking, checksum = partes[1], partes[2]
+        esperado = hashlib.sha256(f"CCM-RECEPCION|1|{tracking}".encode("utf-8")).hexdigest()[:16].upper()
+        if re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking) and hmac.compare_digest(checksum, esperado):
+            return tracking, 1, "", True
+    return "", None, "El código no corresponde a una guía oficial CCM.", False
 
 
 def _qr_multiplicar_galois(x, y):
@@ -6210,25 +6459,14 @@ def _operaciones_qr_pdf(contenido, x=405, y=505, tamano=145):
 
 def extraer_tracking_codigo_recepcion(valor):
     """Acepta un tracking escrito o un QR CCM válido y devuelve el tracking normalizado."""
-    codigo = str(valor or "").strip().upper()
-    if re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", codigo):
-        return codigo, ""
-    partes = codigo.split("|")
-    if len(partes) != 3 or partes[0] != "CCMQR1":
-        return "", "El código no corresponde a una guía oficial CCM."
-    tracking, checksum = partes[1], partes[2]
-    if not re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking):
-        return "", "El QR contiene un tracking CCM inválido."
-    esperado = hashlib.sha256(f"CCM-RECEPCION|1|{tracking}".encode("utf-8")).hexdigest()[:16].upper()
-    if not hmac.compare_digest(checksum, esperado):
-        return "", "El QR está incompleto o fue alterado."
-    return tracking, ""
+    tracking, _, error, _ = analizar_codigo_qr_recepcion(valor)
+    return tracking, error
 
 
 def decodificar_qr_captura(captura):
     """Lee una captura de Streamlit. OpenCV se carga solo cuando el operador usa la cámara."""
     if captura is None:
-        return "", ""
+        return "", "", None, False
     try:
         import cv2
         import numpy as np
@@ -6236,17 +6474,19 @@ def decodificar_qr_captura(captura):
         return "", (
             "El lector de cámara requiere la dependencia opencv-python-headless. "
             "Mientras se instala, puede escribir o usar un lector USB en el campo de tracking."
-        )
+        ), None, False
     try:
         imagen = cv2.imdecode(np.frombuffer(captura.getvalue(), dtype=np.uint8), cv2.IMREAD_COLOR)
         if imagen is None:
-            return "", "No fue posible leer la fotografía. Intente nuevamente con más luz."
+            return "", "No fue posible leer la fotografía. Intente nuevamente con más luz.", None, False
         contenido, puntos, _ = cv2.QRCodeDetector().detectAndDecode(imagen)
         if not contenido or puntos is None:
-            return "", "No se detectó un QR. Centre el código, evite reflejos y vuelva a capturar."
-        return extraer_tracking_codigo_recepcion(contenido)
-    except Exception:
-        return "", "No fue posible procesar el QR. Puede continuar ingresando el tracking manualmente."
+            return "", "No se detectó un QR. Centre el código, evite reflejos y vuelva a capturar.", None, False
+        tracking, version, error, legado = analizar_codigo_qr_recepcion(contenido)
+        return tracking, error, version, legado
+    except Exception as exc:
+        print(f"[CCM QR] No fue posible decodificar la captura: {type(exc).__name__}", flush=True)
+        return "", "No fue posible procesar el QR. Puede continuar ingresando el tracking manualmente.", None, False
 
 
 @st.cache_data(ttl=900, show_spinner=False, max_entries=256)
@@ -6266,7 +6506,7 @@ def generar_pdf_etiqueta_oficial_bulto(
     telefono_pdf = _texto_pdf_seguro(telefono, 30)
     proveedor_pdf = _texto_pdf_seguro(proveedor or "POR DEFINIR", 70)
     descripcion_pdf = _texto_pdf_seguro(descripcion, 95)
-    payload_qr = crear_payload_qr_recepcion(tracking)
+    payload_qr = crear_payload_qr_recepcion(tracking, version)
     try:
         from reportlab.graphics import renderPDF
         from reportlab.graphics.barcode.qr import QrCodeWidget
@@ -6913,6 +7153,8 @@ def asegurar_indices_rendimiento():
         "ON cotizaciones(codigo_casillero, fecha_creacion DESC, id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_cotizaciones_casillero_confirmada "
         "ON cotizaciones(codigo_casillero, confirmada, fecha_confirmacion)",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_revision_global "
+        "ON cotizaciones(confirmada, fecha_confirmacion DESC, id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_paquetes_casillero "
         "ON paquetes(codigo_casillero, fecha_actualizacion DESC)",
         "CREATE INDEX IF NOT EXISTS idx_direcciones_casillero "
@@ -6928,6 +7170,10 @@ def asegurar_indices_rendimiento():
         "ON paquetes(UPPER(TRIM(codigo_interno)))",
         "CREATE INDEX IF NOT EXISTS idx_paquetes_tracking_externo_normalizado "
         "ON paquetes(UPPER(TRIM(tracking_externo)))",
+        "CREATE INDEX IF NOT EXISTS idx_paquetes_envio_recepcion "
+        "ON paquetes(envio_id, recibido_bodega)",
+        "CREATE INDEX IF NOT EXISTS idx_documentos_tracking_estado_version "
+        "ON documentos_paquete(tracking_ccm, estado, version DESC)",
     )
     try:
         with get_db() as conn:
@@ -7726,6 +7972,36 @@ def asegurar_esquema_flujo_tracking():
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.prealertas_paquete (
+                    tracking_ccm TEXT PRIMARY KEY REFERENCES public.paquetes(tracking) ON DELETE RESTRICT,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking_local TEXT NOT NULL,
+                    fecha_despacho TEXT,
+                    factura_url TEXT,
+                    lista_empaque_url TEXT,
+                    notas TEXT,
+                    estado TEXT NOT NULL DEFAULT 'Prealertado',
+                    fecha_actualizacion TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.paquete_items (
+                    id BIGSERIAL PRIMARY KEY,
+                    tracking_ccm TEXT NOT NULL REFERENCES public.paquetes(tracking) ON DELETE RESTRICT,
+                    codigo_casillero TEXT NOT NULL,
+                    sku TEXT,
+                    descripcion TEXT NOT NULL,
+                    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+                    valor_declarado_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    peso_esperado_kg DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    fecha_creacion TEXT NOT NULL
+                )
+                """
+            )
         else:
             cursor.execute("PRAGMA table_info(paquetes)")
             columnas = {str(f[1]) for f in cursor.fetchall()}
@@ -7810,12 +8086,39 @@ def asegurar_esquema_flujo_tracking():
                     fecha_creacion TEXT NOT NULL,
                     fecha_actualizacion TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS prealertas_paquete (
+                    tracking_ccm TEXT PRIMARY KEY,
+                    codigo_casillero TEXT NOT NULL,
+                    tracking_local TEXT NOT NULL,
+                    fecha_despacho TEXT,
+                    factura_url TEXT,
+                    lista_empaque_url TEXT,
+                    notas TEXT,
+                    estado TEXT NOT NULL DEFAULT 'Prealertado',
+                    fecha_actualizacion TEXT NOT NULL,
+                    FOREIGN KEY(tracking_ccm) REFERENCES paquetes(tracking) ON DELETE RESTRICT
+                );
+                CREATE TABLE IF NOT EXISTS paquete_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tracking_ccm TEXT NOT NULL,
+                    codigo_casillero TEXT NOT NULL,
+                    sku TEXT,
+                    descripcion TEXT NOT NULL,
+                    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+                    valor_declarado_usd REAL NOT NULL DEFAULT 0,
+                    peso_esperado_kg REAL NOT NULL DEFAULT 0,
+                    fecha_creacion TEXT NOT NULL,
+                    FOREIGN KEY(tracking_ccm) REFERENCES paquetes(tracking) ON DELETE RESTRICT
+                );
                 """
             )
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_envios_casillero ON envios(codigo_casillero, fecha_actualizacion DESC)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquetes_envio ON paquetes(envio_id, numero_bulto)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquetes_tracking_externo ON paquetes(tracking_externo)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_excepciones_estado ON excepciones_recepcion(estado, fecha_actualizacion DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_prealertas_cliente ON prealertas_paquete(codigo_casillero, fecha_actualizacion DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquete_items_tracking ON paquete_items(tracking_ccm, id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_paquete_items_cliente ON paquete_items(codigo_casillero, tracking_ccm)")
         conn.commit()
 
 
@@ -8145,10 +8448,16 @@ def es_superadmin(rol=None):
     return normalizar_rol(rol if rol is not None else st.session_state.get("rol")) == "superadmin"
 
 
+def puede_operar_bodega(rol=None):
+    return normalizar_rol(rol if rol is not None else st.session_state.get("rol")) in (
+        "admin", "operador_bodega", "superadmin"
+    )
+
+
 def normalizar_rol(rol):
     """Evita una sesión válida sin vista cuando la BD trae un rol vacío o con mayúsculas."""
     valor = str(rol or "").strip().lower()
-    return valor if valor in ("cliente", "admin", "superadmin") else "cliente"
+    return valor if valor in ("cliente", "admin", "operador_bodega", "superadmin") else "cliente"
 
 
 def permisos_default(rol="cliente"):
@@ -9439,6 +9748,17 @@ def logout():
         "_ccm_soporte_casos_cache_v3",
         "_ccm_soporte_hilo_cache_v3",
         "_session_password_fingerprint",
+        "recepcion_usar_camara",
+        "recepcion_captura_qr",
+        "recepcion_tracking_ccm",
+        "recepcion_tracking_ccm_escaneado",
+        "_recepcion_codigo_activo",
+        "_recepcion_ultima_captura",
+        "_recepcion_metodo_identificacion",
+        "_recepcion_version_qr",
+        "_recepcion_qr_legado",
+        "_recepcion_camara_inicializada_v2",
+        "_recepcion_confirmacion_inventario",
     ]:
         st.session_state.pop(k, None)
     prefijos_soporte = (
@@ -9510,7 +9830,7 @@ def cargar_resumen_usuarios_admin(incluir_administradores):
             f"""
             SELECT COUNT(*),
                    SUM(CASE WHEN activo = TRUE THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN rol IN ('admin', 'superadmin') THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN rol IN ('admin', 'operador_bodega', 'superadmin') THEN 1 ELSE 0 END)
             FROM usuarios {filtro_metricas}
             """
         )
@@ -9587,7 +9907,7 @@ def dialogo_editar_usuario_admin(usuario, root=False):
                 "Código de casillero", value=formatear_casillero(cas_u), key=f"dlg_cas_{uid}"
             )
         acceso1, acceso2 = st.columns(2, gap="medium")
-        roles = ["cliente", "admin", "superadmin"] if root else ["cliente", "admin"]
+        roles = ["cliente", "operador_bodega", "admin", "superadmin"] if root else ["cliente", "admin"]
         with acceso1:
             n_rol = st.selectbox(
                 "Rol", roles, index=roles.index(rol_u) if rol_u in roles else 0,
@@ -9727,7 +10047,11 @@ def dialogo_crear_usuario_admin(root=False):
             "Contraseña inicial", type="password", key="dlg_new_pwd",
             placeholder="Vacío para generar una clave segura",
         )
-        rol = st.selectbox("Rol inicial", ["cliente", "admin"] if root else ["cliente"], key="dlg_new_rol")
+        rol = st.selectbox(
+            "Rol inicial",
+            ["cliente", "operador_bodega", "admin"] if root else ["cliente"],
+            key="dlg_new_rol",
+        )
     casillero = generar_codigo_casillero_dni(dni, nombre)
     if casillero:
         st.info(f"Casillero que será asignado: {casillero}")
@@ -16508,6 +16832,9 @@ elif st.session_state["rol"] == "cliente":
                 paquetes_render, total_paquetes_cliente, limite_paquetes_cliente = pagina_registros(
                     paquetes_mostrar, "limite_paquetes_cliente", cantidad=20
                 )
+                prealertas_cliente = cargar_prealertas_items_cliente(
+                    casillero, tuple(str(p[0] or "") for p in paquetes_render)
+                )
                 for p in paquetes_render:
                     tracking_p = html.escape(str(p[0] or "Sin tracking"))
                     descripcion_p = html.escape(str(p[1] or "Carga registrada"))
@@ -16619,6 +16946,71 @@ elif st.session_state["rol"] == "cliente":
                                 key=f"cliente_dl_etiqueta_{p[23] or p[0]}",
                                 use_container_width=True,
                             )
+                    if codigo_envio_p:
+                        prealerta_p, items_p = prealertas_cliente.get(str(p[0] or ""), (None, []))
+                        estado_prealerta_p = "Registrada" if prealerta_p else "Pendiente"
+                        with st.expander(
+                            f"Prealerta del proveedor · {estado_prealerta_p}",
+                            expanded=False,
+                        ):
+                            st.caption(
+                                "Registre el despacho y el contenido que llegará dentro de este bulto."
+                            )
+                            pre_tracking = str(prealerta_p[0] or "") if prealerta_p else str(p[30] or "")
+                            pre_fecha = str(prealerta_p[1] or "") if prealerta_p else ""
+                            pre_factura = str(prealerta_p[2] or "") if prealerta_p else ""
+                            pre_lista = str(prealerta_p[3] or "") if prealerta_p else ""
+                            pre_notas = str(prealerta_p[4] or "") if prealerta_p else ""
+                            pre1, pre2 = st.columns(2, gap="small")
+                            with pre1:
+                                tracking_local_pre = st.text_input(
+                                    "Tracking local chino *", value=pre_tracking,
+                                    key=f"pre_tracking_{tracking_p}", disabled=recibido_p,
+                                )
+                            with pre2:
+                                fecha_despacho_pre = st.text_input(
+                                    "Fecha de despacho", value=pre_fecha,
+                                    placeholder="AAAA-MM-DD", key=f"pre_fecha_{tracking_p}",
+                                    disabled=recibido_p,
+                                )
+                            pre3, pre4 = st.columns(2, gap="small")
+                            with pre3:
+                                factura_pre = st.text_input(
+                                    "URL de factura", value=pre_factura,
+                                    key=f"pre_factura_{tracking_p}", disabled=recibido_p,
+                                )
+                            with pre4:
+                                lista_pre = st.text_input(
+                                    "URL de lista de empaque", value=pre_lista,
+                                    key=f"pre_lista_{tracking_p}", disabled=recibido_p,
+                                )
+                            items_texto_pre = "\n".join(
+                                f"{int(item[2])} | {item[1]} | {float(item[3] or 0):.2f} | "
+                                f"{float(item[4] or 0):.3f} | {item[0] or ''}"
+                                for item in items_p
+                            )
+                            contenido_pre = st.text_area(
+                                "Contenido del bulto *",
+                                value=items_texto_pre,
+                                placeholder="Cantidad | Descripción | Valor USD | Peso kg | SKU\n2 | Grifería cromada | 35.00 | 1.20 | GR-001",
+                                height=110, key=f"pre_items_{tracking_p}", disabled=recibido_p,
+                            )
+                            notas_pre = st.text_area(
+                                "Notas para bodega", value=pre_notas, height=70,
+                                key=f"pre_notas_{tracking_p}", disabled=recibido_p,
+                            )
+                            if st.button(
+                                "Guardar prealerta y contenido", type="primary",
+                                key=f"pre_guardar_{tracking_p}", use_container_width=True,
+                                disabled=recibido_p,
+                            ):
+                                ok_pre, mensaje_pre = guardar_prealerta_paquete_cliente(
+                                    tracking_p, casillero, tracking_local_pre, fecha_despacho_pre,
+                                    factura_pre, lista_pre, notas_pre, contenido_pre,
+                                )
+                                (st.success if ok_pre else st.error)(mensaje_pre)
+                                if ok_pre:
+                                    st.rerun()
                     movimientos_paquete = trazabilidad_por_tracking.get(str(p[0] or ""), [])
                     eventos_paquete = eventos_por_tracking.get(str(p[0] or ""), [])
                     with st.expander(
@@ -16872,6 +17264,7 @@ elif st.session_state["rol"] == "cliente":
 # ---------------------------------------------------------
 elif es_rol_admin():
     root = es_superadmin()
+    rol_operativo = normalizar_rol(st.session_state.get("rol"))
     # Una alerta de permisos del portal de clientes nunca debe sobrevivir al
     # cambio hacia una sesión administrativa.
     st.session_state.pop("_ccm_error_permisos", None)
@@ -17659,7 +18052,11 @@ elif es_rol_admin():
         """,
         unsafe_allow_html=True,
     )
-    titulo = "Panel de Superadministrador" if root else "Panel Administrativo"
+    titulo = (
+        "Panel de Superadministrador" if root
+        else "Recepción de Bodega" if rol_operativo == "operador_bodega"
+        else "Panel Administrativo"
+    )
     admin_nombre = html.escape(str(st.session_state.get("nombre") or ""))
     admin_usuario = html.escape(str(st.session_state.get("usuario") or ""))
     st.markdown(
@@ -17669,7 +18066,8 @@ elif es_rol_admin():
             f'<div class="app-greeting-title">{titulo}</div>'
             f'<span class="admin-access-badge">{"Sistema operativo" if root else "Sesión administrativa"}</span>'
             '</div>'
-            f'<div class="app-greeting-sub">{admin_nombre} · {"Superusuario" if root else "Administrador"}</div>',
+            f'<div class="app-greeting-sub">{admin_nombre} · '
+            f'{"Superusuario" if root else "Operador de bodega" if rol_operativo == "operador_bodega" else "Administrador"}</div>',
             extra_class="admin-header-panel",
             extra_style="margin-bottom:12px;",
         ),
@@ -17681,7 +18079,7 @@ elif es_rol_admin():
             "No se aplicó ningún cambio."
         )
 
-    opciones_admin = ["Usuarios", "Recepción", "Paquetes"]
+    opciones_admin = ["Recepción"] if rol_operativo == "operador_bodega" else ["Usuarios", "Recepción", "Paquetes"]
     if root:
         opciones_admin = [
             "Usuarios", "Aprobaciones", "Recepción", "Control 360",
@@ -17698,13 +18096,13 @@ elif es_rol_admin():
         "Sistema": "🗄️ Sistema",
     }
     if st.session_state.get("admin_seccion") not in (None, *opciones_admin):
-        st.session_state["admin_seccion"] = "Usuarios"
+        st.session_state["admin_seccion"] = opciones_admin[0]
     with st.container(key="admin_nav"):
         admin_seccion = st.segmented_control(
             "Sección administrativa",
             options=opciones_admin,
             format_func=lambda opcion: etiquetas_admin.get(opcion, opcion),
-            default="Usuarios",
+            default=opciones_admin[0],
             label_visibility="collapsed",
             key="admin_seccion",
         )
@@ -17902,6 +18300,7 @@ elif es_rol_admin():
             )
             rev = opciones_revision[revision_etiqueta]
             ya_generada = str(rev[4]) == "aprobada_tracking_generado"
+            estado_autorizable = str(rev[4]) in ("pendiente_revision", "en_revision", "requiere_correccion")
             st.info(
                 f"Cliente: {rev[7]} · Casillero: {formatear_casillero(rev[1])} · "
                 f"Total cotizado: ${float(rev[2] or 0):,.2f} · Confirmación: {rev[3]}"
@@ -17994,7 +18393,7 @@ elif es_rol_admin():
             if st.button(
                 "Autorizar pedido y generar guías QR", type="primary",
                 key=f"revision_aprobar_{rev[0]}", use_container_width=True,
-                disabled=ya_generada,
+                disabled=ya_generada or not estado_autorizable,
             ):
                 if vencimiento_revision and not _fecha_es_valida(vencimiento_revision):
                     st.error("La fecha de vencimiento debe usar el formato AAAA-MM-DD.")
@@ -18077,7 +18476,7 @@ elif es_rol_admin():
                             if ok:
                                 st.rerun()
 
-    if admin_seccion == "Recepción" and es_rol_admin():
+    if admin_seccion == "Recepción" and puede_operar_bodega():
         st.markdown(
             '<div class="admin-section-heading">Recepción y escaneo en Shanghái</div>'
             '<div class="admin-section-copy">Escanee el QR de la guía oficial, verifique el bulto y confirme su ubicación física. Cada código admite una sola recepción.</div>',
@@ -18106,13 +18505,15 @@ elif es_rol_admin():
                 if captura_recepcion is not None:
                     huella_captura = hashlib.sha256(captura_recepcion.getvalue()).hexdigest()
                     if huella_captura != st.session_state.get("_recepcion_ultima_captura"):
-                        tracking_escaneado, error_escaneo = decodificar_qr_captura(captura_recepcion)
+                        tracking_escaneado, error_escaneo, version_qr, qr_legado = decodificar_qr_captura(captura_recepcion)
                         st.session_state["_recepcion_ultima_captura"] = huella_captura
                         if tracking_escaneado:
                             st.session_state["recepcion_tracking_ccm"] = tracking_escaneado
                             st.session_state["_recepcion_codigo_activo"] = tracking_escaneado
                             st.session_state["recepcion_tracking_ccm_escaneado"] = tracking_escaneado
                             st.session_state["_recepcion_metodo_identificacion"] = "QR cámara"
+                            st.session_state["_recepcion_version_qr"] = version_qr
+                            st.session_state["_recepcion_qr_legado"] = bool(qr_legado)
                             st.session_state["_recepcion_aviso_escaneo"] = (
                                 "success", f"QR válido: {tracking_escaneado}. Verifique el bulto antes de confirmar."
                             )
@@ -18127,7 +18528,9 @@ elif es_rol_admin():
                 "Tracking CCM", key="recepcion_tracking_ccm",
                 placeholder="Escanee el QR o escriba CCM-PKG-...",
             ).strip().upper()
-            codigo_recepcion, error_codigo_recepcion = extraer_tracking_codigo_recepcion(codigo_recepcion_bruto)
+            codigo_recepcion, version_codigo_recepcion, error_codigo_recepcion, qr_legado_manual = (
+                analizar_codigo_qr_recepcion(codigo_recepcion_bruto)
+            )
         with scan2:
             st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
             buscar_recepcion = st.button(
@@ -18139,11 +18542,19 @@ elif es_rol_admin():
                 st.error(error_codigo_recepcion)
             else:
                 st.session_state["_recepcion_codigo_activo"] = codigo_recepcion
-                if codigo_recepcion != st.session_state.get("recepcion_tracking_ccm_escaneado"):
+                if version_codigo_recepcion is not None:
+                    st.session_state["_recepcion_version_qr"] = version_codigo_recepcion
+                    st.session_state["_recepcion_qr_legado"] = bool(qr_legado_manual)
+                    st.session_state["_recepcion_metodo_identificacion"] = "QR cámara o lector"
+                elif codigo_recepcion != st.session_state.get("recepcion_tracking_ccm_escaneado"):
                     st.session_state["_recepcion_metodo_identificacion"] = "Tracking manual o lector USB"
+                    st.session_state.pop("_recepcion_version_qr", None)
+                    st.session_state.pop("_recepcion_qr_legado", None)
         codigo_activo_recepcion = st.session_state.get("_recepcion_codigo_activo", "")
         bulto_recepcion = buscar_bulto_ccm_admin(codigo_activo_recepcion) if codigo_activo_recepcion else None
         if codigo_activo_recepcion and bulto_recepcion:
+            if st.session_state.get("_recepcion_qr_legado"):
+                st.warning("Esta guía usa el formato QR anterior. Será válida únicamente si sigue en la versión 1.")
             cliente_qr = html.escape(str(bulto_recepcion[16] or "Cliente sin nombre"))
             casillero_qr = html.escape(formatear_casillero(bulto_recepcion[2]))
             envio_qr = html.escape(str(bulto_recepcion[14] or "Sin código de envío"))
@@ -18161,6 +18572,39 @@ elif es_rol_admin():
                 f'</div>',
                 unsafe_allow_html=True,
             )
+            prealerta_recepcion, items_recepcion = cargar_prealerta_items_paquete(
+                bulto_recepcion[0], bulto_recepcion[2]
+            )
+            if prealerta_recepcion:
+                st.info(
+                    f"Prealerta: tracking local {prealerta_recepcion[0]} · "
+                    f"Despacho {prealerta_recepcion[1] or 'sin fecha'} · "
+                    f"{len(items_recepcion)} línea(s) de artículos declaradas."
+                )
+                if items_recepcion:
+                    st.dataframe(
+                        [
+                            {
+                                "SKU": item[0] or "—", "Artículo": item[1],
+                                "Cantidad": int(item[2]), "Valor USD": float(item[3] or 0),
+                                "Peso esperado kg": float(item[4] or 0),
+                            }
+                            for item in items_recepcion
+                        ],
+                        hide_index=True, use_container_width=True,
+                    )
+                contenido_verificado_recepcion = st.checkbox(
+                    "Confirmo que revisé el contenido declarado de este bulto",
+                    key=f"recepcion_items_ok_{bulto_recepcion[1]}",
+                    disabled=bool(bulto_recepcion[5]),
+                )
+            else:
+                st.warning("Este bulto llegó sin prealerta del cliente. Verifique su contenido antes de continuar.")
+                contenido_verificado_recepcion = st.checkbox(
+                    "Confirmo que realicé una inspección manual por falta de prealerta",
+                    key=f"recepcion_inspeccion_manual_{bulto_recepcion[1]}",
+                    disabled=bool(bulto_recepcion[5]),
+                )
             if str(bulto_recepcion[8]) == "Vigente":
                 st.success("Guía vigente. Complete la inspección para agregar la recepción al inventario del cliente.")
             else:
@@ -18218,7 +18662,9 @@ elif es_rol_admin():
                 use_container_width=True,
                 disabled=bool(bulto_recepcion[5]) or str(bulto_recepcion[8]) != "Vigente",
             ):
-                if not zona_recepcion.strip():
+                if not contenido_verificado_recepcion:
+                    st.error("Confirme la revisión del contenido antes de registrar la recepción.")
+                elif not zona_recepcion.strip():
                     st.error("Indique la zona física donde quedará almacenado el bulto.")
                 elif min(peso_recepcion, largo_recepcion, ancho_recepcion, alto_recepcion) <= 0:
                     st.error("Registre el peso y las tres dimensiones reales del bulto.")
@@ -18232,6 +18678,7 @@ elif es_rol_admin():
                         largo_recepcion, ancho_recepcion, alto_recepcion,
                         foto_recepcion, zona_recepcion, observacion_recepcion,
                         st.session_state.get("_recepcion_metodo_identificacion", "Tracking manual"),
+                        st.session_state.get("_recepcion_version_qr"),
                     )
                     (st.success if ok else st.error)(mensaje)
                     if ok:
@@ -18241,6 +18688,8 @@ elif es_rol_admin():
                         )
                         st.session_state.pop("_recepcion_codigo_activo", None)
                         st.session_state.pop("_recepcion_metodo_identificacion", None)
+                        st.session_state.pop("_recepcion_version_qr", None)
+                        st.session_state.pop("_recepcion_qr_legado", None)
                         st.rerun()
         elif codigo_activo_recepcion:
             st.error("Tracking CCM no reconocido. No se asignará automáticamente a ningún cliente.")
