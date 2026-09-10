@@ -4,7 +4,6 @@ import sqlite3
 import hashlib
 import math
 import os
-import random
 import string
 import textwrap
 from datetime import datetime, timezone, timedelta
@@ -8770,7 +8769,6 @@ def restaurar_datos_operativos_cliente():
 
 
 def migrar_prefijo_casillero():
-    tablas_hijas = ("cotizaciones", "paquetes", "direcciones_entrega", "carrito_catalogo")
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id, codigo_casillero, dni, nombre_completo FROM usuarios")
@@ -8788,15 +8786,22 @@ def migrar_prefijo_casillero():
         conn.commit()
 
 
-# Estas tareas son migraciones de la instalación SQLite original. En Supabase
-# no se ejecutan durante una sesión de cliente: una conexión lenta o una
-# migración antigua no debe impedir que aparezca el portal tras el login.
-if not st.session_state.get("_ccm_arranque_db_realizado"):
+@st.cache_resource(show_spinner=False)
+def ejecutar_mantenimiento_arranque_sqlite():
+    """Ejecuta migraciones históricas una sola vez por proceso del servidor.
+
+    Antes se controlaba con ``session_state`` y, por tanto, cada navegador
+    repetía estas consultas. El caché de recurso evita trabajo y bloqueos
+    innecesarios cuando varios clientes abren el portal al mismo tiempo.
+    """
     if not USA_SUPABASE:
         migrar_prefijo_casillero()
         asegurar_superadmin()
         restaurar_datos_operativos_cliente()
-    st.session_state["_ccm_arranque_db_realizado"] = True
+    return True
+
+
+ejecutar_mantenimiento_arranque_sqlite()
 purgar_cotizaciones_si_corresponde()
 
 
@@ -16156,7 +16161,7 @@ elif st.session_state["rol"] == "cliente":
                 st.markdown("#### 📍 Administrar Direcciones de Envío")
 
                 st.markdown(
-                    f"""
+                    """
                 <div style="background:linear-gradient(135deg,#eff6ff,#f8fbff);border:1px solid #bfdbfe;border-left:5px solid #0757c8;border-radius:14px;padding:15px 16px;margin:8px 0 18px;box-shadow:0 5px 14px rgba(7,87,200,.10);">
                     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                         <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#0757c8;color:#fff;font-size:1.15rem;">🏬</span>
@@ -16920,7 +16925,7 @@ elif st.session_state["rol"] == "cliente":
                             f'Este envío lleva {int(horas_sin_actualizar)} horas sin actualización operativa. CCM debe verificar su ubicación.</div>'
                             if seguimiento_atrasado else ''
                         )
-                        + f'</article>',
+                        + '</article>',
                         unsafe_allow_html=True,
                     )
                     if evidencia_p:
