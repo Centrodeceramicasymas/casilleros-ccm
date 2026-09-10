@@ -2556,7 +2556,7 @@ def aprobar_y_generar_tracking_cotizacion(
                 """,
                 (
                     tracking_ccm, cas,
-                    "Etiqueta oficial disponible. Envíela al proveedor para identificar este bulto.",
+                    "Guía oficial con QR disponible. Envíela al fabricante para identificar este bulto.",
                     str(nota_interna or "").strip(), fecha, actor,
                 ),
             )
@@ -2566,7 +2566,7 @@ def aprobar_y_generar_tracking_cotizacion(
         )
     crear_notificacion_cliente(
         cas, f"Envío {codigo_envio} aprobado",
-        f"CCM generó {cantidad} etiqueta(s) oficiales. Descárguelas desde Mis Envíos.",
+        f"CCM generó {cantidad} guía(s) oficiales con QR. Descárguelas desde Mis Envíos y envíelas al fabricante.",
         tipo="Seguimiento", prioridad="Alta", hub="china",
     )
     invalidar_cache_flujo_tracking()
@@ -2594,9 +2594,11 @@ def invalidar_cache_flujo_tracking():
 
 def registrar_recepcion_bodega(
     tracking_ccm, condicion, peso_kg, largo_cm, ancho_cm, alto_cm,
-    fotografia_url, zona_almacen, observaciones,
+    fotografia_url, zona_almacen, observaciones, metodo_identificacion="Tracking manual",
 ):
-    codigo = str(tracking_ccm or "").strip().upper()
+    codigo, error_codigo = extraer_tracking_codigo_recepcion(tracking_ccm)
+    if error_codigo:
+        return False, error_codigo, "codigo_invalido"
     fecha = obtener_tiempo_honduras().strftime("%Y-%m-%d %H:%M:%S")
     actor = st.session_state.get("usuario") or "superadmin"
     with get_db() as conn:
@@ -2688,7 +2690,8 @@ def registrar_recepcion_bodega(
             {"ubicacion": paquete[8], "responsable": paquete[9], "zona": paquete[10]},
             {"condicion": condicion, "peso_kg": float(peso_kg or 0),
              "dimensiones_cm": [float(largo_cm or 0), float(ancho_cm or 0), float(alto_cm or 0)],
-             "zona": str(zona_almacen).strip(), "integridad": integridad},
+             "zona": str(zona_almacen).strip(), "integridad": integridad,
+             "metodo_identificacion": str(metodo_identificacion or "Tracking manual")},
             mensaje, str(observaciones or "").strip(), True, actor, fecha,
         )
         cur.execute(
@@ -3684,6 +3687,7 @@ def confirmar_cotizacion_casillero(id_cot, casillero):
         cargar_estados_cotizaciones_db.clear()
         cargar_confirmaciones_db.clear()
         cargar_cotizaciones_confirmadas_admin.clear()
+        cargar_cotizaciones_revision_admin.clear()
         cargar_resumen_operativo_admin.clear()
     if actualizado:
         st.session_state.pop("ultimo_error_confirmacion", None)
@@ -6087,6 +6091,56 @@ def _texto_pdf_seguro(valor, max_chars=100):
     return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+def crear_payload_qr_recepcion(tracking_ccm):
+    """Crea el contenido verificable del QR sin exponer datos personales."""
+    tracking = str(tracking_ccm or "").strip().upper()
+    if not re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking):
+        raise ValueError("Tracking CCM inválido para generar el código QR.")
+    checksum = hashlib.sha256(f"CCM-RECEPCION|1|{tracking}".encode("utf-8")).hexdigest()[:16].upper()
+    return f"CCMQR1|{tracking}|{checksum}"
+
+
+def extraer_tracking_codigo_recepcion(valor):
+    """Acepta un tracking escrito o un QR CCM válido y devuelve el tracking normalizado."""
+    codigo = str(valor or "").strip().upper()
+    if re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", codigo):
+        return codigo, ""
+    partes = codigo.split("|")
+    if len(partes) != 3 or partes[0] != "CCMQR1":
+        return "", "El código no corresponde a una guía oficial CCM."
+    tracking, checksum = partes[1], partes[2]
+    if not re.fullmatch(r"CCM-PKG-[A-Z0-9-]{6,40}", tracking):
+        return "", "El QR contiene un tracking CCM inválido."
+    esperado = hashlib.sha256(f"CCM-RECEPCION|1|{tracking}".encode("utf-8")).hexdigest()[:16].upper()
+    if not hmac.compare_digest(checksum, esperado):
+        return "", "El QR está incompleto o fue alterado."
+    return tracking, ""
+
+
+def decodificar_qr_captura(captura):
+    """Lee una captura de Streamlit. OpenCV se carga solo cuando el operador usa la cámara."""
+    if captura is None:
+        return "", ""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return "", (
+            "El lector de cámara requiere la dependencia opencv-python-headless. "
+            "Mientras se instala, puede escribir o usar un lector USB en el campo de tracking."
+        )
+    try:
+        imagen = cv2.imdecode(np.frombuffer(captura.getvalue(), dtype=np.uint8), cv2.IMREAD_COLOR)
+        if imagen is None:
+            return "", "No fue posible leer la fotografía. Intente nuevamente con más luz."
+        contenido, puntos, _ = cv2.QRCodeDetector().detectAndDecode(imagen)
+        if not contenido or puntos is None:
+            return "", "No se detectó un QR. Centre el código, evite reflejos y vuelva a capturar."
+        return extraer_tracking_codigo_recepcion(contenido)
+    except Exception:
+        return "", "No fue posible procesar el QR. Puede continuar ingresando el tracking manualmente."
+
+
 @st.cache_data(ttl=900, show_spinner=False, max_entries=256)
 def generar_pdf_etiqueta_oficial_bulto(
     tracking_ccm, codigo_envio, casillero, nombre, telefono, proveedor,
@@ -6097,7 +6151,6 @@ def generar_pdf_etiqueta_oficial_bulto(
     fecha_txt = _texto_pdf_seguro(
         fecha_emision or obtener_tiempo_honduras().strftime("%d/%m/%Y %I:%M:%S %p"), 40
     )
-    barras = _codigo_barras_code39_pdf(tracking)
     destino = _texto_pdf_seguro(str(destino_entrega or "Retiro en Almacén").upper(), 90)
     envio_pdf = _texto_pdf_seguro(codigo_envio, 40)
     casillero_pdf = _texto_pdf_seguro(casillero, 30)
@@ -6105,6 +6158,122 @@ def generar_pdf_etiqueta_oficial_bulto(
     telefono_pdf = _texto_pdf_seguro(telefono, 30)
     proveedor_pdf = _texto_pdf_seguro(proveedor or "POR DEFINIR", 70)
     descripcion_pdf = _texto_pdf_seguro(descripcion, 95)
+    payload_qr = crear_payload_qr_recepcion(tracking)
+    try:
+        from reportlab.graphics import renderPDF
+        from reportlab.graphics.barcode.qr import QrCodeWidget
+        from reportlab.graphics.shapes import Drawing
+        from reportlab.lib.colors import HexColor, white
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        from reportlab.pdfgen import canvas
+
+        salida = io.BytesIO()
+        ancho_pagina, alto_pagina = A4
+        pdf = canvas.Canvas(salida, pagesize=A4, pageCompression=1)
+        azul = HexColor("#123A63")
+        celeste = HexColor("#1D9BB8")
+        tinta = HexColor("#142536")
+        gris = HexColor("#5F7183")
+        linea = HexColor("#D9E3EC")
+        fondo = HexColor("#F3F7FA")
+
+        pdf.setFillColor(azul)
+        pdf.rect(0, alto_pagina - 112, ancho_pagina, 112, stroke=0, fill=1)
+        pdf.setFillColor(celeste)
+        pdf.rect(0, alto_pagina - 118, ancho_pagina, 6, stroke=0, fill=1)
+        pdf.setFillColor(white)
+        pdf.setFont("Helvetica-Bold", 17)
+        pdf.drawString(36, alto_pagina - 48, "GUIA OFICIAL DE ENVIO")
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(36, alto_pagina - 66, "CENTRO DE CERAMICAS Y MAS · CHINA A HONDURAS")
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(36, alto_pagina - 91, f"ENVIO {envio_pdf}  ·  BULTO {int(numero_bulto)} DE {int(total_bultos)}")
+
+        pdf.setFillColor(tinta)
+        pdf.setFont("Helvetica-Bold", 18)
+        pdf.drawString(36, alto_pagina - 157, tracking)
+        pdf.setFillColor(gris)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(36, alto_pagina - 173, f"IDENTIFICADOR UNICO · VERSION {int(version)} · EMITIDO {fecha_txt}")
+
+        datos = [
+            ("CASILLERO", casillero_pdf),
+            ("CLIENTE", nombre_pdf),
+            ("TELEFONO", telefono_pdf),
+            ("PROVEEDOR", proveedor_pdf),
+            ("DESTINO FINAL", destino),
+            ("DESCRIPCION", descripcion_pdf),
+        ]
+        def texto_ajustado(valor, ancho_maximo=225):
+            original = str(valor or "")
+            salida_texto = original
+            while salida_texto and stringWidth(salida_texto + "...", "Helvetica-Bold", 9) > ancho_maximo:
+                salida_texto = salida_texto[:-1]
+            return original if stringWidth(original, "Helvetica-Bold", 9) <= ancho_maximo else salida_texto.rstrip() + "..."
+
+        y = alto_pagina - 218
+        for etiqueta, valor in datos:
+            pdf.setFillColor(gris)
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawString(36, y, etiqueta)
+            pdf.setFillColor(tinta)
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.drawString(125, y, texto_ajustado(valor))
+            pdf.setStrokeColor(linea)
+            pdf.line(36, y - 8, 355, y - 8)
+            y -= 29
+
+        qr_widget = QrCodeWidget(payload_qr)
+        limites = qr_widget.getBounds()
+        tamano_qr = 150
+        dibujo = Drawing(
+            tamano_qr, tamano_qr,
+            transform=[tamano_qr / (limites[2] - limites[0]), 0, 0,
+                       tamano_qr / (limites[3] - limites[1]), 0, 0],
+        )
+        dibujo.add(qr_widget)
+        renderPDF.draw(dibujo, pdf, 405, alto_pagina - 337)
+        pdf.setFillColor(tinta)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(480, alto_pagina - 350, "QR UNICO DEL BULTO")
+        pdf.setFillColor(gris)
+        pdf.setFont("Helvetica", 7)
+        pdf.drawCentredString(480, alto_pagina - 362, "Escanear al recibir en Shanghai")
+
+        pdf.setFillColor(fondo)
+        pdf.roundRect(36, 225, ancho_pagina - 72, 170, 8, stroke=0, fill=1)
+        pdf.setFillColor(azul)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(54, 370, "INSTRUCCIONES PARA EL FABRICANTE")
+        instrucciones = [
+            "1. Imprima esta guia sin reducir el tamano y peguela firmemente al paquete.",
+            "2. No cubra, recorte ni escriba encima del codigo QR.",
+            "3. Use una guia diferente para cada bulto; esta identificacion no es reutilizable.",
+            "4. Comparta el tracking local chino con el cliente despues del despacho.",
+        ]
+        pdf.setFillColor(tinta)
+        pdf.setFont("Helvetica", 9)
+        for indice, instruccion in enumerate(instrucciones):
+            pdf.drawString(54, 345 - (indice * 23), instruccion)
+
+        pdf.setFillColor(azul)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(36, 190, "ENTREGAR EN BODEGA CCM SHANGHAI")
+        pdf.setFillColor(tinta)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(36, 173, "No. 1333 Renmintang Road, Heqing Town, Pudong New Area, Shanghai, China")
+        pdf.drawString(36, 157, "Notificar 3 dias antes del despacho: WhatsApp +504 9577-1099")
+        pdf.setFillColor(gris)
+        pdf.setFont("Helvetica", 7)
+        pdf.drawString(36, 48, "Documento operativo. La recepcion solo queda registrada despues de la confirmacion del personal autorizado.")
+        pdf.showPage()
+        pdf.save()
+        return salida.getvalue()
+    except (ImportError, ValueError, TypeError):
+        # Compatibilidad: conserva la etiqueta Code 39 si ReportLab no está disponible.
+        pass
+    barras = _codigo_barras_code39_pdf(tracking)
     stream = f"""{barras}
 BT
 /F1 16 Tf
@@ -16327,9 +16496,9 @@ elif st.session_state["rol"] == "cliente":
                             p[1] or "Carga aprobada", destino_para_documentos(), p[4], version_etiqueta_p,
                         )
                         st.download_button(
-                            f"Descargar etiqueta oficial · Bulto {numero_bulto_p} de {total_envio_p}",
+                            f"Descargar guía de envío con QR · Bulto {numero_bulto_p} de {total_envio_p}",
                             pdf_etiqueta_cliente,
-                            f"Etiqueta_Oficial_{p[23] or p[0]}.pdf",
+                            f"Guia_Envio_QR_{p[23] or p[0]}.pdf",
                             "application/pdf",
                             key=f"cliente_dl_etiqueta_{p[23] or p[0]}",
                             use_container_width=True,
@@ -17354,7 +17523,7 @@ elif es_rol_admin():
             "No se aplicó ningún cambio."
         )
 
-    opciones_admin = ["Usuarios", "Paquetes"]
+    opciones_admin = ["Usuarios", "Recepción", "Paquetes"]
     if root:
         opciones_admin = [
             "Usuarios", "Aprobaciones", "Recepción", "Control 360",
@@ -17552,8 +17721,8 @@ elif es_rol_admin():
         # El directorio y sus diálogos sustituyen el editor heredado oculto.
     if admin_seccion == "Aprobaciones" and root:
         st.markdown(
-            '<div class="admin-section-heading">Aprobación comercial y generación de tracking</div>'
-            '<div class="admin-section-copy">La confirmación del cliente inicia la revisión; solo esta área puede crear envíos y etiquetas oficiales.</div>',
+            '<div class="admin-section-heading">Autorización de pedidos y guías QR</div>'
+            '<div class="admin-section-copy">La confirmación del cliente inicia la revisión administrativa. Autorice únicamente después de acordar las condiciones de pago y la cantidad real de bultos.</div>',
             unsafe_allow_html=True,
         )
         revisiones = cargar_cotizaciones_revision_admin()
@@ -17665,7 +17834,7 @@ elif es_rol_admin():
                     if ok:
                         st.rerun()
             if st.button(
-                "Aprobar acuerdo y generar trackings CCM", type="primary",
+                "Autorizar pedido y generar guías QR", type="primary",
                 key=f"revision_aprobar_{rev[0]}", use_container_width=True,
                 disabled=ya_generada,
             ):
@@ -17689,7 +17858,7 @@ elif es_rol_admin():
 
         envios_emitidos = cargar_envios_aprobados_admin()
         if envios_emitidos:
-            with st.expander("Envíos aprobados y etiquetas oficiales", expanded=False):
+            with st.expander("Pedidos autorizados y guías oficiales", expanded=False):
                 opciones_envio_aprobado = {
                     f"{e[1]} · {e[8]} · {int(e[9] or 0)}/{int(e[4])} recibidos": e
                     for e in envios_emitidos
@@ -17722,8 +17891,8 @@ elif es_rol_admin():
                         )
                     with col_descarga:
                         st.download_button(
-                            "Descargar etiqueta", pdf_oficial,
-                            f"Etiqueta_Oficial_{bulto[1]}.pdf", "application/pdf",
+                            "Descargar guía QR", pdf_oficial,
+                            f"Guia_Envio_QR_{bulto[1]}.pdf", "application/pdf",
                             key=f"admin_dl_etiqueta_{bulto[1]}", use_container_width=True,
                             disabled=str(bulto[5]) != "Vigente",
                         )
@@ -17740,18 +17909,47 @@ elif es_rol_admin():
                             if ok:
                                 st.rerun()
 
-    if admin_seccion == "Recepción" and root:
+    if admin_seccion == "Recepción" and es_rol_admin():
         st.markdown(
             '<div class="admin-section-heading">Recepción y escaneo en Shanghái</div>'
-            '<div class="admin-section-copy">Escanee el tracking CCM impreso. Cada código admite una sola recepción confirmada.</div>',
+            '<div class="admin-section-copy">Escanee el QR de la guía oficial, verifique el bulto y confirme su ubicación física. Cada código admite una sola recepción.</div>',
             unsafe_allow_html=True,
         )
+        usar_camara_recepcion = st.toggle(
+            "Usar cámara para escanear el QR",
+            key="recepcion_usar_camara",
+            help="La lectura completa el tracking; la recepción no se registra hasta que confirme los datos físicos.",
+        )
+        if usar_camara_recepcion:
+            captura_recepcion = st.camera_input(
+                "Centre el código QR dentro de la cámara",
+                key="recepcion_captura_qr",
+            )
+            if captura_recepcion is not None:
+                huella_captura = hashlib.sha256(captura_recepcion.getvalue()).hexdigest()
+                if huella_captura != st.session_state.get("_recepcion_ultima_captura"):
+                    tracking_escaneado, error_escaneo = decodificar_qr_captura(captura_recepcion)
+                    st.session_state["_recepcion_ultima_captura"] = huella_captura
+                    if tracking_escaneado:
+                        st.session_state["recepcion_tracking_ccm"] = tracking_escaneado
+                        st.session_state["_recepcion_codigo_activo"] = tracking_escaneado
+                        st.session_state["recepcion_tracking_ccm_escaneado"] = tracking_escaneado
+                        st.session_state["_recepcion_metodo_identificacion"] = "QR cámara"
+                        st.session_state["_recepcion_aviso_escaneo"] = (
+                            "success", f"QR válido: {tracking_escaneado}. Verifique el bulto antes de confirmar."
+                        )
+                    elif error_escaneo:
+                        st.session_state["_recepcion_aviso_escaneo"] = ("warning", error_escaneo)
+        aviso_escaneo = st.session_state.pop("_recepcion_aviso_escaneo", None)
+        if aviso_escaneo:
+            getattr(st, aviso_escaneo[0])(aviso_escaneo[1])
         scan1, scan2 = st.columns([2.2, 1], gap="small")
         with scan1:
-            codigo_recepcion = st.text_input(
+            codigo_recepcion_bruto = st.text_input(
                 "Tracking CCM", key="recepcion_tracking_ccm",
-                placeholder="Escanee o escriba CCM-PKG-...",
+                placeholder="Escanee el QR o escriba CCM-PKG-...",
             ).strip().upper()
+            codigo_recepcion, error_codigo_recepcion = extraer_tracking_codigo_recepcion(codigo_recepcion_bruto)
         with scan2:
             st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
             buscar_recepcion = st.button(
@@ -17759,7 +17957,12 @@ elif es_rol_admin():
                 use_container_width=True,
             )
         if buscar_recepcion:
-            st.session_state["_recepcion_codigo_activo"] = codigo_recepcion
+            if error_codigo_recepcion:
+                st.error(error_codigo_recepcion)
+            else:
+                st.session_state["_recepcion_codigo_activo"] = codigo_recepcion
+                if codigo_recepcion != st.session_state.get("recepcion_tracking_ccm_escaneado"):
+                    st.session_state["_recepcion_metodo_identificacion"] = "Tracking manual o lector USB"
         codigo_activo_recepcion = st.session_state.get("_recepcion_codigo_activo", "")
         bulto_recepcion = buscar_bulto_ccm_admin(codigo_activo_recepcion) if codigo_activo_recepcion else None
         if codigo_activo_recepcion and bulto_recepcion:
@@ -17836,10 +18039,12 @@ elif es_rol_admin():
                         bulto_recepcion[1], condicion_recepcion, peso_recepcion,
                         largo_recepcion, ancho_recepcion, alto_recepcion,
                         foto_recepcion, zona_recepcion, observacion_recepcion,
+                        st.session_state.get("_recepcion_metodo_identificacion", "Tracking manual"),
                     )
                     (st.success if ok else st.error)(mensaje)
                     if ok:
                         st.session_state.pop("_recepcion_codigo_activo", None)
+                        st.session_state.pop("_recepcion_metodo_identificacion", None)
                         st.rerun()
         elif codigo_activo_recepcion:
             st.error("Tracking CCM no reconocido. No se asignará automáticamente a ningún cliente.")
